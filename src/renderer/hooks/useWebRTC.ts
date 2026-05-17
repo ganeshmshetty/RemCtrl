@@ -177,15 +177,14 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
   // Always-on: create PC and listen for signals on mount
   useEffect(() => {
     let cancelled = false;
-    const log = (msg: string) => window.remconAPI?.debugLog(msg);
-    log('[ctrl-webrtc] Mounting, creating RTCPeerConnection');
+    console.log('[ctrl-webrtc] Mounting, creating RTCPeerConnection');
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     const iceQueue = makeIceQueue(pc);
 
     pc.ontrack = (e) => {
       if (cancelled) return;
-      log(`[ctrl-webrtc] Got remote track: ${e.track.kind}`);
+      console.log(`[ctrl-webrtc] Got remote track: ${e.track.kind}`);
       if (videoRef.current) {
         videoRef.current.srcObject = e.streams[0];
         videoRef.current.play().catch(() => {});
@@ -194,7 +193,7 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
     };
 
     pc.onconnectionstatechange = () => {
-      log(`[ctrl-webrtc] Connection state: ${pc.connectionState}`);
+      console.log(`[ctrl-webrtc] Connection state: ${pc.connectionState}`);
     };
 
     pc.onicecandidate = (e) => {
@@ -215,17 +214,17 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
       };
       try {
         if (signal.type === 'offer' && signal.sdpStr) {
-          log('[ctrl-webrtc] Got offer, calling setRemoteDescription');
+          console.log('[ctrl-webrtc] Got offer, calling setRemoteDescription');
           setStatus('connecting');
           await pc.setRemoteDescription(new RTCSessionDescription({
             type: (signal.sdpType ?? 'offer') as RTCSdpType,
             sdp: signal.sdpStr,
           }));
-          log('[ctrl-webrtc] setRemoteDescription done, flushing ICE');
+          console.log('[ctrl-webrtc] setRemoteDescription done, flushing ICE');
           await iceQueue.markRemoteSet();
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          log('[ctrl-webrtc] Sending answer');
+          console.log('[ctrl-webrtc] Sending answer');
           window.remconAPI.webrtc.sendSignal({
             type: 'answer',
             sdpType: pc.localDescription!.type,
@@ -237,7 +236,7 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
       } catch (err) {
         if (!cancelled) {
           const msg = err instanceof Error ? err.message : String(err);
-          log(`[ctrl-webrtc] SIGNAL ERROR: ${msg}`);
+          console.error(`[ctrl-webrtc] SIGNAL ERROR: ${msg}`);
           setError(msg);
           setStatus('error');
         }

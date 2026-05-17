@@ -197,7 +197,6 @@ export interface RemconAPI {
   webrtc: {
     sendSignal: (signal: unknown) => Promise<void>;
   };
-  debugLog: (msg: string) => void;
   settings: {
     hasApiKey: (provider: ApiProvider) => Promise<boolean>;
     setApiKey: (provider: ApiProvider, value: string) => Promise<void>;

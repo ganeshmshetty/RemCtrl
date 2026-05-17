@@ -36,10 +36,7 @@ contextBridge.exposeInMainWorld('remconAPI', {
   webrtc: {
     sendSignal: (signal) => ipcRenderer.invoke('webrtc:sendSignal', signal),
   },
-
-  // ── Debug (logs to terminal via main process) ─────────────────────────────
-  debugLog: (msg) => ipcRenderer.send('debug:log', msg),
-
+  
   // ── Settings ──────────────────────────────────────────────────────────────
   settings: {
     hasApiKey: (provider) => ipcRenderer.invoke('settings:hasApiKey', provider),

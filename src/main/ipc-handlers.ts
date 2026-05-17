@@ -35,9 +35,6 @@ function destroyClient() {
 
 export function registerIpcHandlers(win: BrowserWindow) {
 
-  // ── Debug logging from renderer/preload → terminal ────────────────────────
-  ipcMain.on('debug:log', (_e, msg: string) => console.log(msg));
-
   // ── Settings ──────────────────────────────────────────────────────────────
 
   ipcMain.handle('settings:hasApiKey', async (_e, provider: unknown) => {
@@ -89,7 +86,6 @@ export function registerIpcHandlers(win: BrowserWindow) {
       // signaling-client.ts calls pushError before throwing in known paths,
       // but guard here in case an unexpected error escapes without notifying.
       const msg = err instanceof Error ? err.message : String(err);
-      console.log('[host:start] failed:', msg);
       // Ensure the renderer always sees the error regardless of where it throws
       if (!win.isDestroyed()) win.webContents.send('app:error', msg);
     }
@@ -121,7 +117,6 @@ export function registerIpcHandlers(win: BrowserWindow) {
       await client.connectAsController(url, p);
     } catch (err) {
       // pushError already sent to renderer; suppress Electron's unhandled log
-      console.log('[controller:connect] failed:', (err as Error).message);
     }
   });
 

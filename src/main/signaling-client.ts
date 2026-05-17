@@ -68,8 +68,6 @@ export class SignalingClient {
 
       // Auto-forward WebRTC signals from socket to renderer
       socket.on('webrtc:signal', (payload: { signal: unknown }) => {
-        const t = (payload.signal as any)?.type ?? '?';
-        console.log(`[signaling] ${this.role} received webrtc:signal (${t}), pushing to renderer`);
         this.send('webrtc:signal', payload.signal);
       });
 
@@ -140,8 +138,6 @@ export class SignalingClient {
 
       // Auto-forward WebRTC signals from socket to renderer
       socket.on('webrtc:signal', (payload: { signal: unknown }) => {
-        const t = (payload.signal as any)?.type ?? '?';
-        console.log(`[signaling] ${this.role} received webrtc:signal (${t}), pushing to renderer`);
         this.send('webrtc:signal', payload.signal);
       });
 
