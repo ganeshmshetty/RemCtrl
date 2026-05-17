@@ -1,0 +1,53 @@
+{
+  "name": "remcon",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/main/index.cjs",
+  "scripts": {
+    "dev:renderer": "vite",
+    "dev:main": "node build-electron.mjs && NODE_ENV=development electron dist/main/index.cjs",
+    "dev": "concurrently -k -n RENDERER,MAIN -c cyan,yellow \"npm run dev:renderer\" \"wait-on http://localhost:5173 && npm run dev:main\"",
+    "server": "tsx server/signaling.ts",
+    "build:renderer": "vite build",
+    "build:main": "node build-electron.mjs",
+    "build": "npm run build:renderer && npm run build:main",
+    "typecheck": "tsc --noEmit",
+    "start": "NODE_ENV=production electron dist/main/index.cjs",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^42.1.0",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "tailwindcss": "^4.3.0",
+    "tsx": "^4.22.1",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "wait-on": "^9.0.10"
+  }
+}

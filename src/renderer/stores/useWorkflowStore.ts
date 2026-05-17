@@ -1,0 +1,113 @@
+import { create } from 'zustand';
+import type { LocalWorkflow, ApiProvider } from '../../shared/types';
+
+interface WorkflowState {
+  workflows: LocalWorkflow[];
+  isLoading: boolean;
+  error: string | null;
+
+  // Actions
+  setWorkflows: (workflows: LocalWorkflow[]) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+
+  // Async thunks (call window.remconAPI under the hood)
+  loadWorkflows: () => Promise<void>;
+  saveWorkflow: (workflow: LocalWorkflow) => Promise<void>;
+  deleteWorkflow: (workflowId: string) => Promise<void>;
+}
+
+export const useWorkflowStore = create<WorkflowState>((set, get) => ({
+  workflows: [],
+  isLoading: false,
+  error: null,
+
+  setWorkflows: (workflows) => set({ workflows }),
+  setLoading: (isLoading) => set({ isLoading }),
+  setError: (error) => set({ error }),
+
+  loadWorkflows: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const workflows = await window.remconAPI.workflows.list();
+      set({ workflows, isLoading: false });
+    } catch (err) {
+      set({ error: String(err), isLoading: false });
+    }
+  },
+
+  saveWorkflow: async (workflow) => {
+    try {
+      await window.remconAPI.workflows.save(workflow);
+      await get().loadWorkflows();
+    } catch (err) {
+      set({ error: String(err) });
+    }
+  },
+
+  deleteWorkflow: async (workflowId) => {
+    try {
+      await window.remconAPI.workflows.delete(workflowId);
+      set((state) => ({
+        workflows: state.workflows.filter((w) => w.id !== workflowId),
+      }));
+    } catch (err) {
+      set({ error: String(err) });
+    }
+  },
+}));
+
+// ─── Settings Store ───────────────────────────────────────────────────────────
+
+interface SettingsState {
+  signalingUrl: string;
+  preferredProvider: ApiProvider;
+  hasOpenAIKey: boolean;
+  hasAnthropicKey: boolean;
+  isLoading: boolean;
+
+  // Actions
+  loadSettings: () => Promise<void>;
+  setSignalingUrl: (url: string) => Promise<void>;
+  setPreferredProvider: (provider: ApiProvider) => Promise<void>;
+  setApiKey: (provider: ApiProvider, value: string) => Promise<void>;
+}
+
+export const useSettingsStore = create<SettingsState>((set) => ({
+  signalingUrl: 'http://localhost:3001',
+  preferredProvider: 'openai',
+  hasOpenAIKey: false,
+  hasAnthropicKey: false,
+  isLoading: false,
+
+  loadSettings: async () => {
+    set({ isLoading: true });
+    try {
+      const [signalingUrl, preferredProvider, hasOpenAIKey, hasAnthropicKey] =
+        await Promise.all([
+          window.remconAPI.settings.getSignalingUrl(),
+          window.remconAPI.settings.getPreferredProvider(),
+          window.remconAPI.settings.hasApiKey('openai'),
+          window.remconAPI.settings.hasApiKey('anthropic'),
+        ]);
+      set({ signalingUrl, preferredProvider, hasOpenAIKey, hasAnthropicKey, isLoading: false });
+    } catch {
+      set({ isLoading: false });
+    }
+  },
+
+  setSignalingUrl: async (url) => {
+    await window.remconAPI.settings.setSignalingUrl(url);
+    set({ signalingUrl: url });
+  },
+
+  setPreferredProvider: async (provider) => {
+    await window.remconAPI.settings.setPreferredProvider(provider);
+    set({ preferredProvider: provider });
+  },
+
+  setApiKey: async (provider, value) => {
+    await window.remconAPI.settings.setApiKey(provider, value);
+    set(provider === 'openai' ? { hasOpenAIKey: true } : { hasAnthropicKey: true });
+  },
+}));
