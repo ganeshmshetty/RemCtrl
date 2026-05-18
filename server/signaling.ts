@@ -2,7 +2,10 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 
-const PORT = Number(process.env.PORT ?? 3001);
+let PORT = Number(process.env.PORT || 3001);
+if (isNaN(PORT) || PORT === 0) {
+  PORT = 3001;
+}
 const PIN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 interface Room {
