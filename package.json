@@ -12,9 +12,31 @@
     "build:renderer": "vite build",
     "build:main": "node build-electron.mjs",
     "build": "npm run build:renderer && npm run build:main",
+    "pack": "npm run build && electron-builder --mac --win --linux",
     "typecheck": "tsc --noEmit",
     "start": "NODE_ENV=production electron dist/main/index.cjs",
     "lint": "eslint ."
+  },
+  "build": {
+    "appId": "com.remcon.app",
+    "productName": "Remcon",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "mac": {
+      "target": "dmg",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^3.4.0",

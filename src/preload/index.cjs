@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld('remconAPI', {
   webrtc: {
     sendSignal: (signal) => ipcRenderer.invoke('webrtc:sendSignal', signal),
   },
+
+  // ── App / Diagnostics ─────────────────────────────────────────────────────
+  app: {
+    getDiagnostics: () => ipcRenderer.invoke('app:getDiagnostics'),
+  },
   
   // ── Settings ──────────────────────────────────────────────────────────────
   settings: {

@@ -8,6 +8,9 @@ import {
 } from 'electron';
 import path from 'path';
 import { registerIpcHandlers } from './ipc-handlers.js';
+import { closeBrowser } from './browser-manager.js';
+import { cancelAgentCommand } from './agent-executor.js';
+import { cancelWorkflow } from './workflow-executor.js';
 
 // __dirname is available natively in CJS (esbuild target: cjs)
 
@@ -109,6 +112,14 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+// Cancel any running agent/workflow and close the Playwright browser before quitting.
+app.on('before-quit', async () => {
+  cancelAgentCommand();
+  cancelWorkflow();
+  await closeBrowser().catch(() => {});
 });
 
 // Security: block navigation away from the app

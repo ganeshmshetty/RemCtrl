@@ -177,7 +177,25 @@ export interface DesktopSource {
   name: string;
 }
 
+export interface AppDiagnostics {
+  browserRunning: boolean;
+  agentRunning: boolean;
+  workflowRunning: boolean;
+  signalingConnected: boolean;
+  signalingRole: string | null;
+  hasOpenAIKey: boolean;
+  hasAnthropicKey: boolean;
+  preferredProvider: string;
+  platform: NodeJS.Platform;
+  electronVersion: string;
+  nodeVersion: string;
+  appVersion: string;
+}
+
 export interface RemconAPI {
+  app: {
+    getDiagnostics: () => Promise<AppDiagnostics>;
+  };
   host: {
     start: () => Promise<void>;
     stop: () => Promise<void>;

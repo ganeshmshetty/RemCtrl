@@ -8,6 +8,7 @@ import { ControllerSession } from './screens/ControllerSession';
 import { Settings } from './screens/Settings';
 import { WorkflowLibrary } from './screens/WorkflowLibrary';
 import { WorkflowEditor } from './screens/WorkflowEditor';
+import { Diagnostics } from './screens/Diagnostics';
 
 export default function App() {
   const { setHostState, setControllerState, setPendingControllerId, setPin, setError } =
@@ -40,6 +41,7 @@ export default function App() {
       <Route path="/workflows" element={<WorkflowLibrary />} />
       <Route path="/workflows/new" element={<WorkflowEditor />} />
       <Route path="/workflows/:id" element={<WorkflowEditor />} />
+      <Route path="/diagnostics" element={<Diagnostics />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

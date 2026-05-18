@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Monitor, Wifi, Settings, BookOpen } from 'lucide-react';
+import { Monitor, Wifi, Settings, BookOpen, Activity } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useState } from 'react';
 
@@ -39,6 +39,13 @@ export function Home() {
           onClick={() => navigate('/workflows')}
         >
           <BookOpen size={16} />
+        </button>
+        <button
+          className="icon-btn"
+          title="Diagnostics"
+          onClick={() => navigate('/diagnostics')}
+        >
+          <Activity size={16} />
         </button>
         <button
           className="icon-btn"

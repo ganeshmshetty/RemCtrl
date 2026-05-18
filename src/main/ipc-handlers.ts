@@ -23,7 +23,7 @@ import {
   getApiKey,
 } from './storage.js';
 import { SignalingClient } from './signaling-client.js';
-import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard } from './browser-manager.js';
+import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard, isBrowserRunning } from './browser-manager.js';
 import { runAgentCommand, cancelAgentCommand, isAgentRunning } from './agent-executor.js';
 import { runWorkflow, cancelWorkflow, isWorkflowRunning } from './workflow-executor.js';
 import type { AgentWorkflowBatchPayload } from '../shared/types.js';
@@ -255,6 +255,26 @@ export function registerIpcHandlers(win: BrowserWindow) {
   ipcMain.handle('browser:cancelWorkflow', async () => {
     cancelWorkflow();
     return { ok: true };
+  });
+
+  // ── Diagnostics ────────────────────────────────────────────────────
+
+  ipcMain.handle('app:getDiagnostics', async () => {
+    const provider = (() => { try { return getPreferredProvider(); } catch { return 'unknown'; } })();
+    return {
+      browserRunning: isBrowserRunning(),
+      agentRunning: isAgentRunning(),
+      workflowRunning: isWorkflowRunning(),
+      signalingConnected: signalingClient !== null,
+      signalingRole: signalingClient?.getRole() ?? null,
+      hasOpenAIKey: hasApiKey('openai'),
+      hasAnthropicKey: hasApiKey('anthropic'),
+      preferredProvider: provider,
+      platform: process.platform,
+      electronVersion: process.versions.electron ?? 'unknown',
+      nodeVersion: process.versions.node,
+      appVersion: require('electron').app.getVersion(),
+    };
   });
 
   // ── WebRTC Signal Relay ───────────────────────────────────────────────────

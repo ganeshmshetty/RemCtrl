@@ -56,7 +56,7 @@ npm run build
 - **Phase 3** ✅ Manual takeover, coordinate mapping
 - **Phase 4** ✅ Agent prompt execution (Stagehand)
 - **Phase 5** ✅ Remote workflow runs
-- **Phase 6** ⬜ Hardening, packaging
+- **Phase 6** ✅ Hardening, packaging
 
 ## Key Constraints
 
