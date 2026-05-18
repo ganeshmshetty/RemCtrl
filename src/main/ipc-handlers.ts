@@ -8,6 +8,7 @@ import {
   LocalWorkflowSchema,
   RemoteMousePayloadSchema,
   RemoteKeyboardPayloadSchema,
+  AgentPromptSchema,
 } from '../shared/schemas.js';
 import {
   hasApiKey,
@@ -19,9 +20,11 @@ import {
   listWorkflows,
   saveWorkflow,
   deleteWorkflow,
+  getApiKey,
 } from './storage.js';
 import { SignalingClient } from './signaling-client.js';
 import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard } from './browser-manager.js';
+import { runAgentCommand, cancelAgentCommand, isAgentRunning } from './agent-executor.js';
 
 let signalingClient: SignalingClient | null = null;
 
@@ -172,6 +175,50 @@ export function registerIpcHandlers(win: BrowserWindow) {
   ipcMain.handle('browser:resetProfile', async () => {
     await closeBrowser();
     console.log('[main] browser:resetProfile done');
+  });
+
+  // ── Agent Execution ────────────────────────────────────────────────────────
+
+  ipcMain.handle('browser:startAgent', async (_e, rawPayload: unknown) => {
+    const parsed = AgentPromptSchema.safeParse(rawPayload);
+    if (!parsed.success) {
+      return { ok: false, error: `Invalid payload: ${parsed.error.message}` };
+    }
+    if (isAgentRunning()) {
+      return { ok: false, error: 'An agent command is already running.' };
+    }
+
+    const provider = getPreferredProvider();
+    const apiKey = getApiKey(provider);
+    if (!apiKey) {
+      return { ok: false, error: `No API key configured for provider "${provider}". Go to Settings.` };
+    }
+
+    const { commandId, action, instruction } = parsed.data;
+
+    // Run async — do not await. Status/logs are pushed back to renderer via events.
+    runAgentCommand(
+      commandId,
+      action,
+      instruction,
+      apiKey,
+      provider,
+      (status) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:status', status);
+      },
+      (log) => {
+        if (!win.isDestroyed()) win.webContents.send('agent:log', log);
+      },
+    ).catch((err) => {
+      console.error('[agent] Unexpected error in runAgentCommand:', err);
+    });
+
+    return { ok: true };
+  });
+
+  ipcMain.handle('browser:cancelAgent', async () => {
+    cancelAgentCommand();
+    return { ok: true };
   });
 
   // ── WebRTC Signal Relay ───────────────────────────────────────────────────

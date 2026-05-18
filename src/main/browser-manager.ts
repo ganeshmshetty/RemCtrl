@@ -1,9 +1,10 @@
 import { chromium } from 'playwright';
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page, BrowserServer } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata } from '../shared/types.js';
 
 export const BROWSER_TITLE = 'RemCon Host Browser';
 
+let browserServer: BrowserServer | null = null;
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;
 let page: Page | null = null;
@@ -14,7 +15,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     return BROWSER_TITLE;
   }
 
-  browser = await chromium.launch({
+  browserServer = await chromium.launchServer({
     headless: false,
     args: [
       '--window-size=1280,800',
@@ -22,6 +23,8 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
       `--window-name=${BROWSER_TITLE}`,
     ],
   });
+
+  browser = await chromium.connect(browserServer.wsEndpoint());
 
   context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
@@ -31,10 +34,9 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 
   // Set a unique title so desktopCapturer can find this window
   await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
-  // Set a unique title so desktopCapturer can identify this window
   await page.evaluate(`document.title = ${JSON.stringify(BROWSER_TITLE)}`);
 
-  console.log('[browser] Playwright Chromium launched');
+  console.log('[browser] Playwright Chromium launched with CDP:', browserServer.wsEndpoint());
   return BROWSER_TITLE;
 }
 
@@ -42,9 +44,11 @@ export async function closeBrowser(): Promise<void> {
   try {
     await context?.close();
     await browser?.close();
+    await browserServer?.close();
   } catch {
     // ignore close errors
   }
+  browserServer = null;
   browser = null;
   context = null;
   page = null;
@@ -53,6 +57,7 @@ export async function closeBrowser(): Promise<void> {
 
 export function getPage(): Page | null { return page; }
 export function isBrowserRunning(): boolean { return browser !== null; }
+export function getCdpUrl(): string | null { return browserServer?.wsEndpoint() ?? null; }
 
 export function getCaptureMetadata() {
   if (!page) return null;

@@ -56,6 +56,8 @@ export function useHostWebRTC(isSessionActive: boolean) {
     let pc: RTCPeerConnection | null = null;
     let stream: MediaStream | null = null;
     let cleanupSignal: (() => void) | undefined;
+    let cleanupAgentStatus: (() => void) | undefined;
+    let cleanupAgentLog: (() => void) | undefined;
 
     async function startWebRTC() {
       try {
@@ -105,6 +107,22 @@ export function useHostWebRTC(isSessionActive: boolean) {
               await window.remconAPI.browser.injectMouse(msg.payload as any);
             } else if (msg.type === 'REMOTE_INPUT_KEYBOARD') {
               await window.remconAPI.browser.injectKeyboard(msg.payload as any);
+            } else if (msg.type === 'AGENT_PROMPT') {
+              const res = await window.remconAPI.browser.startAgent(msg.payload as any);
+              if (!res.ok) {
+                // Immediately emit a failed status back over the reliable channel
+                const errMsg: DataChannelMessage = {
+                  type: 'AGENT_STATUS_UPDATE',
+                  version: '1.0',
+                  timestamp: Date.now(),
+                  payload: {
+                    commandId: (msg.payload as any).commandId ?? 'unknown',
+                    state: 'failed',
+                    error: res.error,
+                  },
+                };
+                reliableChannel.send(JSON.stringify(errMsg));
+              }
             }
           } catch (err) {
             console.error('[host-webrtc] Error handling data channel message:', err);
@@ -113,6 +131,28 @@ export function useHostWebRTC(isSessionActive: boolean) {
 
         reliableChannel.onmessage = handleDataMessage;
         inputChannel.onmessage = handleDataMessage;
+
+        // Forward agent status/log events from Main process back to Controller
+        cleanupAgentStatus = window.remconAPI.on.agentStatus((payload) => {
+          if (reliableChannel.readyState === 'open') {
+            reliableChannel.send(JSON.stringify({
+              type: 'AGENT_STATUS_UPDATE',
+              version: '1.0',
+              timestamp: Date.now(),
+              payload,
+            } satisfies DataChannelMessage));
+          }
+        });
+        cleanupAgentLog = window.remconAPI.on.agentLog((payload) => {
+          if (reliableChannel.readyState === 'open') {
+            reliableChannel.send(JSON.stringify({
+              type: 'AGENT_LOG',
+              version: '1.0',
+              timestamp: Date.now(),
+              payload,
+            } satisfies DataChannelMessage));
+          }
+        });
 
         // Outgoing ICE → relay to controller via signaling
         pc.onicecandidate = (e) => {
@@ -175,6 +215,8 @@ export function useHostWebRTC(isSessionActive: boolean) {
     return () => {
       cancelled = true;
       cleanupSignal?.();
+      cleanupAgentStatus?.();
+      cleanupAgentLog?.();
       stream?.getTracks().forEach((t) => t.stop());
       pc?.close();
       pc = null;
@@ -196,6 +238,7 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const reliableChannelRef = useRef<RTCDataChannel | null>(null);
   const inputChannelRef = useRef<RTCDataChannel | null>(null);
+  const onMessageRef = useRef<((msg: DataChannelMessage) => void) | null>(null);
 
   // Always-on: create PC and listen for signals on mount
   useEffect(() => {
@@ -209,6 +252,12 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
       const channel = e.channel;
       if (channel.label === 'remcon-reliable') {
         reliableChannelRef.current = channel;
+        channel.onmessage = (ev) => {
+          try {
+            const msg = JSON.parse(ev.data) as DataChannelMessage;
+            onMessageRef.current?.(msg);
+          } catch { /* ignore malformed */ }
+        };
       } else if (channel.label === 'remcon-input') {
         inputChannelRef.current = channel;
       }
@@ -296,5 +345,9 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
     }
   };
 
-  return { videoRef, status, error, sendData };
+  const onMessage = (cb: (msg: DataChannelMessage) => void) => {
+    onMessageRef.current = cb;
+  };
+
+  return { videoRef, status, error, sendData, onMessage };
 }

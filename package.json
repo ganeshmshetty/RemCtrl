@@ -17,6 +17,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@browserbasehq/stagehand": "^3.4.0",
     "express": "^5.2.1",
     "lucide-react": "^1.16.0",
     "playwright": "^1.60.0",

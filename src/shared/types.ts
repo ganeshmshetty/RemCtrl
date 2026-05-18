@@ -195,6 +195,8 @@ export interface RemconAPI {
     resetProfile: () => Promise<void>;
     injectMouse: (payload: RemoteMousePayload) => Promise<void>;
     injectKeyboard: (payload: RemoteKeyboardPayload) => Promise<void>;
+    startAgent: (payload: AgentPromptPayload) => Promise<{ ok: boolean; error?: string }>;
+    cancelAgent: () => Promise<{ ok: boolean }>;
   };
   webrtc: {
     sendSignal: (signal: unknown) => Promise<void>;

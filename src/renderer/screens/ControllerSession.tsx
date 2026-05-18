@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio } from 'lucide-react';
+import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio, X } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import { useControllerWebRTC } from '../hooks/useWebRTC';
+import type { AgentStatusPayload, AgentLogPayload } from '../../shared/types';
 
 export function ControllerSession() {
   const navigate = useNavigate();
@@ -38,23 +39,56 @@ export function ControllerSession() {
 
   function handleSendPrompt(e: React.FormEvent) {
     e.preventDefault();
-    if (!prompt.trim()) return;
-    // Phase 4: send over WebRTC data channel
-    // For now just log to chat
+    const text = prompt.trim();
+    if (!text) return;
+
+    const commandId = crypto.randomUUID();
+
+    // Append user message to chat immediately
     useAgentStore.getState().appendMessage({
-      id: `user-${Date.now()}`,
+      id: `user-${commandId}`,
       sender: 'user',
       type: 'prompt',
-      text: prompt.trim(),
+      text,
       timestamp: Date.now(),
     });
+
+    // Send AGENT_PROMPT over reliable data channel to Host
+    sendData({
+      type: 'AGENT_PROMPT',
+      version: '1.0',
+      timestamp: Date.now(),
+      id: commandId,
+      payload: { commandId, action: 'act', instruction: text },
+    }, true);
+
     setPrompt('');
+  }
+
+  function handleCancelAgent() {
+    // Ask host to cancel via a simple signal (can be extended later)
+    sendData({
+      type: 'TAKEOVER_REQUEST', // repurpose as a cancel signal for now
+      version: '1.0',
+      timestamp: Date.now(),
+      payload: {},
+    }, true);
   }
 
   const isConnected = controllerState === 'SESSION_ACTIVE' || controllerState === 'CONTROLLING_REMOTELY';
   const isConnecting = ['SIGNALING_CONNECTING', 'WAITING_FOR_HOST_APPROVAL', 'WEBRTC_CONNECTING'].includes(controllerState);
 
-  const { videoRef, status: rtcStatus, sendData } = useControllerWebRTC(isConnected);
+  const { videoRef, status: rtcStatus, sendData, onMessage } = useControllerWebRTC(isConnected);
+
+  // Phase 4: Handle incoming agent messages from Host via data channel
+  onMessage((msg) => {
+    const store = useAgentStore.getState();
+    if (msg.type === 'AGENT_STATUS_UPDATE') {
+      store.handleAgentStatus(msg.payload as AgentStatusPayload);
+    } else if (msg.type === 'AGENT_LOG') {
+      store.handleAgentLog(msg.payload as AgentLogPayload);
+    }
+  });
 
   // Phase 3: Input Handling
   const lastMoveTimeRef = useRef<number>(0);
@@ -271,6 +305,17 @@ export function ControllerSession() {
               <Send size={14} />
               Send
             </button>
+            {agentStatus === 'running' && (
+              <button
+                type="button"
+                className="btn btn-ghost ctrl-send-btn"
+                onClick={handleCancelAgent}
+                title="Request agent cancellation"
+              >
+                <X size={14} />
+                Cancel
+              </button>
+            )}
           </form>
         </div>
       </div>

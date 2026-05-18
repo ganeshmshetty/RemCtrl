@@ -53,7 +53,7 @@ npm run build
 - **Phase 0** ✅ Project skeleton, routing, settings storage, workflow storage
 - **Phase 1** ✅ Socket.io signaling, PIN registration, session state, host approval
 - **Phase 2** ✅ Playwright browser launch, capture, WebRTC streaming
-- **Phase 3** ⬜ Manual takeover, coordinate mapping
+- **Phase 3** ✅ Manual takeover, coordinate mapping
 - **Phase 4** ⬜ Agent prompt execution (Stagehand)
 - **Phase 5** ⬜ Remote workflow runs
 - **Phase 6** ⬜ Hardening, packaging
