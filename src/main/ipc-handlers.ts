@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, desktopCapturer } from 'electron';
+import { ipcMain, BrowserWindow, desktopCapturer, app } from 'electron';
 import {
   ApproveControllerSchema,
   ConnectPinSchema,
@@ -9,6 +9,7 @@ import {
   RemoteMousePayloadSchema,
   RemoteKeyboardPayloadSchema,
   AgentPromptSchema,
+  AgentWorkflowBatchSchema,
 } from '../shared/schemas.js';
 import {
   hasApiKey,
@@ -23,7 +24,7 @@ import {
   getApiKey,
 } from './storage.js';
 import { SignalingClient } from './signaling-client.js';
-import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard, isBrowserRunning } from './browser-manager.js';
+import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard, isBrowserRunning, resetProfile } from './browser-manager.js';
 import { runAgentCommand, cancelAgentCommand, isAgentRunning } from './agent-executor.js';
 import { runWorkflow, cancelWorkflow, isWorkflowRunning } from './workflow-executor.js';
 import type { AgentWorkflowBatchPayload } from '../shared/types.js';
@@ -195,8 +196,8 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('browser:resetProfile', async () => {
-    await closeBrowser();
-    console.log('[main] browser:resetProfile done');
+    await resetProfile();
+    return { ok: true };
   });
 
   // ── Agent Execution ───────────────────────────────────────────────────────
@@ -223,19 +224,19 @@ function registerIpcHandlers() {
   // ── Workflow Execution ────────────────────────────────────────────────────
 
   ipcMain.handle('browser:startWorkflow', async (_e, rawPayload: unknown) => {
-    // Basic shape validation
-    const p = rawPayload as any;
-    if (!p || typeof p !== 'object' || !p.workflowRunId || !Array.isArray(p.steps)) {
-      return { ok: false, error: 'Invalid workflow payload' };
+    let batch: AgentWorkflowBatchPayload;
+    try {
+      batch = AgentWorkflowBatchSchema.parse(rawPayload);
+    } catch (err) {
+      return { ok: false, error: `Invalid workflow payload: ${err instanceof Error ? err.message : String(err)}` };
     }
+
     if (isWorkflowRunning()) {
       return { ok: false, error: 'A workflow is already running.' };
     }
     if (isAgentRunning()) {
       return { ok: false, error: 'An agent command is running. Cancel it first.' };
     }
-
-    const batch = rawPayload as AgentWorkflowBatchPayload;
 
     runWorkflow(
       batch,
@@ -262,7 +263,7 @@ function registerIpcHandlers() {
       browserRunning: isBrowserRunning(),
       agentRunning: isAgentRunning(),
       workflowRunning: isWorkflowRunning(),
-      signalingConnected: signalingClient !== null,
+      signalingConnected: signalingClient?.isConnected() ?? false,
       signalingRole: signalingClient?.getRole() ?? null,
       hasOpenAIKey: hasApiKey('openai'),
       hasAnthropicKey: hasApiKey('anthropic'),
@@ -270,7 +271,7 @@ function registerIpcHandlers() {
       platform: process.platform,
       electronVersion: process.versions.electron ?? 'unknown',
       nodeVersion: process.versions.node,
-      appVersion: require('electron').app.getVersion(),
+      appVersion: app.getVersion(),
     };
   });
 

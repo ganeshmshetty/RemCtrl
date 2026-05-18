@@ -58,6 +58,13 @@ export const AgentPromptSchema = z.object({
   instruction: z.string().min(1).max(5000),
 });
 
+export const AgentWorkflowBatchSchema = z.object({
+  workflowRunId: z.string().uuid(),
+  name: z.string().min(1),
+  startUrl: z.string().url().optional(),
+  steps: z.array(WorkflowStepSchema).min(1).max(100),
+});
+
 // ─── Capture Metadata Schema ──────────────────────────────────────────────────
 
 export const CaptureMetadataSchema = z.object({

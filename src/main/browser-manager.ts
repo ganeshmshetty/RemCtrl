@@ -59,6 +59,18 @@ export function getPage(): Page | null { return page; }
 export function isBrowserRunning(): boolean { return browser !== null; }
 export function getCdpUrl(): string | null { return browserServer?.wsEndpoint() ?? null; }
 
+export async function resetProfile(): Promise<void> {
+  if (context) {
+    await context.clearCookies();
+  }
+  if (page) {
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    }).catch(() => {});
+  }
+}
+
 export function getCaptureMetadata() {
   if (!page) return null;
   const vp = page.viewportSize();
@@ -88,6 +100,7 @@ export async function injectMouse(payload: RemoteMousePayload, meta: CaptureMeta
   } else if (payload.action === 'click') {
     await page.mouse.click(x, y, { button: payload.button || 'left' });
   } else if (payload.action === 'scroll' && payload.deltaY) {
+    await page.mouse.move(x, y);
     await page.mouse.wheel(0, payload.deltaY);
   }
 }

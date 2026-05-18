@@ -158,6 +158,9 @@ export async function runWorkflow(
       onLog({ level: 'error', message: `Workflow error: ${msg}` });
     }
   } finally {
+    if (stagehand) {
+      await stagehand.close().catch(() => {});
+    }
     activeRunId = null;
     cancelRequested = false;
     stagehand = null;
@@ -173,9 +176,11 @@ async function executeStep(
   instruction: string,
 ): Promise<unknown> {
   const STEP_TIMEOUT_MS = 90_000;
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`Step timed out after ${STEP_TIMEOUT_MS / 1000}s`)), STEP_TIMEOUT_MS),
-  );
+  let timeoutId: NodeJS.Timeout;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`Step timed out after ${STEP_TIMEOUT_MS / 1000}s`)), STEP_TIMEOUT_MS);
+  });
 
   const work = (async () => {
     if (action === 'act') return await sh.act(instruction, { page });
@@ -184,5 +189,9 @@ async function executeStep(
     throw new Error(`Unknown step action: ${action}`);
   })();
 
-  return Promise.race([work, timeout]);
+  try {
+    return await Promise.race([work, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
 }

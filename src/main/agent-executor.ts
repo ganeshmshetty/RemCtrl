@@ -78,12 +78,30 @@ export async function runAgentCommand(
 
     await stagehand.init();
 
+    let timeoutId: NodeJS.Timeout;
+    let cancelIntervalId: NodeJS.Timeout;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(`Command ${commandId} timed out after ${COMMAND_TIMEOUT_MS}ms`)), COMMAND_TIMEOUT_MS);
+    });
+
+    const cancelPromise = new Promise<never>((_, reject) => {
+      cancelIntervalId = setInterval(() => {
+        if (cancelRequested) {
+          reject(new Error('Cancelled'));
+        }
+      }, 200);
+    });
+
     // Race: command vs timeout vs cancel
     const result = await Promise.race([
       executeAction(stagehand, page, action, instruction),
-      timeout(COMMAND_TIMEOUT_MS, commandId),
-      waitForCancel(),
+      timeoutPromise,
+      cancelPromise,
     ]);
+
+    clearTimeout(timeoutId!);
+    clearInterval(cancelIntervalId!);
 
     if (cancelRequested) {
       onStatus({ commandId, state: 'cancelled' });
@@ -98,6 +116,9 @@ export async function runAgentCommand(
       onStatus({ commandId, state: 'failed', error: msg });
     }
   } finally {
+    if (stagehand) {
+      await stagehand.close().catch(() => {});
+    }
     activeCommandId = null;
     cancelRequested = false;
     stagehand = null;
@@ -125,19 +146,4 @@ async function executeAction(sh: Stagehand, page: Page, action: string, instruct
   throw new Error(`Unknown action: ${action}`);
 }
 
-function timeout(ms: number, commandId: string): Promise<never> {
-  return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`Command ${commandId} timed out after ${ms}ms`)), ms),
-  );
-}
-
-function waitForCancel(): Promise<never> {
-  return new Promise((_, reject) => {
-    const interval = setInterval(() => {
-      if (cancelRequested) {
-        clearInterval(interval);
-        reject(new Error('Cancelled'));
-      }
-    }, 200);
-  });
-}
+// (Removed leaking timeout/waitForCancel functions)

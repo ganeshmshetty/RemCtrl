@@ -18,6 +18,7 @@ export class SignalingClient {
   constructor(private readonly win: BrowserWindow) {}
 
   getRole() { return this.role; }
+  isConnected() { return this.socket?.connected ?? false; }
 
   // ─── Push helpers ────────────────────────────────────────────────────────
 
@@ -37,27 +38,58 @@ export class SignalingClient {
     this.role = 'host';
     this.pushHostState('REGISTERING_PIN');
 
-    const pin = generatePin();
     const socket = this.createSocket(signalingUrl);
     this.socket = socket;
 
     return new Promise((resolve, reject) => {
-      socket.once('connect', () => {
-        socket.emit(
-          'host:register',
-          { pin, capabilities: { version: '0.1.0', platform: process.platform } },
-          (ack: { success: boolean; error?: string }) => {
-            if (!ack.success) {
-              this.pushError(`PIN registration failed: ${ack.error}`);
-              this.pushHostState('DISCONNECTED');
-              socket.disconnect();
-              return reject(new Error(ack.error));
-            }
-            this.send('host:pin', pin);
-            this.pushHostState('WAITING_FOR_CONTROLLER');
-            resolve();
+      socket.once('connect', async () => {
+        let registered = false;
+        let attempts = 0;
+        let pin = '';
+        
+        while (!registered && attempts < 5) {
+          pin = generatePin();
+          attempts++;
+          
+          try {
+            const success = await new Promise<boolean>((res, rej) => {
+              socket.emit(
+                'host:register',
+                { pin, capabilities: { version: '0.1.0', platform: process.platform } },
+                (ack: { success: boolean; error?: string }) => {
+                  if (!ack.success) {
+                    if (ack.error === 'PIN already in use') {
+                      res(false);
+                    } else {
+                      rej(new Error(ack.error));
+                    }
+                  } else {
+                    res(true);
+                  }
+                }
+              );
+            });
+            
+            registered = success;
+          } catch (err) {
+            this.pushError(`PIN registration failed: ${err instanceof Error ? err.message : String(err)}`);
+            this.pushHostState('DISCONNECTED');
+            socket.disconnect();
+            return reject(err);
           }
-        );
+        }
+        
+        if (!registered) {
+          const err = new Error('Could not generate a unique PIN after 5 attempts');
+          this.pushError(err.message);
+          this.pushHostState('DISCONNECTED');
+          socket.disconnect();
+          return reject(err);
+        }
+
+        this.send('host:pin', pin);
+        this.pushHostState('WAITING_FOR_CONTROLLER');
+        resolve();
       });
 
       socket.once('connect_error', (err) => {
@@ -94,7 +126,7 @@ export class SignalingClient {
 
   approveController(controllerId: string) {
     this.socket?.emit('host:approve', { controllerId });
-    this.pushHostState('SESSION_ACTIVE');
+    this.pushHostState('WEBRTC_CONNECTING');
   }
 
   rejectController(controllerId: string) {
