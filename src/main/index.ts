@@ -7,7 +7,7 @@ import {
   session,
 } from 'electron';
 import path from 'path';
-import { registerIpcHandlers } from './ipc-handlers.js';
+import { setMainWindow } from './ipc-handlers.js';
 import { closeBrowser } from './browser-manager.js';
 import { cancelAgentCommand } from './agent-executor.js';
 import { cancelWorkflow } from './workflow-executor.js';
@@ -67,7 +67,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   const win = createWindow();
-  registerIpcHandlers(win);
+  setMainWindow(win);
 
   // ── Screen capture: modern Electron approach ────────────────────────────
   // Intercept getDisplayMedia() calls from the renderer and programmatically
@@ -103,7 +103,7 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const newWin = createWindow();
-      registerIpcHandlers(newWin);
+      setMainWindow(newWin);
     }
   });
 });

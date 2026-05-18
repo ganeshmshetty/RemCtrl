@@ -29,18 +29,33 @@ import { runWorkflow, cancelWorkflow, isWorkflowRunning } from './workflow-execu
 import type { AgentWorkflowBatchPayload } from '../shared/types.js';
 
 let signalingClient: SignalingClient | null = null;
+let currentWindow: BrowserWindow | null = null;
+let isRegistered = false;
 
-function getOrCreateClient(win: BrowserWindow): SignalingClient {
-  if (!signalingClient) signalingClient = new SignalingClient(win);
+export function setMainWindow(win: BrowserWindow) {
+  currentWindow = win;
+  if (!isRegistered) {
+    registerIpcHandlers();
+    isRegistered = true;
+  }
+}
+
+function getOrCreateClient(): SignalingClient {
+  if (!signalingClient) {
+    if (!currentWindow) throw new Error("No main window set in ipc-handlers");
+    signalingClient = new SignalingClient(currentWindow);
+  }
   return signalingClient;
 }
 
 function destroyClient() {
-  signalingClient?.disconnect();
+  if (signalingClient) {
+    signalingClient.disconnect();
+  }
   signalingClient = null;
 }
 
-export function registerIpcHandlers(win: BrowserWindow) {
+function registerIpcHandlers() {
 
   // ── Settings ──────────────────────────────────────────────────────────────
 
@@ -81,21 +96,19 @@ export function registerIpcHandlers(win: BrowserWindow) {
     deleteWorkflow(workflowId);
   });
 
-  // ── Host ──────────────────────────────────────────────────────────────────
+  // ── WebRTC Signaling Connection ───────────────────────────────────────────
 
   ipcMain.handle('host:start', async () => {
     destroyClient();
-    const client = getOrCreateClient(win);
+    const client = getOrCreateClient();
     const url = getSignalingUrl();
     try {
       await client.startHost(url);
     } catch (err) {
-      // signaling-client.ts calls pushError before throwing in known paths,
-      // but guard here in case an unexpected error escapes without notifying.
       const msg = err instanceof Error ? err.message : String(err);
-      // Ensure the renderer always sees the error regardless of where it throws
-      if (!win.isDestroyed()) win.webContents.send('app:error', msg);
+      if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('app:error', msg);
     }
+    return { ok: true };
   });
 
   ipcMain.handle('host:stop', async () => {
@@ -115,30 +128,37 @@ export function registerIpcHandlers(win: BrowserWindow) {
 
   // ── Controller ────────────────────────────────────────────────────────────
 
-  ipcMain.handle('controller:connect', async (_e, pin: unknown) => {
-    const { pin: p } = ConnectPinSchema.parse({ pin });
+  ipcMain.handle('controller:connect', async (_e, pin: string) => {
+    const parsed = ConnectPinSchema.parse({ pin });
     destroyClient();
-    const client = getOrCreateClient(win);
+    const client = getOrCreateClient();
     const url = getSignalingUrl();
     try {
-      await client.connectAsController(url, p);
+      await client.connectAsController(url, parsed.pin);
     } catch (err) {
-      // pushError already sent to renderer; suppress Electron's unhandled log
+      // Error already sent to renderer by pushError
     }
+    return { ok: true };
   });
 
   ipcMain.handle('controller:disconnect', async () => {
     destroyClient();
   });
 
-  // ── Browser ───────────────────────────────────────────────────────────────
+  // ── Browser Management ────────────────────────────────────────────────────
 
-  ipcMain.handle('browser:launch', async () => {
-    const title = await launchBrowser();
-    // Push capture metadata to renderer after launch
-    const meta = getCaptureMetadata();
-    if (meta) win.webContents.send('browser:captureMetadata', meta);
-    return title;
+  ipcMain.handle('browser:launch', async (_e, startUrl?: unknown) => {
+    try {
+      const title = await launchBrowser(
+        typeof startUrl === 'string' ? startUrl : undefined,
+        (meta) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('browser:captureMetadata', meta); },
+        (title) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('browser:windowTitle', title); },
+      );
+      return title;
+    } catch (err) {
+      console.error('[ipc] Failed to launch browser:', err);
+      throw err;
+    }
   });
 
   ipcMain.handle('browser:close', async () => {
@@ -179,43 +199,20 @@ export function registerIpcHandlers(win: BrowserWindow) {
     console.log('[main] browser:resetProfile done');
   });
 
-  // ── Agent Execution ────────────────────────────────────────────────────────
+  // ── Agent Execution ───────────────────────────────────────────────────────
 
   ipcMain.handle('browser:startAgent', async (_e, rawPayload: unknown) => {
-    const parsed = AgentPromptSchema.safeParse(rawPayload);
-    if (!parsed.success) {
-      return { ok: false, error: `Invalid payload: ${parsed.error.message}` };
+    const payload = AgentPromptSchema.parse(rawPayload);
+    try {
+      await runAgentCommand(
+        payload,
+        (status) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('agent:status', status); },
+        (log) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('agent:log', log); },
+      );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-    if (isAgentRunning()) {
-      return { ok: false, error: 'An agent command is already running.' };
-    }
-
-    const provider = getPreferredProvider();
-    const apiKey = getApiKey(provider);
-    if (!apiKey) {
-      return { ok: false, error: `No API key configured for provider "${provider}". Go to Settings.` };
-    }
-
-    const { commandId, action, instruction } = parsed.data;
-
-    // Run async — do not await. Status/logs are pushed back to renderer via events.
-    runAgentCommand(
-      commandId,
-      action,
-      instruction,
-      apiKey,
-      provider,
-      (status) => {
-        if (!win.isDestroyed()) win.webContents.send('agent:status', status);
-      },
-      (log) => {
-        if (!win.isDestroyed()) win.webContents.send('agent:log', log);
-      },
-    ).catch((err) => {
-      console.error('[agent] Unexpected error in runAgentCommand:', err);
-    });
-
-    return { ok: true };
   });
 
   ipcMain.handle('browser:cancelAgent', async () => {
@@ -242,9 +239,9 @@ export function registerIpcHandlers(win: BrowserWindow) {
 
     runWorkflow(
       batch,
-      (status) => { if (!win.isDestroyed()) win.webContents.send('workflow:runStatus', status); },
-      (stepStatus) => { if (!win.isDestroyed()) win.webContents.send('workflow:stepStatus', stepStatus); },
-      (log) => { if (!win.isDestroyed()) win.webContents.send('agent:log', log); },
+      (status) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('workflow:runStatus', status); },
+      (stepStatus) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('workflow:stepStatus', stepStatus); },
+      (log) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('agent:log', log); },
     ).catch((err) => {
       console.error('[workflow] Unexpected error:', err);
     });
