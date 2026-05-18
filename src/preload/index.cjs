@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('remconAPI', {
     injectKeyboard: (payload) => ipcRenderer.invoke('browser:injectKeyboard', payload),
     startAgent: (payload) => ipcRenderer.invoke('browser:startAgent', payload),
     cancelAgent: () => ipcRenderer.invoke('browser:cancelAgent'),
+    startWorkflow: (payload) => ipcRenderer.invoke('browser:startWorkflow', payload),
+    cancelWorkflow: () => ipcRenderer.invoke('browser:cancelWorkflow'),
   },
 
   // ── WebRTC Signal Relay ───────────────────────────────────────────────────
@@ -114,6 +116,16 @@ contextBridge.exposeInMainWorld('remconAPI', {
       const listener = (_event, title) => cb(title);
       ipcRenderer.on('browser:windowTitle', listener);
       return () => ipcRenderer.removeListener('browser:windowTitle', listener);
+    },
+    workflowRunStatus: (cb) => {
+      const listener = (_event, status) => cb(status);
+      ipcRenderer.on('workflow:runStatus', listener);
+      return () => ipcRenderer.removeListener('workflow:runStatus', listener);
+    },
+    workflowStepStatus: (cb) => {
+      const listener = (_event, status) => cb(status);
+      ipcRenderer.on('workflow:stepStatus', listener);
+      return () => ipcRenderer.removeListener('workflow:stepStatus', listener);
     },
   },
 });

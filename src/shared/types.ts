@@ -197,6 +197,8 @@ export interface RemconAPI {
     injectKeyboard: (payload: RemoteKeyboardPayload) => Promise<void>;
     startAgent: (payload: AgentPromptPayload) => Promise<{ ok: boolean; error?: string }>;
     cancelAgent: () => Promise<{ ok: boolean }>;
+    startWorkflow: (payload: AgentWorkflowBatchPayload) => Promise<{ ok: boolean; error?: string }>;
+    cancelWorkflow: () => Promise<{ ok: boolean }>;
   };
   webrtc: {
     sendSignal: (signal: unknown) => Promise<void>;
@@ -226,6 +228,8 @@ export interface RemconAPI {
     webrtcSignal: (cb: (signal: unknown) => void) => () => void;
     captureMetadata: (cb: (meta: CaptureMetadata) => void) => () => void;
     windowTitle: (cb: (title: string) => void) => () => void;
+    workflowRunStatus: (cb: (status: WorkflowRunStatus) => void) => () => void;
+    workflowStepStatus: (cb: (status: WorkflowStepStatus) => void) => () => void;
   };
 }
 

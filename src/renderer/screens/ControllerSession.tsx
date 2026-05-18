@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio, X } from 'lucide-react';
+import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio, X, Play, StopCircle, ChevronRight } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import { useControllerWebRTC } from '../hooks/useWebRTC';
-import type { AgentStatusPayload, AgentLogPayload } from '../../shared/types';
+import type { AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, LocalWorkflow } from '../../shared/types';
 
 export function ControllerSession() {
   const navigate = useNavigate();
   const location = useLocation();
   const { controllerState, error, reset } = useConnectionStore();
-  const { isTakeoverActive, agentStatus, chatHistory, setTakeoverActive } = useAgentStore();
+  const {
+    isTakeoverActive, agentStatus, chatHistory, setTakeoverActive,
+    workflowRunState, workflowStepStatuses,
+    clearWorkflow,
+  } = useAgentStore();
   const [prompt, setPrompt] = useState('');
+  const [workflows, setWorkflows] = useState<LocalWorkflow[]>([]);
+  const [showWorkflowPicker, setShowWorkflowPicker] = useState(false);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<LocalWorkflow | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const pin = (location.state as { pin?: string })?.pin ?? '';
@@ -26,6 +33,11 @@ export function ControllerSession() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
+
+  // Load workflow library for "Run on Host" picker
+  useEffect(() => {
+    window.remconAPI?.workflows.list().then(setWorkflows).catch(() => {});
+  }, []);
 
   async function handleDisconnect() {
     await window.remconAPI?.controller.disconnect();
@@ -66,13 +78,31 @@ export function ControllerSession() {
   }
 
   function handleCancelAgent() {
-    // Ask host to cancel via a simple signal (can be extended later)
+    sendData({ type: 'AGENT_PROMPT', version: '1.0', timestamp: Date.now(), payload: { commandId: '__cancel__', action: 'act', instruction: '' } }, true);
+    window.remconAPI?.browser.cancelAgent();
+  }
+
+  function handleRunWorkflow() {
+    if (!selectedWorkflow) return;
+    const workflowRunId = crypto.randomUUID();
+    clearWorkflow();
     sendData({
-      type: 'TAKEOVER_REQUEST', // repurpose as a cancel signal for now
+      type: 'AGENT_WORKFLOW_BATCH',
       version: '1.0',
       timestamp: Date.now(),
-      payload: {},
+      payload: {
+        workflowRunId,
+        workflowId: selectedWorkflow.id,
+        name: selectedWorkflow.name,
+        startUrl: selectedWorkflow.startUrl,
+        steps: selectedWorkflow.steps,
+      },
     }, true);
+    setShowWorkflowPicker(false);
+  }
+
+  function handleCancelWorkflow() {
+    sendData({ type: 'WORKFLOW_CANCEL', version: '1.0', timestamp: Date.now(), payload: {} }, true);
   }
 
   const isConnected = controllerState === 'SESSION_ACTIVE' || controllerState === 'CONTROLLING_REMOTELY';
@@ -80,13 +110,17 @@ export function ControllerSession() {
 
   const { videoRef, status: rtcStatus, sendData, onMessage } = useControllerWebRTC(isConnected);
 
-  // Phase 4: Handle incoming agent messages from Host via data channel
+  // Phase 4+5: Handle incoming agent/workflow messages from Host via data channel
   onMessage((msg) => {
     const store = useAgentStore.getState();
     if (msg.type === 'AGENT_STATUS_UPDATE') {
       store.handleAgentStatus(msg.payload as AgentStatusPayload);
     } else if (msg.type === 'AGENT_LOG') {
       store.handleAgentLog(msg.payload as AgentLogPayload);
+    } else if (msg.type === 'WORKFLOW_RUN_STATUS') {
+      store.handleWorkflowRunStatus(msg.payload as WorkflowRunStatus);
+    } else if (msg.type === 'WORKFLOW_STEP_STATUS') {
+      store.handleWorkflowStepStatus(msg.payload as WorkflowStepStatus);
     }
   });
 
@@ -289,7 +323,7 @@ export function ControllerSession() {
               placeholder={isConnected ? 'Describe what to do…' : 'Waiting for connection…'}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              disabled={!isConnected || agentStatus === 'running'}
+              disabled={!isConnected || agentStatus === 'running' || workflowRunState === 'running'}
               rows={3}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -300,7 +334,7 @@ export function ControllerSession() {
             <button
               type="submit"
               className="btn btn-primary ctrl-send-btn"
-              disabled={!isConnected || !prompt.trim() || agentStatus === 'running'}
+              disabled={!isConnected || !prompt.trim() || agentStatus === 'running' || workflowRunState === 'running'}
             >
               <Send size={14} />
               Send
@@ -317,6 +351,88 @@ export function ControllerSession() {
               </button>
             )}
           </form>
+
+          {/* ── Workflow Panel ─────────────────────────────── */}
+          <div className="ctrl-workflow-section">
+            <div className="ctrl-workflow-header">
+              <BookOpen size={13} />
+              <span>Workflows</span>
+              <button
+                className="btn btn-ghost ctrl-wf-btn"
+                onClick={() => { setShowWorkflowPicker(!showWorkflowPicker); }}
+                disabled={!isConnected}
+                title="Run a saved workflow on Host"
+              >
+                <Play size={12} /> Run on Host
+              </button>
+            </div>
+
+            {/* Workflow Picker */}
+            {showWorkflowPicker && (
+              <div className="ctrl-wf-picker">
+                {workflows.length === 0 ? (
+                  <div className="ctrl-wf-picker-empty">
+                    No workflows saved yet.{' '}
+                    <button className="ctrl-wf-link" onClick={() => navigate('/workflows/new')}>Create one</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="ctrl-wf-list">
+                      {workflows.map((wf) => (
+                        <button
+                          key={wf.id}
+                          className={`ctrl-wf-item${selectedWorkflow?.id === wf.id ? ' ctrl-wf-item--selected' : ''}`}
+                          onClick={() => setSelectedWorkflow(wf)}
+                        >
+                          <ChevronRight size={11} />
+                          <span className="ctrl-wf-item-name">{wf.name}</span>
+                          <span className="ctrl-wf-item-steps">{wf.steps.length}s</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="ctrl-wf-actions">
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleRunWorkflow}
+                        disabled={!selectedWorkflow || workflowRunState === 'running'}
+                      >
+                        <Play size={12} /> Run
+                      </button>
+                      <button className="btn btn-ghost" onClick={() => setShowWorkflowPicker(false)}>Close</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Active workflow run status */}
+            {workflowRunState !== 'idle' && (
+              <div className="ctrl-wf-run">
+                <div className="ctrl-wf-run-header">
+                  {workflowRunState === 'running' && <Loader2 size={12} className="animate-spin" />}
+                  <span className={`badge badge-${workflowRunState === 'running' ? 'accent' : workflowRunState === 'completed' ? 'success' : 'danger'}`}>
+                    Workflow {workflowRunState}
+                  </span>
+                  {workflowRunState === 'running' && (
+                    <button className="btn btn-ghost ctrl-wf-cancel" onClick={handleCancelWorkflow} title="Cancel workflow">
+                      <StopCircle size={12} /> Cancel
+                    </button>
+                  )}
+                </div>
+                {workflowStepStatuses.length > 0 && (
+                  <div className="ctrl-wf-steps">
+                    {workflowStepStatuses.map((s) => (
+                      <div key={`${s.workflowRunId}-${s.stepId}`} className={`ctrl-wf-step ctrl-wf-step--${s.state}`}>
+                        <span className="ctrl-wf-step-idx">{s.index + 1}</span>
+                        <span className="ctrl-wf-step-state">{s.state}</span>
+                        {s.error && <span className="ctrl-wf-step-err" title={s.error}>✕</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -482,6 +598,91 @@ export function ControllerSession() {
         .badge-accent  { background: var(--accent-glow); color: var(--accent); }
         .badge-danger  { background: rgba(239,68,68,0.15); color: var(--danger); }
         .badge-success { background: rgba(34,197,94,0.15); color: var(--success); }
+
+        /* ── Workflow panel ── */
+        .ctrl-workflow-section {
+          border-top: 1px solid var(--border);
+          padding: 10px 16px 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .ctrl-workflow-header {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .ctrl-workflow-header span { flex: 1; }
+        .ctrl-wf-btn { height: 26px; padding: 0 8px; font-size: 11px; }
+        .ctrl-wf-picker {
+          background: var(--bg-overlay);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          overflow: hidden;
+        }
+        .ctrl-wf-picker-empty {
+          padding: 12px;
+          font-size: 12px;
+          color: var(--text-muted);
+          text-align: center;
+        }
+        .ctrl-wf-link {
+          background: none; border: none; color: var(--accent);
+          cursor: pointer; font-size: 12px; padding: 0; text-decoration: underline;
+        }
+        .ctrl-wf-list {
+          max-height: 140px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+        }
+        .ctrl-wf-item {
+          display: flex; align-items: center; gap: 6px;
+          padding: 8px 12px; border: none; background: transparent;
+          color: var(--text-secondary); cursor: pointer;
+          font-size: 12px; text-align: left;
+          transition: background var(--transition), color var(--transition);
+          border-bottom: 1px solid var(--border);
+        }
+        .ctrl-wf-item:last-child { border-bottom: none; }
+        .ctrl-wf-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+        .ctrl-wf-item--selected { background: var(--accent-glow); color: var(--accent); }
+        .ctrl-wf-item-name { flex: 1; }
+        .ctrl-wf-item-steps { font-size: 10px; color: var(--text-muted); }
+        .ctrl-wf-actions {
+          display: flex; gap: 6px; padding: 8px 12px;
+          border-top: 1px solid var(--border); background: var(--bg-surface);
+        }
+        .ctrl-wf-run {
+          background: var(--bg-overlay);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          padding: 8px 10px;
+          display: flex; flex-direction: column; gap: 6px;
+        }
+        .ctrl-wf-run-header {
+          display: flex; align-items: center; gap: 6px;
+        }
+        .ctrl-wf-cancel { height: 22px; padding: 0 6px; font-size: 10px; margin-left: auto; }
+        .ctrl-wf-steps {
+          display: flex; flex-wrap: wrap; gap: 4px;
+        }
+        .ctrl-wf-step {
+          display: flex; align-items: center; gap: 3px;
+          padding: 2px 7px; border-radius: 99px;
+          font-size: 10px; font-weight: 600;
+        }
+        .ctrl-wf-step--running  { background: var(--accent-glow); color: var(--accent); }
+        .ctrl-wf-step--completed { background: rgba(34,197,94,0.15); color: var(--success); }
+        .ctrl-wf-step--failed   { background: rgba(239,68,68,0.15); color: var(--danger); }
+        .ctrl-wf-step--skipped  { background: var(--bg-elevated); color: var(--text-muted); }
+        .ctrl-wf-step-idx { font-weight: 700; }
+        .ctrl-wf-step-err { cursor: help; }
       `}</style>
     </div>
   );

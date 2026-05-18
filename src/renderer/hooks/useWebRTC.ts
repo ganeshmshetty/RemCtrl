@@ -58,6 +58,8 @@ export function useHostWebRTC(isSessionActive: boolean) {
     let cleanupSignal: (() => void) | undefined;
     let cleanupAgentStatus: (() => void) | undefined;
     let cleanupAgentLog: (() => void) | undefined;
+    let cleanupWorkflowRunStatus: (() => void) | undefined;
+    let cleanupWorkflowStepStatus: (() => void) | undefined;
 
     async function startWebRTC() {
       try {
@@ -110,7 +112,6 @@ export function useHostWebRTC(isSessionActive: boolean) {
             } else if (msg.type === 'AGENT_PROMPT') {
               const res = await window.remconAPI.browser.startAgent(msg.payload as any);
               if (!res.ok) {
-                // Immediately emit a failed status back over the reliable channel
                 const errMsg: DataChannelMessage = {
                   type: 'AGENT_STATUS_UPDATE',
                   version: '1.0',
@@ -123,6 +124,23 @@ export function useHostWebRTC(isSessionActive: boolean) {
                 };
                 reliableChannel.send(JSON.stringify(errMsg));
               }
+            } else if (msg.type === 'AGENT_WORKFLOW_BATCH') {
+              const res = await window.remconAPI.browser.startWorkflow(msg.payload as any);
+              if (!res.ok) {
+                const errMsg: DataChannelMessage = {
+                  type: 'WORKFLOW_RUN_STATUS',
+                  version: '1.0',
+                  timestamp: Date.now(),
+                  payload: {
+                    workflowRunId: (msg.payload as any).workflowRunId ?? 'unknown',
+                    state: 'failed',
+                    error: res.error,
+                  },
+                };
+                reliableChannel.send(JSON.stringify(errMsg));
+              }
+            } else if (msg.type === 'WORKFLOW_CANCEL') {
+              await window.remconAPI.browser.cancelWorkflow();
             }
           } catch (err) {
             console.error('[host-webrtc] Error handling data channel message:', err);
@@ -147,6 +165,28 @@ export function useHostWebRTC(isSessionActive: boolean) {
           if (reliableChannel.readyState === 'open') {
             reliableChannel.send(JSON.stringify({
               type: 'AGENT_LOG',
+              version: '1.0',
+              timestamp: Date.now(),
+              payload,
+            } satisfies DataChannelMessage));
+          }
+        });
+
+        // Relay workflow status events back to Controller
+        cleanupWorkflowRunStatus = window.remconAPI.on.workflowRunStatus((payload) => {
+          if (reliableChannel.readyState === 'open') {
+            reliableChannel.send(JSON.stringify({
+              type: 'WORKFLOW_RUN_STATUS',
+              version: '1.0',
+              timestamp: Date.now(),
+              payload,
+            } satisfies DataChannelMessage));
+          }
+        });
+        cleanupWorkflowStepStatus = window.remconAPI.on.workflowStepStatus((payload) => {
+          if (reliableChannel.readyState === 'open') {
+            reliableChannel.send(JSON.stringify({
+              type: 'WORKFLOW_STEP_STATUS',
               version: '1.0',
               timestamp: Date.now(),
               payload,
@@ -217,6 +257,8 @@ export function useHostWebRTC(isSessionActive: boolean) {
       cleanupSignal?.();
       cleanupAgentStatus?.();
       cleanupAgentLog?.();
+      cleanupWorkflowRunStatus?.();
+      cleanupWorkflowStepStatus?.();
       stream?.getTracks().forEach((t) => t.stop());
       pc?.close();
       pc = null;

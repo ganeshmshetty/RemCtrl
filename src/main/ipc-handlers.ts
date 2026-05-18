@@ -25,6 +25,8 @@ import {
 import { SignalingClient } from './signaling-client.js';
 import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard } from './browser-manager.js';
 import { runAgentCommand, cancelAgentCommand, isAgentRunning } from './agent-executor.js';
+import { runWorkflow, cancelWorkflow, isWorkflowRunning } from './workflow-executor.js';
+import type { AgentWorkflowBatchPayload } from '../shared/types.js';
 
 let signalingClient: SignalingClient | null = null;
 
@@ -218,6 +220,40 @@ export function registerIpcHandlers(win: BrowserWindow) {
 
   ipcMain.handle('browser:cancelAgent', async () => {
     cancelAgentCommand();
+    return { ok: true };
+  });
+
+  // ── Workflow Execution ────────────────────────────────────────────────────
+
+  ipcMain.handle('browser:startWorkflow', async (_e, rawPayload: unknown) => {
+    // Basic shape validation
+    const p = rawPayload as any;
+    if (!p || typeof p !== 'object' || !p.workflowRunId || !Array.isArray(p.steps)) {
+      return { ok: false, error: 'Invalid workflow payload' };
+    }
+    if (isWorkflowRunning()) {
+      return { ok: false, error: 'A workflow is already running.' };
+    }
+    if (isAgentRunning()) {
+      return { ok: false, error: 'An agent command is running. Cancel it first.' };
+    }
+
+    const batch = rawPayload as AgentWorkflowBatchPayload;
+
+    runWorkflow(
+      batch,
+      (status) => { if (!win.isDestroyed()) win.webContents.send('workflow:runStatus', status); },
+      (stepStatus) => { if (!win.isDestroyed()) win.webContents.send('workflow:stepStatus', stepStatus); },
+      (log) => { if (!win.isDestroyed()) win.webContents.send('agent:log', log); },
+    ).catch((err) => {
+      console.error('[workflow] Unexpected error:', err);
+    });
+
+    return { ok: true };
+  });
+
+  ipcMain.handle('browser:cancelWorkflow', async () => {
+    cancelWorkflow();
     return { ok: true };
   });
 
