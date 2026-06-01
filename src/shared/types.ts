@@ -31,10 +31,12 @@ export interface SharedWorkflowRecord {
 // ─── Settings Types ────────────────────────────────────────────────────────────
 
 export type ApiProvider = 'openai' | 'anthropic';
+export type BrowserMode = 'internal' | 'local_chrome';
 
 export interface AppSettings {
   signalingUrl: string;
   preferredProvider: ApiProvider;
+  browserMode: BrowserMode;
   // API keys are NOT stored in renderer — Main process holds them
 }
 
@@ -116,6 +118,13 @@ export interface WorkflowStepStatus {
 
 // ─── Capture Metadata ─────────────────────────────────────────────────────────
 
+export interface TabInfo {
+  id: string;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
 export interface CaptureMetadata {
   captureWidth: number;
   captureHeight: number;
@@ -135,6 +144,8 @@ export interface CaptureMetadata {
 export type MessageType =
   | 'SESSION_START'
   | 'CAPTURE_METADATA'
+  | 'TAB_LIST'
+  | 'SWITCH_TAB'
   | 'AGENT_PROMPT'
   | 'AGENT_STATUS_UPDATE'
   | 'AGENT_LOG'
@@ -186,7 +197,7 @@ export interface AppDiagnostics {
   hasOpenAIKey: boolean;
   hasAnthropicKey: boolean;
   preferredProvider: string;
-  platform: NodeJS.Platform;
+  platform: string;
   electronVersion: string;
   nodeVersion: string;
   appVersion: string;
@@ -217,6 +228,8 @@ export interface RemoteCtrlAPI {
     cancelAgent: () => Promise<{ ok: boolean }>;
     startWorkflow: (payload: AgentWorkflowBatchPayload) => Promise<{ ok: boolean; error?: string }>;
     cancelWorkflow: () => Promise<{ ok: boolean }>;
+    getTabs: () => Promise<TabInfo[]>;
+    switchTab: (tabId: string) => Promise<void>;
   };
   webrtc: {
     sendSignal: (signal: unknown) => Promise<void>;
@@ -228,6 +241,8 @@ export interface RemoteCtrlAPI {
     setSignalingUrl: (url: string) => Promise<void>;
     getPreferredProvider: () => Promise<ApiProvider>;
     setPreferredProvider: (provider: ApiProvider) => Promise<void>;
+    getBrowserMode: () => Promise<BrowserMode>;
+    setBrowserMode: (mode: BrowserMode) => Promise<void>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;
@@ -248,6 +263,8 @@ export interface RemoteCtrlAPI {
     windowTitle: (cb: (title: string) => void) => () => void;
     workflowRunStatus: (cb: (status: WorkflowRunStatus) => void) => () => void;
     workflowStepStatus: (cb: (status: WorkflowStepStatus) => void) => () => void;
+    tabsChange: (cb: (tabs: TabInfo[]) => void) => () => void;
+    screencastFrame: (cb: (frameData: Uint8Array) => void) => () => void;
   };
 }
 

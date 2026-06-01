@@ -18,6 +18,8 @@ import {
   setSignalingUrl,
   getPreferredProvider,
   setPreferredProvider,
+  getBrowserMode,
+  setBrowserMode,
   listWorkflows,
   saveWorkflow,
   deleteWorkflow,
@@ -27,6 +29,8 @@ import { SignalingClient } from './signaling-client.js';
 import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard, isBrowserRunning, resetProfile } from './browser-manager.js';
 import { runAgentCommand, cancelAgentCommand, isAgentRunning } from './agent-executor.js';
 import { runWorkflow, cancelWorkflow, isWorkflowRunning } from './workflow-executor.js';
+import { setScreencastWindow } from './screencast.js';
+import { setBrowserNotifyWindow, getTabs, switchTab } from './browser-manager.js';
 import type { AgentWorkflowBatchPayload } from '../shared/types.js';
 
 let signalingClient: SignalingClient | null = null;
@@ -35,11 +39,15 @@ let isRegistered = false;
 
 export function setMainWindow(win: BrowserWindow) {
   currentWindow = win;
+  setScreencastWindow(win);
+  setBrowserNotifyWindow(win);
   if (!isRegistered) {
     registerIpcHandlers();
     isRegistered = true;
   }
 }
+
+export function getMainWindow() { return currentWindow; }
 
 function getOrCreateClient(): SignalingClient {
   if (!signalingClient) {
@@ -82,6 +90,12 @@ function registerIpcHandlers() {
   ipcMain.handle('settings:setPreferredProvider', async (_e, provider: unknown) => {
     const { provider: p } = SetPreferredProviderSchema.parse({ provider });
     setPreferredProvider(p);
+  });
+
+  ipcMain.handle('settings:getBrowserMode', async () => getBrowserMode());
+
+  ipcMain.handle('settings:setBrowserMode', async (_e, mode: unknown) => {
+    setBrowserMode(mode as any);
   });
 
   // ── Workflows ─────────────────────────────────────────────────────────────
@@ -152,8 +166,6 @@ function registerIpcHandlers() {
     try {
       const title = await launchBrowser(
         typeof startUrl === 'string' ? startUrl : undefined,
-        (meta) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('browser:captureMetadata', meta); },
-        (title) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('browser:windowTitle', title); },
       );
       return title;
     } catch (err) {
@@ -200,13 +212,36 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
+  ipcMain.handle('browser:getTabs', async () => {
+    return getTabs();
+  });
+
+  ipcMain.handle('browser:switchTab', async (_e, tabId: unknown) => {
+    if (typeof tabId !== 'string' || !tabId) {
+      return { ok: false, error: 'Invalid tabId: must be a non-empty string' };
+    }
+    await switchTab(tabId);
+    return { ok: true };
+  });
+
   // ── Agent Execution ───────────────────────────────────────────────────────
 
   ipcMain.handle('browser:startAgent', async (_e, rawPayload: unknown) => {
     const payload = AgentPromptSchema.parse(rawPayload);
+    const provider = getPreferredProvider();
+    const apiKey = getApiKey(provider);
+
+    if (!apiKey) {
+      return { ok: false, error: `No API key set for provider: ${provider}` };
+    }
+
     try {
       await runAgentCommand(
-        payload,
+        payload.commandId,
+        payload.action,
+        payload.instruction,
+        apiKey,
+        provider,
         (status) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('agent:status', status); },
         (log) => { if (currentWindow && !currentWindow.isDestroyed()) currentWindow.webContents.send('agent:log', log); },
       );

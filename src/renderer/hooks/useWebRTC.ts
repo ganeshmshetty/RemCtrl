@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DataChannelMessage } from '../../shared/types';
 
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-];
+const ICE_SERVERS: RTCIceServer[] = []; // Empty array forces local host candidates only, bypassing DNS errors in local dev
 
 export type WebRTCStatus = 'idle' | 'launching' | 'capturing' | 'connecting' | 'streaming' | 'error';
 
@@ -55,40 +52,60 @@ export function useHostWebRTC(isSessionActive: boolean) {
     let cancelled = false;
     let pc: RTCPeerConnection | null = null;
     let stream: MediaStream | null = null;
+    let canvas: HTMLCanvasElement | null = document.createElement('canvas');
+    let ctx = canvas.getContext('2d');
+    canvas.width = 1920;
+    canvas.height = 1080;
+
+    // Paint initial black frame so the stream has data immediately
+    if (ctx) {
+      ctx.fillStyle = '#05050a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
     let cleanupSignal: (() => void) | undefined;
     let cleanupAgentStatus: (() => void) | undefined;
     let cleanupAgentLog: (() => void) | undefined;
     let cleanupWorkflowRunStatus: (() => void) | undefined;
     let cleanupWorkflowStepStatus: (() => void) | undefined;
+    let cleanupScreencastFrame: (() => void) | undefined;
+    let cleanupTabsChange: (() => void) | undefined;
 
     async function startWebRTC() {
       try {
         setStatus('launching');
 
+        // Register screencast frame listener BEFORE launching so no frames are
+        // dropped during the race between CDP screencast start and this handler.
+        cleanupScreencastFrame = window.RemoteCtrlAPI.on.screencastFrame((frameData: Uint8Array) => {
+          if (cancelled || !ctx || !canvas) return;
+          const blob = new Blob([frameData as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' });
+          createImageBitmap(blob).then((bitmap) => {
+            if (canvas && ctx) {
+              if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+              }
+              ctx.drawImage(bitmap, 0, 0);
+              bitmap.close();
+            }
+          }).catch(err => {
+            console.error('[host-webrtc] Failed to paint screencast frame', err);
+          });
+        });
+
         // 1. Launch Playwright browser (reuses if already running)
         await window.RemoteCtrlAPI.browser.launch();
         if (cancelled) return;
 
-        // 2. Brief wait for OS window to become visible
-        await new Promise((r) => setTimeout(r, 1500));
-        if (cancelled) return;
-
         setStatus('capturing');
 
-        // 3. Use getDisplayMedia — main process intercepts this via
-        //    setDisplayMediaRequestHandler and selects the Playwright window
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            frameRate: { ideal: 30 },
-          },
-          audio: false,
-        });
+        // 2. Create stream from canvas (30fps)
+        stream = canvas!.captureStream(30);
 
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
 
-        console.log('[host-webrtc] Got display stream, tracks:', stream.getTracks().length);
+        console.log('[host-webrtc] Created canvas stream, tracks:', stream.getTracks().length);
 
         setStatus('connecting');
 
@@ -109,8 +126,15 @@ export function useHostWebRTC(isSessionActive: boolean) {
               await window.RemoteCtrlAPI.browser.injectMouse(msg.payload as any);
             } else if (msg.type === 'REMOTE_INPUT_KEYBOARD') {
               await window.RemoteCtrlAPI.browser.injectKeyboard(msg.payload as any);
+            } else if (msg.type === 'SWITCH_TAB') {
+              await window.RemoteCtrlAPI.browser.switchTab((msg.payload as any).tabId);
             } else if (msg.type === 'AGENT_PROMPT') {
-              const res = await window.RemoteCtrlAPI.browser.startAgent(msg.payload as any);
+              const payload = msg.payload as any;
+              if (payload.commandId === '__cancel__') {
+                await window.RemoteCtrlAPI.browser.cancelAgent();
+                return;
+              }
+              const res = await window.RemoteCtrlAPI.browser.startAgent(payload);
               if (!res.ok) {
                 const errMsg: DataChannelMessage = {
                   type: 'AGENT_STATUS_UPDATE',
@@ -149,6 +173,21 @@ export function useHostWebRTC(isSessionActive: boolean) {
 
         reliableChannel.onmessage = handleDataMessage;
         inputChannel.onmessage = handleDataMessage;
+
+        reliableChannel.onopen = async () => {
+          // Send initial tabs when reliable channel opens
+          try {
+            const initialTabs = await window.RemoteCtrlAPI.browser.getTabs();
+            reliableChannel.send(JSON.stringify({
+              type: 'TAB_LIST',
+              version: '1.0',
+              timestamp: Date.now(),
+              payload: initialTabs,
+            } satisfies DataChannelMessage));
+          } catch (err) {
+            console.error('[host-webrtc] Failed to send initial tabs:', err);
+          }
+        };
 
         // Forward agent status/log events from Main process back to Controller
         cleanupAgentStatus = window.RemoteCtrlAPI.on.agentStatus((payload) => {
@@ -193,6 +232,21 @@ export function useHostWebRTC(isSessionActive: boolean) {
             } satisfies DataChannelMessage));
           }
         });
+
+        // Forward tab changes
+        cleanupTabsChange = window.RemoteCtrlAPI.on.tabsChange((tabs) => {
+          if (reliableChannel.readyState === 'open') {
+            reliableChannel.send(JSON.stringify({
+              type: 'TAB_LIST',
+              version: '1.0',
+              timestamp: Date.now(),
+              payload: tabs,
+            } satisfies DataChannelMessage));
+          }
+        });
+
+
+
 
         // Outgoing ICE → relay to controller via signaling
         pc.onicecandidate = (e) => {
@@ -259,9 +313,13 @@ export function useHostWebRTC(isSessionActive: boolean) {
       cleanupAgentLog?.();
       cleanupWorkflowRunStatus?.();
       cleanupWorkflowStepStatus?.();
+      cleanupScreencastFrame?.();
+      cleanupTabsChange?.();
       stream?.getTracks().forEach((t) => t.stop());
       pc?.close();
       pc = null;
+      canvas = null;
+      ctx = null;
       setStatus('idle');
       setError(null);
     };

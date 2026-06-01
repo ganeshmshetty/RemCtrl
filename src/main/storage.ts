@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { LocalWorkflow, ApiProvider } from '../shared/types.js';
+import { LocalWorkflow, ApiProvider, BrowserMode } from '../shared/types.js';
 import { PersistedSettingsSchema, PersistedSettings, LocalWorkflowSchema } from '../shared/schemas.js';
 
 // ─── Paths ─────────────────────────────────────────────────────────────────────
@@ -63,6 +63,15 @@ export function getPreferredProvider(): ApiProvider {
 export function setPreferredProvider(provider: ApiProvider) {
   const s = loadSettings();
   saveSettings({ ...s, preferredProvider: provider });
+}
+
+export function getBrowserMode(): BrowserMode {
+  return loadSettings().browserMode;
+}
+
+export function setBrowserMode(mode: BrowserMode) {
+  const s = loadSettings();
+  saveSettings({ ...s, browserMode: mode });
 }
 
 // ─── API Key Storage (separate file, not settings.json) ───────────────────────

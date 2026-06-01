@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/main/index.cjs",
   "scripts": {
+    "postinstall": "playwright install chromium",
     "dev:renderer": "vite",
     "dev:main": "node build-electron.mjs && NODE_ENV=development electron dist/main/index.cjs",
     "dev": "concurrently -k -n RENDERER,MAIN -c cyan,yellow \"npm run dev:renderer\" \"wait-on http://localhost:5173 && npm run dev:main\"",

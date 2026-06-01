@@ -44,7 +44,7 @@ Every message sent over the Data Channel MUST follow this envelope structure:
 interface DataChannelMessage<T = any> {
   type: MessageType;
   timestamp: number;
-  version: string; // e.g. "1.0.0"
+  version: string; // e.g. "1.0.0" or "1.0"
   payload: T;
 }
 
@@ -52,6 +52,8 @@ enum MessageType {
   // Setup
   SESSION_START = 'SESSION_START',
   CAPTURE_METADATA = 'CAPTURE_METADATA', // Sent by Host to Controller
+  TAB_LIST = 'TAB_LIST',                 // Sent by Host to Controller to sync open tabs
+  SWITCH_TAB = 'SWITCH_TAB',             // Sent by Controller to Host to request switching active tab
   
   // Agent Control
   AGENT_PROMPT = 'AGENT_PROMPT',
@@ -81,19 +83,41 @@ interface SessionStartPayload {
     headless: boolean; // Overrides host default if allowed
   }
 }
+```
 
 #### Host -> Controller: Capture Metadata
-Sent by the Host whenever the browser window size or device scale changes.
+Sent by the Host whenever the browser viewport changes.
 ```typescript
 // type: CAPTURE_METADATA
 interface CaptureMetadataPayload {
   viewportWidth: number;  // Playwright CSS pixels
   viewportHeight: number;
   deviceScaleFactor: number;
-  contentRect: { x: number, y: number, width: number, height: number }; // Relative to capture source
 }
 ```
+
+#### Host -> Controller: Tab List
+Sent by the Host to keep the Controller updated with the current open tabs.
+```typescript
+// type: TAB_LIST
+interface TabInfo {
+  id: string;
+  url: string;
+  title: string;
+  active: boolean;
+}
+type TabListPayload = TabInfo[];
 ```
+
+#### Controller -> Host: Switch Tab
+Sent by the Controller to switch the active visible tab on the Host.
+```typescript
+// type: SWITCH_TAB
+interface SwitchTabPayload {
+  tabId: string;
+}
+```
+
 
 #### Controller -> Host: Agent Prompt
 Initiates a Stagehand `page.act()` or `page.extract()` command.
@@ -230,20 +254,31 @@ To maintain security and performance, we must strictly separate the Renderer (UI
 
 ### 4.1 Host Mode Boundaries
 - **Renderer Process:** 
-  - Handles UI (showing PIN, connection status).
+  - Handles UI (showing PIN, connection status, tabs, logs).
   - Handles `simple-peer` WebRTC connection.
-  - Receives `MediaStream` from Main process via `navigator.mediaDevices.getUserMedia` (using `desktopCapturer` source ID).
+  - Listens to IPC `screencast:frame` events from the Main process, paints base64/JPEG buffers onto a `<canvas>`, and captures the stream using `canvas.captureStream(30)` to feed WebRTC video track. This solves OS-level screen capture permissions.
 - **Main Process:** 
-  - Runs Playwright and Stagehand.
+  - Launches Playwright / Stagehand browser (internal Chromium or CDP connection to running Chrome).
+  - Attaches CDPSession to active Playwright page, runs `Page.startScreencast` and emits `screencast:frame` IPC events containing JPEG frame buffers to Renderer.
+  - Manages tab tracking (`context.on('page')`), active page transitions, and emits `browser:tabsChange` IPC events.
   - Exposes IPC handlers for the Renderer.
-  - **Security:** ALL IPC calls from Renderer MUST be validated against schemas. Main must enforce rate-limits and session-state checks (e.g., `injectMouse` is only valid when `isTakeoverActive` is true).
+  - **Security:** ALL IPC payloads validated using Zod in Main process before execution.
 - **Renderer -> Main IPC (`contextBridge`):**
-  - `startAgent(prompt)`: Forwarded from WebRTC Data Channel.
-  - `injectMouse(payload)`: Forwarded from WebRTC Data Channel during takeover.
-  - `injectKeyboard(payload)`: Forwarded from WebRTC Data Channel during takeover.
+  - `browser.launch(startUrl)`: Initiates Playwright session.
+  - `browser.close()`: Closes Playwright session.
+  - `browser.injectMouse(payload)`: Injects mouse move, click, scroll.
+  - `browser.injectKeyboard(payload)`: Injects key down, up, press.
+  - `browser.startAgent(payload)`: Invokes Stagehand act/observe/extract execution.
+  - `browser.cancelAgent()`: Gracefully halts Stagehand execution.
+  - `browser.getTabs()`: Retrieves the current list of browser tabs.
+  - `browser.switchTab(tabId)`: Switches the active tab, detaches/reattaches screencast session.
+  - `settings.getBrowserMode()`, `settings.setBrowserMode(mode)`: Configures browser launching mode.
 - **Main -> Renderer IPC:**
-  - `agentStatus(status)`: Forwards to WebRTC Data Channel.
-  - `agentLog(log)`: Forwards to WebRTC Data Channel.
+  - `browser:tabsChange`: Emits new array of `TabInfo`.
+  - `screencast:frame`: Emits raw `Uint8Array` of JPEG screencast frame data.
+  - `agent:status`: Emits agent status updates (`running`, `completed`, etc.).
+  - `agent:log`: Emits Stagehand log lines.
+
 
 ### 4.2 Coordinate Translation Math (Crucial)
 When `REMOTE_INPUT_MOUSE` is received by the Host, the percentages are translated using the **Authoritative Capture Metadata** sent earlier:

@@ -60,6 +60,7 @@ export const AgentPromptSchema = z.object({
 
 export const AgentWorkflowBatchSchema = z.object({
   workflowRunId: z.string().uuid(),
+  workflowId: z.string().min(1),
   name: z.string().min(1),
   startUrl: z.string().url().optional(),
   steps: z.array(WorkflowStepSchema).min(1).max(100),
@@ -96,11 +97,14 @@ export const RemoteKeyboardPayloadSchema = z.object({
   key: z.string().min(1).max(50),
 });
 
+export const BrowserModeSchema = z.enum(['internal', 'local_chrome']);
+
 // ─── Persisted Settings File Schema ──────────────────────────────────────────
 
 export const PersistedSettingsSchema = z.object({
   signalingUrl: z.string().url().default('https://remotectrl-signaling.onrender.com'),
   preferredProvider: ApiProviderSchema.default('openai'),
+  browserMode: BrowserModeSchema.default('internal'),
   // API keys are stored in a separate secure store — not in this file
 });
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Key, Server, Cpu, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { useSettingsStore } from '../stores/useWorkflowStore';
-import type { ApiProvider } from '../../shared/types';
+import type { ApiProvider, BrowserMode } from '../../shared/types';
 
 export function Settings() {
   const navigate = useNavigate();
@@ -19,6 +19,7 @@ export function Settings() {
   const [openAIInput, setOpenAIInput] = useState('');
   const [anthropicInput, setAnthropicInput] = useState('');
   const [signalingInput, setSignalingInput] = useState('');
+  const [browserMode, setBrowserMode] = useState('internal');
   const [showOpenAI, setShowOpenAI] = useState(false);
   const [showAnthropic, setShowAnthropic] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
@@ -27,6 +28,7 @@ export function Settings() {
     loadSettings().then(() => {
       setSignalingInput(useSettingsStore.getState().signalingUrl);
     });
+    window.RemoteCtrlAPI?.settings.getBrowserMode().then(setBrowserMode);
   }, []);
 
   async function handleSaveApiKey(provider: ApiProvider, value: string) {
@@ -51,6 +53,12 @@ export function Settings() {
     flash('Browser profile reset');
   }
 
+  async function handleSaveBrowserMode(m: BrowserMode) {
+    setBrowserMode(m);
+    await window.RemoteCtrlAPI?.settings.setBrowserMode(m);
+    flash('Browser mode saved');
+  }
+
   function flash(msg: string) {
     setSavedMsg(msg);
     setTimeout(() => setSavedMsg(''), 2500);
@@ -69,6 +77,32 @@ export function Settings() {
       </div>
 
       <div className="settings-body">
+
+        {/* Browser Mode */}
+        <Section icon={<Cpu size={15} />} title="Browser Connection">
+          <p className="settings-hint">
+            <strong>Internal:</strong> Launches a fresh, isolated, headless browser.<br/>
+            <strong>Local Chrome:</strong> Connects to your existing browser. You must launch Chrome with <code>--remote-debugging-port=9222</code>.
+          </p>
+          <SettingField label="Connection Mode" status="">
+            <div className="settings-radio-group">
+              {(['internal', 'local_chrome'] as BrowserMode[]).map((m) => (
+                <label key={m} className="settings-radio">
+                  <input
+                    type="radio"
+                    name="browserMode"
+                    value={m}
+                    checked={browserMode === m}
+                    onChange={() => handleSaveBrowserMode(m)}
+                  />
+                  <span className="settings-radio-label">
+                    {m === 'internal' ? 'Internal Isolated' : 'Local Chrome (Port 9222)'}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </SettingField>
+        </Section>
 
         {/* API Keys */}
         <Section icon={<Key size={15} />} title="API Keys">

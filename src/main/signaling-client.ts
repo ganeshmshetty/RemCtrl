@@ -52,18 +52,23 @@ export class SignalingClient {
           attempts++;
           
           try {
+            const isDev = process.env.NODE_ENV === 'development';
+            const displayPin = isDev ? pin : `${pin.slice(0, 3)}${'*'.repeat(pin.length - 3)}`;
+            console.log(`[signaling] Registering PIN: ${displayPin}...`);
             const success = await new Promise<boolean>((res, rej) => {
               socket.emit(
                 'host:register',
                 { pin, capabilities: { version: '0.1.0', platform: process.platform } },
                 (ack: { success: boolean; error?: string }) => {
                   if (!ack.success) {
+                    console.warn(`[signaling] PIN registration failed: ${ack.error}`);
                     if (ack.error === 'PIN already in use') {
                       res(false);
                     } else {
                       rej(new Error(ack.error));
                     }
                   } else {
+                    console.log(`[signaling] PIN ${pin} registered successfully`);
                     res(true);
                   }
                 }
@@ -225,10 +230,28 @@ export class SignalingClient {
   // ─── Internal ────────────────────────────────────────────────────────────
 
   private createSocket(url: string): Socket {
-    return io(url, {
-      reconnection: false,   // manual reconnect only — keeps state machine simple
-      timeout: 8000,
-      transports: ['websocket', 'polling'],
+    console.log(`[signaling] Connecting to ${url}...`);
+    const socket = io(url, {
+      // Reconnection is disabled because registration uses once('connect').
+      // After a network drop, re-registration would be skipped on auto-reconnect,
+      // silently losing room membership. The caller is responsible for re-initiating.
+      reconnection: false,
+      timeout: 10000,
+      transports: ['websocket'],
     });
+
+    socket.on('connect', () => {
+      console.log(`[signaling] Connected to ${url} (ID: ${socket.id})`);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error(`[signaling] Connection error for ${url}:`, err.message);
+    });
+
+    socket.on('reconnect_attempt', (attempt) => {
+      console.log(`[signaling] Reconnect attempt ${attempt} for ${url}...`);
+    });
+
+    return socket;
   }
 }

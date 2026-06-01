@@ -23,7 +23,13 @@ const rooms = new Map<string, Room>();
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    // credentials omitted: incompatible with wildcard origin, and not needed
+    // (no cookies/auth headers are used — sessions are PIN-based)
+  },
+  transports: ['websocket'], // Force WebSocket to avoid XHR polling issues
 });
 
 app.get('/health', (_req, res) => {

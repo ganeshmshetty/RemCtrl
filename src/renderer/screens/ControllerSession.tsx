@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio, X, Play, StopCircle, ChevronRight } from 'lucide-react';
+import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio, X, Play, StopCircle, ChevronRight, LayoutPanelTop } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import { useControllerWebRTC } from '../hooks/useWebRTC';
-import type { AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, LocalWorkflow } from '../../shared/types';
+import type { AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, LocalWorkflow, TabInfo } from '../../shared/types';
 
 export function ControllerSession() {
   const navigate = useNavigate();
@@ -20,6 +20,7 @@ export function ControllerSession() {
   const [workflows, setWorkflows] = useState<LocalWorkflow[]>([]);
   const [showWorkflowPicker, setShowWorkflowPicker] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<LocalWorkflow | null>(null);
+  const [tabs, setTabs] = useState<TabInfo[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const pin = (location.state as { pin?: string })?.pin ?? '';
@@ -47,6 +48,15 @@ export function ControllerSession() {
 
   function handleToggleTakeover() {
     setTakeoverActive(!isTakeoverActive);
+  }
+
+  function handleSwitchTab(tabId: string) {
+    sendData({
+      type: 'SWITCH_TAB',
+      version: '1.0',
+      timestamp: Date.now(),
+      payload: { tabId },
+    }, true);
   }
 
   function handleSendPrompt(e: React.FormEvent) {
@@ -121,19 +131,43 @@ export function ControllerSession() {
       store.handleWorkflowRunStatus(msg.payload as WorkflowRunStatus);
     } else if (msg.type === 'WORKFLOW_STEP_STATUS') {
       store.handleWorkflowStepStatus(msg.payload as WorkflowStepStatus);
+    } else if (msg.type === 'TAB_LIST') {
+      setTabs(msg.payload as TabInfo[]);
     }
   });
 
   // Phase 3: Input Handling
   const lastMoveTimeRef = useRef<number>(0);
 
-  // Always compute coords from the video element itself — it's the authoritative
-  // display surface. With object-fit:fill it matches the overlay 1:1.
+  // Compute coords relative to the actual rendered video content area.
+  // With object-fit:contain the video element may be larger than the video
+  // content (letterboxed / pillarboxed). We must subtract those offsets so
+  // (0,0) → top-left of content and (1,1) → bottom-right of content.
   const getCoords = (clientX: number, clientY: number) => {
-    const rect = videoRef.current?.getBoundingClientRect() ?? { left: 0, top: 0, width: 1, height: 1 };
+    const el = videoRef.current;
+    if (!el) return { xPercent: 0, yPercent: 0 };
+
+    const rect = el.getBoundingClientRect();
+    // Intrinsic stream resolution (falls back to Playwright viewport size)
+    const nativeW = el.videoWidth  || 1280;
+    const nativeH = el.videoHeight || 800;
+
+    // Scale factor applied by contain (uniform, preserves AR)
+    const scale = Math.min(rect.width / nativeW, rect.height / nativeH);
+    const renderedW = nativeW * scale;
+    const renderedH = nativeH * scale;
+
+    // Offset of the video content within the element box (letterbox/pillarbox)
+    const offsetX = (rect.width  - renderedW) / 2;
+    const offsetY = (rect.height - renderedH) / 2;
+
+    // Position relative to the content region
+    const relX = clientX - rect.left - offsetX;
+    const relY = clientY - rect.top  - offsetY;
+
     return {
-      xPercent: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
-      yPercent: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)),
+      xPercent: Math.max(0, Math.min(1, relX / renderedW)),
+      yPercent: Math.max(0, Math.min(1, relY / renderedH)),
     };
   };
 
@@ -241,8 +275,27 @@ export function ControllerSession() {
 
       {/* Main layout */}
       <div className="ctrl-body">
-        {/* Video pane */}
+        {/* Video pane with Tab Strip */}
         <div className="ctrl-video-pane">
+          {/* Tab Strip */}
+          {isConnected && tabs.length > 0 && (
+            <div className="ctrl-tab-strip">
+              <LayoutPanelTop size={12} className="ctrl-tab-icon" />
+              <div className="ctrl-tabs">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    className={`ctrl-tab ${tab.active ? 'ctrl-tab-active' : ''}`}
+                    onClick={() => handleSwitchTab(tab.id)}
+                    title={tab.url}
+                  >
+                    <span className="ctrl-tab-title">{tab.title}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {isConnecting ? (
             <div className="ctrl-connecting">
               <Loader2 size={32} className="animate-spin" />
@@ -250,7 +303,9 @@ export function ControllerSession() {
             </div>
           ) : isConnected ? (
             <>
-              {/* Live video stream from host's Playwright browser */}
+              {/* Live video stream from host's Playwright browser.
+                  object-fit:contain preserves the 1280×800 AR — black bars
+                  fill the remaining space. */}
               <video
                 ref={videoRef}
                 className="ctrl-video"
@@ -267,7 +322,10 @@ export function ControllerSession() {
                   </div>
                 </div>
               )}
-              {/* Takeover overlay — Phase 3: capture mouse/keyboard events */}
+              {/* Takeover overlay — Phase 3: capture mouse/keyboard events.
+                  Covers the full video element (incl. letterbox areas) so
+                  events are always captured; getCoords() subtracts the
+                  letterbox offsets so coordinates map to the content only. */}
               {isTakeoverActive && (
                 <div
                   className="ctrl-takeover-overlay"
@@ -279,7 +337,7 @@ export function ControllerSession() {
                   onKeyDown={handleKeyDown}
                   onKeyUp={handleKeyUp}
                   onContextMenu={(e) => e.preventDefault()}
-                  ref={(el) => el?.focus()} // auto focus to capture keyboard
+                  ref={(el) => el?.focus()}
                 />
               )}
             </>
@@ -486,8 +544,11 @@ export function ControllerSession() {
         .ctrl-video {
           width: 100%;
           height: 100%;
-          object-fit: fill;
+          /* contain: preserve the Playwright viewport aspect ratio.
+             Black bars fill the remainder — no distortion. */
+          object-fit: contain;
           display: block;
+          background: #000;
         }
         .ctrl-video-overlay {
           position: absolute;
@@ -500,6 +561,60 @@ export function ControllerSession() {
           background: rgba(5,5,10,0.7);
           color: var(--text-secondary);
           backdrop-filter: blur(4px);
+        }
+        .ctrl-tab-strip {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 36px;
+          background: rgba(5,5,10,0.85);
+          backdrop-filter: blur(8px);
+          border-bottom: 1px solid var(--border);
+          display: flex;
+          align-items: center;
+          padding: 0 12px;
+          gap: 12px;
+          z-index: 10;
+        }
+        .ctrl-tab-icon {
+          color: var(--text-muted);
+        }
+        .ctrl-tabs {
+          display: flex;
+          gap: 4px;
+          overflow-x: auto;
+          flex: 1;
+        }
+        .ctrl-tab {
+          display: flex;
+          align-items: center;
+          height: 26px;
+          padding: 0 12px;
+          border-radius: var(--radius-sm);
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          white-space: nowrap;
+          max-width: 200px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          transition: all var(--transition);
+        }
+        .ctrl-tab:hover {
+          background: var(--bg-overlay);
+          color: var(--text-primary);
+        }
+        .ctrl-tab-active {
+          background: var(--bg-elevated);
+          color: var(--text-primary);
+          border-color: var(--border);
+        }
+        .ctrl-tab-title {
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .ctrl-connecting {
           width: 100%;

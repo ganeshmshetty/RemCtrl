@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     cancelAgent: () => ipcRenderer.invoke('browser:cancelAgent'),
     startWorkflow: (payload) => ipcRenderer.invoke('browser:startWorkflow', payload),
     cancelWorkflow: () => ipcRenderer.invoke('browser:cancelWorkflow'),
+    getTabs: () => ipcRenderer.invoke('browser:getTabs'),
+    switchTab: (tabId) => ipcRenderer.invoke('browser:switchTab', tabId),
   },
 
   // ── WebRTC Signal Relay ───────────────────────────────────────────────────
@@ -58,6 +60,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     getPreferredProvider: () => ipcRenderer.invoke('settings:getPreferredProvider'),
     setPreferredProvider: (provider) =>
       ipcRenderer.invoke('settings:setPreferredProvider', provider),
+    getBrowserMode: () => ipcRenderer.invoke('settings:getBrowserMode'),
+    setBrowserMode: (mode) => ipcRenderer.invoke('settings:setBrowserMode', mode),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────
@@ -131,6 +135,16 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       const listener = (_event, status) => cb(status);
       ipcRenderer.on('workflow:stepStatus', listener);
       return () => ipcRenderer.removeListener('workflow:stepStatus', listener);
+    },
+    tabsChange: (cb) => {
+      const listener = (_event, tabs) => cb(tabs);
+      ipcRenderer.on('browser:tabsChange', listener);
+      return () => ipcRenderer.removeListener('browser:tabsChange', listener);
+    },
+    screencastFrame: (cb) => {
+      const listener = (_event, frameData) => cb(frameData);
+      ipcRenderer.on('screencast:frame', listener);
+      return () => ipcRenderer.removeListener('screencast:frame', listener);
     },
   },
 });

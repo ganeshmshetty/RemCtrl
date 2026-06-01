@@ -12,8 +12,10 @@ The MVP should be strong enough to validate the product loop, not just prove con
 
 - Unified Electron app with Host and Controller modes.
 - Socket.io signaling server with 9-digit PIN rooms.
-- WebRTC video stream from Host browser window to Controller.
-- Reliable WebRTC data channel for commands, status, logs, and workflow messages.
+- WebRTC video stream captured from active tab screencast canvas.
+- Multi-tab management: tracking open tabs, tab list synchronization, and active tab switching.
+- Dual browser modes: internal Playwright Chromium vs local Chrome connection via CDP.
+- Reliable WebRTC data channel for commands, status, logs, tab management, and workflow messages.
 - Unreliable WebRTC data channel for high-frequency mouse movement.
 - Manual takeover mode using Playwright mouse and keyboard injection.
 - Host-side Stagehand execution using the Host's local API key.
@@ -23,8 +25,9 @@ The MVP should be strong enough to validate the product loop, not just prove con
 - Basic workflow editor for ordered steps.
 - Basic execution queue with pause/cancel boundaries.
 - Capture metadata for reliable coordinate mapping.
-- Minimal settings for API keys and connection configuration.
+- Minimal settings for API keys, browser mode, and connection configuration.
 - Basic session logs in the Controller UI.
+
 
 ### 2.2 Explicitly Deferred
 
@@ -185,31 +188,26 @@ Rules:
 
 MVP target:
 
-- Launch one dedicated Playwright Chromium window.
-- Capture that window using Electron `desktopCapturer`.
-- Stream via `getUserMedia` and WebRTC.
+- Support dual browser launching modes:
+  - **Internal Mode:** Launches a dedicated Playwright Chromium server instance.
+  - **Local Chrome Mode:** Connects to an existing running Google Chrome instance on port 9222 via CDP (`chromium.connectOverCDP`).
+- Capture individual browser pages using Playwright CDP screencasting (`Page.startScreencast`).
+- Send the generated JPEG frame buffers over Electron IPC to the Renderer.
+- In the Renderer, paint the incoming frame buffers onto an HTML `<canvas>`, and capture a 30fps MediaStream via `canvas.captureStream(30)` to feed directly into the WebRTC video track.
+- This canvas-based pipeline eliminates the need for OS-level screen capture permissions (`desktopCapturer`) and ensures that the stream coordinates perfectly match the browser viewport, solving coordinate mapping discrepancies.
 
-Capture metadata must be sent whenever the browser window or viewport changes:
+Capture metadata is used to maintain correct coordinate mapping:
 
 ```typescript
 type CaptureMetadata = {
-  captureWidth: number;
-  captureHeight: number;
   viewportWidth: number;
   viewportHeight: number;
   deviceScaleFactor: number;
-  contentRect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
 };
 ```
 
-The Controller uses video intrinsic dimensions and displayed rect to compute stream-relative percentages. The Host maps stream-relative coordinates through `contentRect` into Playwright viewport coordinates.
+The Controller calculates mouse positions relative to the video component dimensions and sends percentage coordinates. The Host maps percentage coordinates directly into Playwright page viewport coordinates by multiplying by `viewportWidth` and `viewportHeight` from the capture metadata.
 
-Do not assume the streamed frame equals the Playwright viewport.
 
 ### 5.5 Manual Takeover
 
@@ -375,6 +373,7 @@ MVP settings:
 - Anthropic API key if needed by selected Stagehand model.
 - Signaling server URL.
 - Preferred model/provider.
+- Browser mode selection (`'internal'` Playwright vs `'local_chrome'` local Google Chrome via port 9222).
 - Browser profile reset button.
 
 API keys should be accessed by Main process. Renderer can ask whether a key is configured, but should not need to hold raw key values during normal operation.
@@ -446,17 +445,40 @@ type RemoteCtrlAPI = {
   };
   browser: {
     resetProfile: () => Promise<void>;
+    launch: (startUrl?: string) => Promise<string>;
+    close: () => Promise<void>;
+    injectMouse: (payload: RemoteMousePayload) => Promise<void>;
+    injectKeyboard: (payload: RemoteKeyboardPayload) => Promise<void>;
+    startAgent: (payload: AgentPromptPayload) => Promise<{ ok: boolean; error?: string }>;
+    cancelAgent: () => Promise<{ ok: boolean }>;
+    startWorkflow: (payload: AgentWorkflowBatchPayload) => Promise<{ ok: boolean; error?: string }>;
+    cancelWorkflow: () => Promise<{ ok: boolean }>;
+    getTabs: () => Promise<TabInfo[]>;
+    switchTab: (tabId: string) => Promise<void>;
   };
   settings: {
     hasApiKey: (provider: string) => Promise<boolean>;
     setApiKey: (provider: string, value: string) => Promise<void>;
     getSignalingUrl: () => Promise<string>;
     setSignalingUrl: (url: string) => Promise<void>;
+    getPreferredProvider: () => Promise<ApiProvider>;
+    setPreferredProvider: (provider: ApiProvider) => Promise<void>;
+    getBrowserMode: () => Promise<BrowserMode>;
+    setBrowserMode: (mode: BrowserMode) => Promise<void>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;
     save: (workflow: LocalWorkflow) => Promise<void>;
     delete: (workflowId: string) => Promise<void>;
+  };
+  on: {
+    agentStatus: (cb: (status: AgentStatusPayload) => void) => () => void;
+    agentLog: (cb: (log: AgentLogPayload) => void) => () => void;
+    windowTitle: (cb: (title: string) => void) => () => void;
+    workflowRunStatus: (cb: (status: WorkflowRunStatus) => void) => () => void;
+    workflowStepStatus: (cb: (status: WorkflowStepStatus) => void) => () => void;
+    tabsChange: (cb: (tabs: TabInfo[]) => void) => () => void;
+    screencastFrame: (cb: (frameData: Uint8Array) => void) => () => void;
   };
 };
 ```
@@ -471,6 +493,8 @@ MVP message types:
 type MessageType =
   | "SESSION_START"
   | "CAPTURE_METADATA"
+  | "TAB_LIST"
+  | "SWITCH_TAB"
   | "AGENT_PROMPT"
   | "AGENT_STATUS_UPDATE"
   | "AGENT_LOG"
@@ -498,9 +522,10 @@ type DataChannelMessage<T> = {
 
 Keep `version` from the start. It is cheap and avoids protocol churn later.
 
+
 ## 9. Implementation Phases
 
-### Phase 0: Project Skeleton
+### Phase 0: Project Skeleton ✅
 
 - Create Electron + React + Vite app.
 - Add TypeScript.
@@ -516,7 +541,7 @@ Exit criteria:
 - Settings can save provider configuration.
 - Local workflow can be created and listed.
 
-### Phase 1: Signaling And Session Setup
+### Phase 1: Signaling And Session Setup ✅
 
 - Build Socket.io signaling server.
 - Implement Host PIN registration.
@@ -531,7 +556,7 @@ Exit criteria:
 - Host approves or rejects.
 - Both sides show correct connection state.
 
-### Phase 2: Browser Launch And Streaming
+### Phase 2: Browser Launch And Streaming ✅
 
 - Launch dedicated Playwright browser.
 - Capture browser window.
@@ -546,7 +571,7 @@ Exit criteria:
 - Host can stop session.
 - Controller handles stream end cleanly.
 
-### Phase 3: Manual Takeover
+### Phase 3: Manual Takeover ✅
 
 - Add reliable and unreliable data channels.
 - Implement mouse move coalescing.
@@ -560,7 +585,7 @@ Exit criteria:
 - Input remains responsive under normal network conditions.
 - Coordinates remain correct after window resize.
 
-### Phase 4: Agent Prompt Execution
+### Phase 4: Agent Prompt Execution ✅
 
 - Configure Host-side Stagehand.
 - Add API-key presence checks.
@@ -574,7 +599,7 @@ Exit criteria:
 - Host executes visibly in browser.
 - Controller sees running/completed/failed status.
 
-### Phase 5: Local Workflows And Remote Workflow Runs
+### Phase 5: Local Workflows And Remote Workflow Runs ✅
 
 - Build workflow list and editor.
 - Persist workflows locally.
@@ -591,7 +616,7 @@ Exit criteria:
 - Status updates appear per step.
 - Failed step stops the workflow.
 
-### Phase 6: MVP Hardening
+### Phase 6: MVP Hardening ✅
 
 - Add clear errors for permission failures.
 - Add reconnect/disconnect cleanup.
@@ -604,6 +629,7 @@ Exit criteria:
 - App can be packaged locally.
 - Main flows survive common failure cases.
 - No known coordinate or session-state blockers remain.
+
 
 ## 10. Future Iteration Hooks
 
