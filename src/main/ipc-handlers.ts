@@ -24,13 +24,16 @@ import {
   saveWorkflow,
   deleteWorkflow,
   getApiKey,
+  getHeadlessMode,
+  setHeadlessMode,
 } from './storage.js';
 import { SignalingClient } from './signaling-client.js';
 import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard, isBrowserRunning, resetProfile } from './browser-manager.js';
-import { runAgentCommand, cancelAgentCommand, isAgentRunning } from './agent-executor.js';
-import { runWorkflow, cancelWorkflow, isWorkflowRunning } from './workflow-executor.js';
+import { runAgentCommand, cancelAgentCommand, isAgentRunning, setAgentPaused } from './agent-executor.js';
+import { runWorkflow, cancelWorkflow, isWorkflowRunning, setWorkflowPaused } from './workflow-executor.js';
+import { submitCheckpointResponse } from './human-checkpoint.js';
 import { setScreencastWindow } from './screencast.js';
-import { setBrowserNotifyWindow, getTabs, switchTab, goBack, goForward, reload, navigate, closeTab } from './browser-manager.js';
+import { setBrowserNotifyWindow, getTabs, switchTab, goBack, goForward, reload, navigate, closeTab, newTab } from './browser-manager.js';
 import type { AgentWorkflowBatchPayload } from '../shared/types.js';
 
 let signalingClient: SignalingClient | null = null;
@@ -96,6 +99,12 @@ function registerIpcHandlers() {
 
   ipcMain.handle('settings:setBrowserMode', async (_e, mode: unknown) => {
     setBrowserMode(mode as any);
+  });
+
+  ipcMain.handle('settings:getHeadlessMode', async () => getHeadlessMode());
+
+  ipcMain.handle('settings:setHeadlessMode', async (_e, headless: unknown) => {
+    setHeadlessMode(Boolean(headless));
   });
 
   // ── Workflows ─────────────────────────────────────────────────────────────
@@ -253,6 +262,13 @@ function registerIpcHandlers() {
     return { ok: true };
   });
 
+  ipcMain.handle('browser:newTab', async () => {
+    await newTab();
+    return { ok: true };
+  });
+
+  // ── WebRTC ─────────────────────────────────────────────────────────────────
+
   // ── Agent Execution ───────────────────────────────────────────────────────
 
   ipcMain.handle('browser:startAgent', async (_e, rawPayload: unknown) => {
@@ -283,6 +299,22 @@ function registerIpcHandlers() {
   ipcMain.handle('browser:cancelAgent', async () => {
     cancelAgentCommand();
     return { ok: true };
+  });
+
+  ipcMain.handle('browser:setTakeoverActive', async (_e, active: unknown) => {
+    const isPaused = Boolean(active);
+    setAgentPaused(isPaused);
+    setWorkflowPaused(isPaused);
+    return { ok: true };
+  });
+
+  ipcMain.handle('browser:submitCheckpoint', async (_e, checkpointId: string, response: any) => {
+    try {
+      await submitCheckpointResponse(checkpointId, response);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   // ── Workflow Execution ────────────────────────────────────────────────────

@@ -89,11 +89,20 @@ export function WorkflowEditor() {
   async function handleSave() {
     if (!validate()) return;
     setIsSaving(true);
+    setErrors({});
     try {
-      await saveWorkflow({ ...workflow, updatedAt: Date.now() });
+      let finalUrl = workflow.startUrl;
+      if (finalUrl && !/^https?:\/\//i.test(finalUrl)) {
+        finalUrl = 'https://' + finalUrl;
+      }
+      const toSave = { ...workflow, startUrl: finalUrl, updatedAt: Date.now() };
+      setWorkflow(toSave);
+      await saveWorkflow(toSave);
       setSavedMsg('Saved!');
       setTimeout(() => setSavedMsg(''), 2000);
       if (isNew) navigate(`/workflows/${workflow.id}`, { replace: true });
+    } catch (err: any) {
+      setErrors({ name: err?.message || 'Failed to save workflow' });
     } finally {
       setIsSaving(false);
     }

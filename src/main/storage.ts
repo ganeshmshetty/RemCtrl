@@ -74,6 +74,15 @@ export function setBrowserMode(mode: BrowserMode) {
   saveSettings({ ...s, browserMode: mode });
 }
 
+export function getHeadlessMode(): boolean {
+  return loadSettings().headlessMode;
+}
+
+export function setHeadlessMode(headless: boolean) {
+  const s = loadSettings();
+  saveSettings({ ...s, headlessMode: headless });
+}
+
 // ─── API Key Storage (separate file, not settings.json) ───────────────────────
 // Keys are stored in plain JSON for MVP. In production, use keytar (OS keychain).
 

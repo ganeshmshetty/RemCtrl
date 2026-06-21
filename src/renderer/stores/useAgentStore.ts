@@ -4,14 +4,16 @@ import type {
   AgentLogPayload,
   WorkflowRunStatus,
   WorkflowStepStatus,
+  AgentCheckpointPayload,
 } from '../../shared/types';
 
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'agent';
-  type: 'prompt' | 'status' | 'log' | 'error' | 'workflow';
+  type: 'prompt' | 'status' | 'log' | 'error' | 'workflow' | 'checkpoint';
   text: string;
   timestamp: number;
+  checkpointPayload?: AgentCheckpointPayload;
 }
 
 type AgentStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error';
@@ -22,6 +24,8 @@ interface AgentState {
   agentStatus: AgentStatus;
   activeCommandId: string | null;
   chatHistory: ChatMessage[];
+  executionLogs: AgentLogPayload[];
+  currentAction: string | null;
 
   // Workflow run state
   workflowRunState: WorkflowState;
@@ -38,6 +42,7 @@ interface AgentState {
   handleAgentLog: (payload: AgentLogPayload) => void;
   handleWorkflowRunStatus: (status: WorkflowRunStatus) => void;
   handleWorkflowStepStatus: (status: WorkflowStepStatus) => void;
+  handleAgentCheckpoint: (payload: AgentCheckpointPayload) => void;
   clearHistory: () => void;
   clearWorkflow: () => void;
 }
@@ -47,6 +52,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentStatus: 'idle',
   activeCommandId: null,
   chatHistory: [],
+  executionLogs: [],
+  currentAction: null,
 
   workflowRunState: 'idle',
   workflowRunId: null,
@@ -70,28 +77,48 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       cancelled: 'idle',
       paused: 'paused',
     };
-    set({
+    
+    const updates: Partial<AgentState> = {
       agentStatus: statusMap[payload.state] ?? 'idle',
       activeCommandId: payload.state === 'running' ? payload.commandId : null,
-    });
-    get().appendMessage({
-      id: `status-${payload.commandId}-${Date.now()}`,
-      sender: 'agent',
-      type: 'status',
-      text: payload.error
-        ? `Command ${payload.state}: ${payload.error}`
-        : `Command ${payload.state}${payload.result ? ` — ${JSON.stringify(payload.result)}` : ''}`,
-      timestamp: Date.now(),
-    });
+    };
+
+    if (payload.state === 'running') {
+      updates.currentAction = 'Initializing agent...';
+    } else if (['completed', 'failed', 'cancelled'].includes(payload.state)) {
+      updates.currentAction = null;
+    }
+
+    set(updates);
+    
+    if (payload.state === 'completed') {
+      get().appendMessage({
+        id: `status-${payload.commandId}-${Date.now()}`,
+        sender: 'agent',
+        type: 'status',
+        text: `I successfully completed the task! ${payload.result ? `\nResult: ${JSON.stringify(payload.result, null, 2)}` : ''}`,
+        timestamp: Date.now(),
+      });
+    } else if (payload.state === 'failed') {
+      get().appendMessage({
+        id: `error-${payload.commandId}-${Date.now()}`,
+        sender: 'agent',
+        type: 'error',
+        text: `I encountered an issue and couldn't complete the task: ${payload.error || 'Unknown error'}`,
+        timestamp: Date.now(),
+      });
+    }
   },
 
   handleAgentLog: (payload) => {
-    get().appendMessage({
-      id: `log-${Date.now()}-${Math.random()}`,
-      sender: 'agent',
-      type: 'log',
-      text: `[${payload.level}] ${payload.message}`,
-      timestamp: Date.now(),
+    set((state) => {
+      // Only set current action if it's an info-level log without being overly verbose.
+      // Stagehand logs can be chatty, so we'll just pick the most recent one.
+      const isActionable = payload.level === 'info' && !payload.message.includes('browser-use') && !payload.message.includes('playwright');
+      return {
+        executionLogs: [...(state.executionLogs || []), payload],
+        currentAction: isActionable ? payload.message : state.currentAction,
+      };
     });
   },
 
@@ -135,7 +162,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
   },
 
-  clearHistory: () => set({ chatHistory: [] }),
+  handleAgentCheckpoint: (payload) => {
+    get().appendMessage({
+      id: `checkpoint-${payload.checkpointId}`,
+      sender: 'agent',
+      type: 'checkpoint',
+      text: payload.question,
+      timestamp: Date.now(),
+      checkpointPayload: payload,
+    });
+  },
+
+  clearHistory: () => set({ chatHistory: [], executionLogs: [], currentAction: null }),
 
   clearWorkflow: () =>
     set({

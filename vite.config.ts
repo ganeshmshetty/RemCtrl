@@ -14,9 +14,14 @@ export default defineConfig({
   },
   server: {
     force: true, // always re-bundle on dev server start
+    watch: {
+      ignored: ['**/research/**', '**/release/**'],
+    },
   },
   optimizeDeps: {
     force: true,
+    entries: ['index.html'], // Only scan the main index.html for dependencies
+    exclude: ['research', 'release'],
   },
   build: {
     outDir: 'dist/renderer',

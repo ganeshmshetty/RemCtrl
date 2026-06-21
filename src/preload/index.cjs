@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     cancelAgent: () => ipcRenderer.invoke('browser:cancelAgent'),
     startWorkflow: (payload) => ipcRenderer.invoke('browser:startWorkflow', payload),
     cancelWorkflow: () => ipcRenderer.invoke('browser:cancelWorkflow'),
+    setTakeoverActive: (active) => ipcRenderer.invoke('browser:setTakeoverActive', active),
     getTabs: () => ipcRenderer.invoke('browser:getTabs'),
     switchTab: (tabId) => ipcRenderer.invoke('browser:switchTab', tabId),
     goBack: () => ipcRenderer.invoke('browser:goBack'),
@@ -43,6 +44,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     reload: () => ipcRenderer.invoke('browser:reload'),
     navigate: (url) => ipcRenderer.invoke('browser:navigate', url),
     closeTab: (tabId) => ipcRenderer.invoke('browser:closeTab', tabId),
+    newTab: () => ipcRenderer.invoke('browser:newTab'),
+    submitCheckpoint: (checkpointId, response) => ipcRenderer.invoke('browser:submitCheckpoint', checkpointId, response),
   },
 
   // ── WebRTC Signal Relay ───────────────────────────────────────────────────
@@ -67,6 +70,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       ipcRenderer.invoke('settings:setPreferredProvider', provider),
     getBrowserMode: () => ipcRenderer.invoke('settings:getBrowserMode'),
     setBrowserMode: (mode) => ipcRenderer.invoke('settings:setBrowserMode', mode),
+    getHeadlessMode: () => ipcRenderer.invoke('settings:getHeadlessMode'),
+    setHeadlessMode: (headless) => ipcRenderer.invoke('settings:setHeadlessMode', headless),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────
@@ -150,6 +155,11 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       const listener = (_event, frameData) => cb(frameData);
       ipcRenderer.on('screencast:frame', listener);
       return () => ipcRenderer.removeListener('screencast:frame', listener);
+    },
+    agentCheckpoint: (cb) => {
+      const listener = (_, payload) => cb(payload);
+      ipcRenderer.on('browser:agentCheckpoint', listener);
+      return () => ipcRenderer.removeListener('browser:agentCheckpoint', listener);
     },
   },
 });

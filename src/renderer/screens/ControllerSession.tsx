@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio, X, Play, StopCircle, ChevronRight, ChevronLeft, RotateCw } from 'lucide-react';
+import { LogOut, MousePointer, Hand, Send, BookOpen, Loader2, Radio, X, Play, StopCircle, ChevronRight, ChevronLeft, RotateCw, Terminal, Plus } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import { useControllerWebRTC } from '../hooks/useWebRTC';
-import type { AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, LocalWorkflow, TabInfo } from '../../shared/types';
+import type { AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, LocalWorkflow, TabInfo, AgentCheckpointPayload } from '../../shared/types';
 
 export function ControllerSession() {
   const navigate = useNavigate();
@@ -14,7 +14,7 @@ export function ControllerSession() {
   const {
     isTakeoverActive, agentStatus, chatHistory, setTakeoverActive,
     workflowRunState, workflowStepStatuses,
-    clearWorkflow,
+    clearWorkflow, currentAction, executionLogs,
   } = useAgentStore();
   const [prompt, setPrompt] = useState('');
   const [workflows, setWorkflows] = useState<LocalWorkflow[]>([]);
@@ -22,7 +22,33 @@ export function ControllerSession() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<LocalWorkflow | null>(null);
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [urlInput, setUrlInput] = useState('');
+  const [showConsole, setShowConsole] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const isResizing = useRef(false);
+
+  useEffect(() => {
+    function handlePointerMove(e: PointerEvent) {
+      if (!isResizing.current) return;
+      // Calculate width from the right edge
+      const newWidth = document.body.clientWidth - e.clientX;
+      if (newWidth > 250 && newWidth < 800) {
+        setSidebarWidth(newWidth);
+      }
+    }
+    function handlePointerUp() {
+      if (isResizing.current) {
+        isResizing.current = false;
+        document.body.style.cursor = '';
+      }
+    }
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, []);
 
   useEffect(() => {
     const activeTab = tabs.find(t => t.active);
@@ -37,6 +63,14 @@ export function ControllerSession() {
     if (pin) {
       window.RemoteCtrlAPI?.controller.connect(pin);
     }
+    
+    // Cleanup: when ControllerSession unmounts (e.g. user navigates to WorkflowLibrary),
+    // we must ensure any running agent/workflow is cancelled so it doesn't run in the background forever
+    // and block future executions.
+    return () => {
+      window.RemoteCtrlAPI?.browser.cancelAgent().catch(() => {});
+      window.RemoteCtrlAPI?.browser.cancelWorkflow().catch(() => {});
+    };
   }, [pin]);
 
   useEffect(() => {
@@ -67,7 +101,7 @@ export function ControllerSession() {
     }, true);
   }
 
-  function handleBrowserAction(action: 'goBack' | 'goForward' | 'reload' | 'navigate' | 'closeTab', tabId?: string) {
+  function handleBrowserAction(action: 'goBack' | 'goForward' | 'reload' | 'navigate' | 'closeTab' | 'newTab', tabId?: string) {
     sendData({
       type: 'BROWSER_ACTION',
       version: '1.0',
@@ -132,6 +166,15 @@ export function ControllerSession() {
     sendData({ type: 'WORKFLOW_CANCEL', version: '1.0', timestamp: Date.now(), payload: {} }, true);
   }
 
+  function handleCheckpointResponse(checkpointId: string, selectedOptionId: string) {
+    sendData({
+      type: 'AGENT_CHECKPOINT_RESPONSE',
+      version: '1.0',
+      timestamp: Date.now(),
+      payload: { checkpointId, response: { selectedOptionId } },
+    }, true);
+  }
+
   const isConnected = controllerState === 'SESSION_ACTIVE' || controllerState === 'CONTROLLING_REMOTELY';
   const isConnecting = ['SIGNALING_CONNECTING', 'WAITING_FOR_HOST_APPROVAL', 'WEBRTC_CONNECTING'].includes(controllerState);
 
@@ -148,6 +191,8 @@ export function ControllerSession() {
       store.handleWorkflowRunStatus(msg.payload as WorkflowRunStatus);
     } else if (msg.type === 'WORKFLOW_STEP_STATUS') {
       store.handleWorkflowStepStatus(msg.payload as WorkflowStepStatus);
+    } else if (msg.type === 'AGENT_CHECKPOINT') {
+      store.handleAgentCheckpoint(msg.payload as AgentCheckpointPayload);
     } else if (msg.type === 'TAB_LIST') {
       setTabs(msg.payload as TabInfo[]);
     }
@@ -258,16 +303,20 @@ export function ControllerSession() {
     <div className="ctrl-root">
       {/* Top bar */}
       <div className="ctrl-topbar drag-region">
-        <div className="ctrl-topbar-left no-drag">
-          <div className={`ctrl-dot ${isConnected ? 'ctrl-dot-on' : 'ctrl-dot-off'}`} />
-          <span className="ctrl-status-text">
-            {isConnecting ? 'Connecting…' : isConnected ? 'Connected' : controllerState === 'DISCONNECTED' ? 'Disconnected' : `PIN ${pin}`}
-          </span>
-          {isConnected && rtcStatus === 'streaming' && (
-            <span className="ctrl-live-badge"><Radio size={10} /> Live</span>
-          )}
-        </div>
+        {/* Left side empty for Mac traffic lights */}
+        <div className="ctrl-topbar-left" />
         <div className="ctrl-topbar-right no-drag">
+          {/* Status indicators moved to right */}
+          <div className="ctrl-status-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '16px' }}>
+            <div className={`ctrl-dot ${isConnected ? 'ctrl-dot-on' : 'ctrl-dot-off'}`} />
+            <span className="ctrl-status-text">
+              {isConnecting ? 'Connecting…' : isConnected ? 'Connected' : controllerState === 'DISCONNECTED' ? 'Disconnected' : `PIN ${pin}`}
+            </span>
+            {isConnected && rtcStatus === 'streaming' && (
+              <span className="ctrl-live-badge"><Radio size={10} /> Live</span>
+            )}
+          </div>
+          
           {/* Takeover toggle */}
           <button
             className={`btn ${isTakeoverActive ? 'btn-takeover-active' : 'btn-takeover'}`}
@@ -286,6 +335,13 @@ export function ControllerSession() {
           </button>
           <button className="btn btn-ghost" onClick={handleDisconnect}>
             <LogOut size={14} /> Disconnect
+          </button>
+          <button
+            className={`btn ${showConsole ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setShowConsole(!showConsole)}
+            title="Execution Console"
+          >
+            <Terminal size={14} /> Console
           </button>
         </div>
       </div>
@@ -326,6 +382,9 @@ export function ControllerSession() {
                     <button className="ctrl-tab-close" onClick={(e) => { e.stopPropagation(); handleBrowserAction('closeTab', tab.id); }}><X size={10} /></button>
                   </div>
                 ))}
+                <button className="ctrl-tab-new" onClick={() => handleBrowserAction('newTab')} title="New Tab">
+                  <Plus size={14} />
+                </button>
               </div>
             </div>
           )}
@@ -387,8 +446,18 @@ export function ControllerSession() {
           </div>
         </div>
 
+        {/* Resizer */}
+        <div 
+          className="ctrl-resizer" 
+          onPointerDown={(e) => {
+            isResizing.current = true;
+            document.body.style.cursor = 'col-resize';
+            e.preventDefault();
+          }} 
+        />
+
         {/* Sidebar */}
-        <div className="ctrl-sidebar">
+        <div className="ctrl-sidebar" style={{ width: sidebarWidth }}>
           {/* Chat history */}
           <div className="ctrl-chat">
             {chatHistory.length === 0 ? (
@@ -396,18 +465,39 @@ export function ControllerSession() {
                 Send a prompt to control the remote browser
               </div>
             ) : (
-              chatHistory.map((msg) => <ChatBubble key={msg.id} msg={msg} />)
+              chatHistory.map((msg) => (
+                <ChatBubble 
+                  key={msg.id} 
+                  msg={msg} 
+                  onCheckpointResponse={handleCheckpointResponse} 
+                  onTakeover={() => setTakeoverActive(true)}
+                />
+              ))
+            )}
+            {agentStatus === 'running' && (
+              <div className="ctrl-active-agent-bubble">
+                <Loader2 size={12} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                <span>{currentAction || 'Thinking...'}</span>
+              </div>
             )}
             <div ref={chatEndRef} />
           </div>
 
           {/* Agent status badge */}
-          {agentStatus !== 'idle' && (
+          {(agentStatus !== 'idle' || isTakeoverActive) && (
             <div className="ctrl-agent-status">
-              {agentStatus === 'running' && <Loader2 size={12} className="animate-spin" />}
-              <span className={`badge badge-${agentStatus === 'running' ? 'accent' : agentStatus === 'error' ? 'danger' : 'success'}`}>
-                Agent {agentStatus}
-              </span>
+              {isTakeoverActive ? (
+                <span className="badge badge-warning badge-warning-pulse">
+                  Agent Paused - Manual Control Active
+                </span>
+              ) : (
+                <>
+                  {agentStatus === 'running' && <Loader2 size={12} className="animate-spin" />}
+                  <span className={`badge badge-${agentStatus === 'running' ? 'accent' : agentStatus === 'error' ? 'danger' : 'success'}`}>
+                    Agent {agentStatus}
+                  </span>
+                </>
+              )}
             </div>
           )}
 
@@ -528,6 +618,30 @@ export function ControllerSession() {
               </div>
             )}
           </div>
+          {/* Execution Console Drawer */}
+          {showConsole && (
+            <div className="ctrl-console-drawer">
+              <div className="ctrl-console-header">
+                <span className="ctrl-console-title"><Terminal size={12} /> Execution Logs</span>
+                <button className="btn btn-ghost" onClick={() => setShowConsole(false)} style={{ padding: '0 4px', height: '24px' }}>
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="ctrl-console-body">
+                {(!executionLogs || executionLogs.length === 0) ? (
+                  <div style={{ color: 'var(--text-muted)', padding: '12px' }}>No logs yet...</div>
+                ) : (
+                  executionLogs.map((log, i) => (
+                    <div key={i} className={`ctrl-log-row log-${log?.level || 'info'}`}>
+                      <span className="ctrl-log-level">[{String(log?.level || 'INFO').toUpperCase()}]</span>
+                      <span className="ctrl-log-msg">{log?.message}</span>
+                    </div>
+                  ))
+                )}
+                <div ref={(el) => { if (el) el.scrollIntoView(); }} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -716,6 +830,24 @@ export function ControllerSession() {
           background: rgba(255,255,255,0.1);
           color: var(--text-primary);
         }
+        .ctrl-tab-new {
+          background: transparent;
+          border: none;
+          color: var(--text-muted);
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 4px;
+          cursor: pointer;
+          padding: 0;
+          margin-left: 4px;
+        }
+        .ctrl-tab-new:hover {
+          background: var(--bg-overlay);
+          color: var(--text-primary);
+        }
         .ctrl-connecting {
           width: 100%;
           height: 100%;
@@ -732,10 +864,21 @@ export function ControllerSession() {
           position: absolute;
           inset: 0;
           cursor: default;
-          border: 2px solid var(--danger);
+          border: 2px solid #f59e0b;
+          box-shadow: inset 0 0 30px rgba(245, 158, 11, 0.2);
+        }
+        .ctrl-resizer {
+          width: 4px;
+          cursor: col-resize;
+          background: transparent;
+          transition: background 0.2s ease;
+          flex-shrink: 0;
+          z-index: 50;
+        }
+        .ctrl-resizer:hover, .ctrl-resizer:active {
+          background: var(--accent);
         }
         .ctrl-sidebar {
-          width: 300px;
           flex-shrink: 0;
           border-left: 1px solid var(--border);
           background: var(--bg-surface);
@@ -813,6 +956,51 @@ export function ControllerSession() {
         .badge-accent  { background: var(--accent-glow); color: var(--accent); }
         .badge-danger  { background: rgba(239,68,68,0.15); color: var(--danger); }
         .badge-success { background: rgba(34,197,94,0.15); color: var(--success); }
+        .badge-warning { background: rgba(245,158,11,0.15); color: #f59e0b; }
+        .badge-warning-pulse { animation: pulse-amber 2s infinite; }
+        @keyframes pulse-amber {
+          0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+          70% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+
+        .ctrl-active-agent-bubble {
+          display: flex; align-items: center; gap: 8px;
+          padding: 8px 12px;
+          background: var(--bg-overlay);
+          border-radius: 12px 12px 12px 2px;
+          border: 1px solid var(--border);
+          font-size: 12px;
+          color: var(--text-primary);
+          width: fit-content;
+        }
+
+        .ctrl-console-drawer {
+          height: 200px;
+          background: var(--bg-surface);
+          border-top: 1px solid var(--border);
+          display: flex; flex-direction: column;
+        }
+        .ctrl-console-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 4px 12px;
+          background: var(--bg-overlay);
+          border-bottom: 1px solid var(--border);
+          font-size: 11px; font-weight: 600; color: var(--text-secondary);
+          text-transform: uppercase;
+        }
+        .ctrl-console-title { display: flex; align-items: center; gap: 6px; }
+        .ctrl-console-body {
+          flex: 1; overflow-y: auto; padding: 8px 12px;
+          font-family: var(--font-mono); font-size: 11px;
+          display: flex; flex-direction: column; gap: 4px;
+        }
+        .ctrl-log-row { display: flex; gap: 8px; line-height: 1.4; }
+        .ctrl-log-level { font-weight: 600; opacity: 0.8; }
+        .log-info .ctrl-log-level { color: var(--accent); }
+        .log-warn .ctrl-log-level { color: #f59e0b; }
+        .log-error .ctrl-log-level { color: var(--danger); }
+        .log-error .ctrl-log-msg { color: var(--danger); }
 
         /* ── Workflow panel ── */
         .ctrl-workflow-section {
@@ -903,8 +1091,75 @@ export function ControllerSession() {
   );
 }
 
-function ChatBubble({ msg }: { msg: ChatMessage }) {
+function ChatBubble({ msg, onCheckpointResponse, onTakeover }: { msg: ChatMessage, onCheckpointResponse?: (checkpointId: string, optionId: string) => void, onTakeover?: () => void }) {
   const isUser = msg.sender === 'user';
+  
+  if (msg.type === 'checkpoint' && msg.checkpointPayload) {
+    const cp = msg.checkpointPayload;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+        <div style={{
+          maxWidth: '90%',
+          padding: '12px',
+          borderRadius: '12px 12px 12px 2px',
+          background: 'var(--bg-overlay)',
+          border: '1px solid var(--border-active)',
+          fontSize: '12px',
+          lineHeight: '1.5',
+          color: 'var(--text-primary)',
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--accent)' }}>Agent Needs Input</div>
+          <div style={{ marginBottom: '12px' }}>{msg.text}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {cp.options.map((opt) => (
+              <button
+                key={opt.id}
+                className="btn btn-ghost"
+                style={{ 
+                  justifyContent: 'flex-start', 
+                  height: 'auto', 
+                  padding: '8px 12px',
+                  border: opt.recommended ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  background: opt.recommended ? 'var(--accent-glow)' : 'var(--bg-elevated)',
+                  textAlign: 'left',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start'
+                }}
+                onClick={() => onCheckpointResponse?.(cp.checkpointId, opt.id)}
+              >
+                <div style={{ fontWeight: 600 }}>{opt.label}</div>
+                {opt.description && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{opt.description}</div>}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.type === 'error') {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+        <div style={{
+          maxWidth: '90%', padding: '12px',
+          borderRadius: '12px 12px 12px 2px',
+          background: 'rgba(239,68,68,0.1)',
+          border: '1px solid var(--danger)',
+          fontSize: '12px', lineHeight: '1.5', color: 'var(--text-primary)',
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--danger)' }}>Task Failed</div>
+          <div style={{ marginBottom: '12px' }}>{msg.text}</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-primary" onClick={onTakeover} style={{ background: 'var(--danger)' }}>
+              <Hand size={14} /> Takeover
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
       <div style={{

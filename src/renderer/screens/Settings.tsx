@@ -15,6 +15,8 @@ export function Settings() {
     setSignalingUrl,
     setPreferredProvider,
     setApiKey,
+    headlessMode,
+    setHeadlessMode,
   } = useSettingsStore();
 
   const [openAIInput, setOpenAIInput] = useState('');
@@ -106,6 +108,21 @@ export function Settings() {
               ))}
             </div>
           </SettingField>
+
+          {browserMode === 'internal' && (
+            <SettingField label="Headless Mode" status="">
+              <label className="settings-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={headlessMode}
+                  onChange={(e) => setHeadlessMode(e.target.checked)}
+                />
+                <span className="settings-radio-label">
+                  Run invisibly in background (prevents stealing OS focus)
+                </span>
+              </label>
+            </SettingField>
+          )}
         </Section>
 
         {/* API Keys */}
@@ -207,7 +224,7 @@ export function Settings() {
                     onChange={() => setPreferredProvider(p)}
                   />
                   <span className="settings-radio-label">
-                    {p === 'openai' ? 'OpenAI (GPT-4o)' : p === 'anthropic' ? 'Anthropic (Claude)' : 'Gemini (3.1 Flash Lite Preview)'}
+                    {p === 'openai' ? 'OpenAI' : p === 'anthropic' ? 'Anthropic (Claude)' : 'Gemini (3.1 Flash)'}
                   </span>
                 </label>
               ))}

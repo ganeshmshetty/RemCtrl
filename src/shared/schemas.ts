@@ -15,7 +15,7 @@ export const LocalWorkflowSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
-  startUrl: z.string().url().optional(),
+  startUrl: z.union([z.string().url(), z.literal('')]).optional(),
   steps: z.array(WorkflowStepSchema).max(100),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive(),
@@ -62,7 +62,7 @@ export const AgentWorkflowBatchSchema = z.object({
   workflowRunId: z.string().uuid(),
   workflowId: z.string().min(1),
   name: z.string().min(1),
-  startUrl: z.string().url().optional(),
+  startUrl: z.union([z.string().url(), z.literal('')]).optional(),
   steps: z.array(WorkflowStepSchema).min(1).max(100),
 });
 
@@ -105,6 +105,7 @@ export const PersistedSettingsSchema = z.object({
   signalingUrl: z.string().url().default('https://remotectrl-signaling.onrender.com'),
   preferredProvider: ApiProviderSchema.default('openai'),
   browserMode: BrowserModeSchema.default('internal'),
+  headlessMode: z.boolean().default(true),
   // API keys are stored in a separate secure store — not in this file
 });
 

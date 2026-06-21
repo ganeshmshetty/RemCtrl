@@ -42,6 +42,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       await get().loadWorkflows();
     } catch (err) {
       set({ error: String(err) });
+      throw err;
     }
   },
 
@@ -53,6 +54,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       }));
     } catch (err) {
       set({ error: String(err) });
+      throw err;
     }
   },
 }));
@@ -65,6 +67,7 @@ interface SettingsState {
   hasOpenAIKey: boolean;
   hasAnthropicKey: boolean;
   hasGeminiKey: boolean;
+  headlessMode: boolean;
   isLoading: boolean;
 
   // Actions
@@ -72,6 +75,7 @@ interface SettingsState {
   setSignalingUrl: (url: string) => Promise<void>;
   setPreferredProvider: (provider: ApiProvider) => Promise<void>;
   setApiKey: (provider: ApiProvider, value: string) => Promise<void>;
+  setHeadlessMode: (headless: boolean) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -80,20 +84,22 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hasOpenAIKey: false,
   hasAnthropicKey: false,
   hasGeminiKey: false,
+  headlessMode: true,
   isLoading: false,
 
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const [signalingUrl, preferredProvider, hasOpenAIKey, hasAnthropicKey, hasGeminiKey] =
+      const [signalingUrl, preferredProvider, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, headlessMode] =
         await Promise.all([
           window.RemoteCtrlAPI.settings.getSignalingUrl(),
           window.RemoteCtrlAPI.settings.getPreferredProvider(),
           window.RemoteCtrlAPI.settings.hasApiKey('openai'),
           window.RemoteCtrlAPI.settings.hasApiKey('anthropic'),
           window.RemoteCtrlAPI.settings.hasApiKey('gemini'),
+          window.RemoteCtrlAPI.settings.getHeadlessMode(),
         ]);
-      set({ signalingUrl, preferredProvider, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, isLoading: false });
+      set({ signalingUrl, preferredProvider, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, headlessMode, isLoading: false });
     } catch {
       set({ isLoading: false });
     }
@@ -112,5 +118,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setApiKey: async (provider, value) => {
     await window.RemoteCtrlAPI.settings.setApiKey(provider, value);
     set(provider === 'openai' ? { hasOpenAIKey: true } : provider === 'anthropic' ? { hasAnthropicKey: true } : { hasGeminiKey: true });
+  },
+
+  setHeadlessMode: async (headless) => {
+    await window.RemoteCtrlAPI.settings.setHeadlessMode(headless);
+    set({ headlessMode: headless });
   },
 }));

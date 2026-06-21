@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
 import { startScreencast, stopScreencast } from './screencast.js';
-import { getBrowserMode } from './storage.js';
+import { getBrowserMode, getHeadlessMode } from './storage.js';
 import type { BrowserWindow } from 'electron';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
@@ -48,7 +48,7 @@ export async function switchTab(tabId: string): Promise<void> {
   const targetEntry = pages.find(p => p.id === tabId);
   if (targetEntry && targetEntry !== activePageEntry) {
     activePageEntry = targetEntry;
-    await activePageEntry.page.bringToFront();
+    targetEntry.page.bringToFront().catch(() => {});
     await startScreencast(activePageEntry.page);
     emitTabsChange();
   }
@@ -83,6 +83,17 @@ export async function closeTab(tabId: string): Promise<void> {
   }
 }
 
+export async function newTab(): Promise<void> {
+  if (context) {
+    try {
+      const page = await context.newPage();
+      await page.goto('https://google.com');
+    } catch (err) {
+      console.error('[browser] failed to open new tab:', err);
+    }
+  }
+}
+
 function registerPage(p: Page) {
   const entry: PageEntry = { id: crypto.randomUUID(), page: p, title: 'Loading...' };
   pages.push(entry);
@@ -92,10 +103,14 @@ function registerPage(p: Page) {
     if (activePageEntry === entry) {
       activePageEntry = pages[pages.length - 1] || null;
       if (activePageEntry) {
-        await activePageEntry.page.bringToFront();
+        activePageEntry.page.bringToFront().catch(() => {});
         await startScreencast(activePageEntry.page);
       } else {
         await stopScreencast();
+        // If last tab is closed, automatically open a new one
+        if (context) {
+          newTab().catch(() => {});
+        }
       }
     }
     emitTabsChange();
@@ -104,6 +119,12 @@ function registerPage(p: Page) {
   p.on('load', async () => {
     try { entry.title = await p.title(); } catch { }
     emitTabsChange();
+  });
+
+  p.on('framenavigated', (frame) => {
+    if (frame === p.mainFrame()) {
+      emitTabsChange();
+    }
   });
   
   p.title().then(t => { entry.title = t; emitTabsChange(); }).catch(() => {});
@@ -162,9 +183,10 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
       throw new Error('Failed to connect to local Chrome on port 9222.');
     }
   } else {
-    console.log(`[browser] Launching internal visible browser on CDP port ${INTERNAL_CDP_PORT}...`);
+    const headless = getHeadlessMode();
+    console.log(`[browser] Launching internal browser (headless: ${headless}) on CDP port ${INTERNAL_CDP_PORT}...`);
     browser = await chromium.launch({
-      headless: false,
+      headless,
       args: [
         `--remote-debugging-port=${INTERNAL_CDP_PORT}`,
         '--window-size=1280,800',
@@ -209,7 +231,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     }
   } else {
     activePageEntry = pages[0];
-    await activePageEntry.page.bringToFront();
+    activePageEntry.page.bringToFront().catch(() => {});
     await startScreencast(activePageEntry.page);
     emitTabsChange();
   }

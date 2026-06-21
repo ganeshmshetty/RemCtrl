@@ -70,6 +70,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
     let cleanupWorkflowStepStatus: (() => void) | undefined;
     let cleanupScreencastFrame: (() => void) | undefined;
     let cleanupTabsChange: (() => void) | undefined;
+    let cleanupAgentCheckpoint: (() => void) | undefined;
 
     async function startWebRTC() {
       try {
@@ -135,6 +136,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
               else if (payload.action === 'reload') await window.RemoteCtrlAPI.browser.reload();
               else if (payload.action === 'navigate' && payload.url) await window.RemoteCtrlAPI.browser.navigate(payload.url);
               else if (payload.action === 'closeTab' && payload.tabId) await window.RemoteCtrlAPI.browser.closeTab(payload.tabId);
+              else if (payload.action === 'newTab') await window.RemoteCtrlAPI.browser.newTab();
             } else if (msg.type === 'AGENT_PROMPT') {
               const payload = msg.payload as any;
               if (payload.commandId === '__cancel__') {
@@ -172,6 +174,9 @@ export function useHostWebRTC(isSessionActive: boolean) {
               }
             } else if (msg.type === 'WORKFLOW_CANCEL') {
               await window.RemoteCtrlAPI.browser.cancelWorkflow();
+            } else if (msg.type === 'AGENT_CHECKPOINT_RESPONSE') {
+              const payload = msg.payload as any;
+              await window.RemoteCtrlAPI.browser.submitCheckpoint(payload.checkpointId, payload.response);
             }
           } catch (err) {
             console.error('[host-webrtc] Error handling data channel message:', err);
@@ -211,6 +216,16 @@ export function useHostWebRTC(isSessionActive: boolean) {
           if (reliableChannel.readyState === 'open') {
             reliableChannel.send(JSON.stringify({
               type: 'AGENT_LOG',
+              version: '1.0',
+              timestamp: Date.now(),
+              payload,
+            } satisfies DataChannelMessage));
+          }
+        });
+        cleanupAgentCheckpoint = window.RemoteCtrlAPI.on.agentCheckpoint((payload) => {
+          if (reliableChannel.readyState === 'open') {
+            reliableChannel.send(JSON.stringify({
+              type: 'AGENT_CHECKPOINT',
               version: '1.0',
               timestamp: Date.now(),
               payload,
@@ -267,6 +282,11 @@ export function useHostWebRTC(isSessionActive: boolean) {
 
         pc.onconnectionstatechange = () => {
           console.log('[host-webrtc] Connection state:', pc?.connectionState);
+          if (pc?.connectionState === 'disconnected' || pc?.connectionState === 'failed' || pc?.connectionState === 'closed') {
+            console.log('[host-webrtc] Controller disconnected. Cancelling active agents and workflows...');
+            window.RemoteCtrlAPI.browser.cancelAgent().catch(() => {});
+            window.RemoteCtrlAPI.browser.cancelWorkflow().catch(() => {});
+          }
         };
 
         // 5. Listen for controller's answer and ICE candidates
@@ -322,6 +342,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
       cleanupWorkflowStepStatus?.();
       cleanupScreencastFrame?.();
       cleanupTabsChange?.();
+      cleanupAgentCheckpoint?.();
       stream?.getTracks().forEach((t) => t.stop());
       pc?.close();
       pc = null;

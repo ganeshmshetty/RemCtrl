@@ -89,6 +89,24 @@ export interface AgentLogPayload {
   step?: string;
 }
 
+export interface AgentCheckpointPayload {
+  checkpointId: string;
+  taskId: string;
+  step: number;
+  question: string;
+  options: { id: string; label: string; description?: string; recommended?: boolean }[];
+  context: {
+    currentPage: string;
+    taskProgress: string;
+    uncertainty?: string;
+  };
+}
+
+export interface CheckpointResponse {
+  selectedOptionId: string;
+  customInput?: string;
+}
+
 // ─── Workflow Run Types ────────────────────────────────────────────────────────
 
 export interface AgentWorkflowBatchPayload {
@@ -149,6 +167,8 @@ export type MessageType =
   | 'AGENT_PROMPT'
   | 'AGENT_STATUS_UPDATE'
   | 'AGENT_LOG'
+  | 'AGENT_CHECKPOINT'
+  | 'AGENT_CHECKPOINT_RESPONSE'
   | 'AGENT_WORKFLOW_BATCH'
   | 'WORKFLOW_RUN_STATUS'
   | 'WORKFLOW_STEP_STATUS'
@@ -237,6 +257,8 @@ export interface RemoteCtrlAPI {
     reload: () => Promise<void>;
     navigate: (url: string) => Promise<void>;
     closeTab: (tabId: string) => Promise<void>;
+    newTab: () => Promise<void>;
+    submitCheckpoint: (checkpointId: string, response: CheckpointResponse) => Promise<void>;
   };
   webrtc: {
     sendSignal: (signal: unknown) => Promise<void>;
@@ -250,6 +272,8 @@ export interface RemoteCtrlAPI {
     setPreferredProvider: (provider: ApiProvider) => Promise<void>;
     getBrowserMode: () => Promise<BrowserMode>;
     setBrowserMode: (mode: BrowserMode) => Promise<void>;
+    getHeadlessMode: () => Promise<boolean>;
+    setHeadlessMode: (headless: boolean) => Promise<void>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;
@@ -272,6 +296,7 @@ export interface RemoteCtrlAPI {
     workflowStepStatus: (cb: (status: WorkflowStepStatus) => void) => () => void;
     tabsChange: (cb: (tabs: TabInfo[]) => void) => () => void;
     screencastFrame: (cb: (frameData: Uint8Array) => void) => () => void;
+    agentCheckpoint: (cb: (payload: AgentCheckpointPayload) => void) => () => void;
   };
 }
 
