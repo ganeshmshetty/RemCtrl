@@ -34,6 +34,7 @@ import {
   RetryExhaustedError,
   extractError,
 } from './errors.js';
+import { TaskEvaluator } from './task-evaluator.js';
 
 // ─── Callback Types ─────────────────────────────────────────────────────────
 
@@ -323,7 +324,11 @@ async function executeStepWithStallDetection(
         return await executeMultiStepAction(stagehand, page, parsed.remainingAction, onLog);
       }
 
-      return await stagehand.act(instruction, { page });
+      const res = await stagehand.act(instruction, { page });
+      if (res && res.success === false) {
+        throw new CommandExecutionError('act', res.message || 'Action failed to execute');
+      }
+      return res;
     }
 
     if (action === 'observe') {
@@ -331,7 +336,29 @@ async function executeStepWithStallDetection(
     }
 
     if (action === 'extract') {
-      return await stagehand.extract(instruction, { page });
+      emitLog(onLog, 'info', `Extracting data...`, '[Workflow]');
+      const res = await stagehand.extract(instruction, { page });
+      
+      // Level 2: Advanced AI Verification
+      emitLog(onLog, 'info', `Verifying extraction quality...`, '[Workflow]');
+      const evaluator = new TaskEvaluator();
+      try {
+        const evalResult = await evaluator.evaluate(
+          instruction,
+          res,
+          { stepsExecuted: 1, errors: [], collectedData: res as any }
+        );
+        
+        if (!evalResult.success) {
+          throw new CommandExecutionError('extract', `Extraction incomplete: ${evalResult.missingElements.join(', ')}. Suggestions: ${evalResult.suggestions.join(', ')}`);
+        }
+        emitLog(onLog, 'info', `Extraction verified (Confidence: ${Math.round(evalResult.confidence * 100)}%)`, '[Workflow]');
+      } catch (e: any) {
+        if (e instanceof CommandExecutionError) throw e;
+        emitLog(onLog, 'warn', `AI verification failed: ${e.message}`, '[Workflow]');
+      }
+      
+      return res;
     }
 
     throw new Error(`Unknown action: "${action}"`);
@@ -401,7 +428,16 @@ async function executeMultiStepAction(
     emitLog(onLog, 'info', `Post-nav step ${step + 1}: ${goal}`, '[Workflow]');
 
     try {
-      lastResult = await stagehand.act(singleStepPrompt, { page });
+      const result = await stagehand.act(singleStepPrompt, { page });
+
+    if (result.actionDescription?.includes('GOAL_ACHIEVED')) {
+      return { success: true, message: 'Goal achieved successfully' };
+    }
+    
+    if (result && result.success === false) {
+      throw new CommandExecutionError('act', result.message || 'Action failed to execute');
+    }    
+      lastResult = result;
       successfulSteps++;
 
       const actionDesc: string =
