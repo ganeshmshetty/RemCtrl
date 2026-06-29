@@ -54,8 +54,8 @@ export function loadSettings(): PersistedSettings {
 }
 
 export function saveSettings(settings: PersistedSettings) {
-  _settingsCache = settings;
   writeJson(SETTINGS_FILE, settings);
+  _settingsCache = settings;
 }
 
 export function getSignalingUrl(): string {
@@ -123,11 +123,10 @@ export function getModelsList(provider: ApiProvider): string[] {
 
 export function saveModelsList(provider: ApiProvider, models: string[]) {
   // 1. Update local cache
-  if (!_modelsCache) {
-    _modelsCache = readJson<Record<string, string[]>>(MODELS_FILE, {});
-  }
-  _modelsCache[provider] = models;
-  writeJson(MODELS_FILE, _modelsCache);
+  const currentCache = _modelsCache || readJson<Record<string, string[]>>(MODELS_FILE, {});
+  const nextCache = { ...currentCache, [provider]: models };
+  writeJson(MODELS_FILE, nextCache);
+  _modelsCache = nextCache;
 
   // 2. Dev mode: Write back to src/shared/default-models.ts
   if (!app.isPackaged) {
@@ -177,8 +176,9 @@ export function hasApiKey(provider: ApiProvider): boolean {
 
 export function setApiKey(provider: ApiProvider, value: string) {
   const store = loadApiKeys();
-  store[provider] = value;
-  writeJson(API_KEYS_FILE, store);
+  const nextStore = { ...store, [provider]: value };
+  writeJson(API_KEYS_FILE, nextStore);
+  _apiKeysCache = nextStore;
 }
 
 export function getApiKey(provider: ApiProvider): string | null {
@@ -209,17 +209,24 @@ export function saveWorkflow(workflow: LocalWorkflow): void {
   // Validate before persisting
   const parsed = LocalWorkflowSchema.parse(workflow);
   const store = loadWorkflowStore();
-  const idx = store.workflows.findIndex((w) => w.id === parsed.id);
+  const nextWorkflows = [...store.workflows];
+  const idx = nextWorkflows.findIndex((w) => w.id === parsed.id);
   if (idx >= 0) {
-    store.workflows[idx] = parsed;
+    nextWorkflows[idx] = parsed;
   } else {
-    store.workflows.push(parsed);
+    nextWorkflows.push(parsed);
   }
-  writeJson(WORKFLOWS_FILE, store);
+  const nextStore = { ...store, workflows: nextWorkflows };
+  writeJson(WORKFLOWS_FILE, nextStore);
+  _workflowsCache = nextStore;
 }
 
 export function deleteWorkflow(workflowId: string): void {
   const store = loadWorkflowStore();
-  store.workflows = store.workflows.filter((w) => w.id !== workflowId);
-  writeJson(WORKFLOWS_FILE, store);
+  const nextStore = {
+    ...store,
+    workflows: store.workflows.filter((w) => w.id !== workflowId)
+  };
+  writeJson(WORKFLOWS_FILE, nextStore);
+  _workflowsCache = nextStore;
 }
