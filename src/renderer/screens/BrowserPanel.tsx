@@ -21,10 +21,9 @@ export function BrowserPanel() {
     controllerState === 'CONTROLLING_REMOTELY';
 
   const isConnecting = 
-    ['SIGNALING_CONNECTING', 'WAITING_FOR_HOST_APPROVAL', 'WEBRTC_CONNECTING'].includes(controllerState) ||
-    ['SIGNALING_CONNECTING'].includes(hostState);
+    ['SIGNALING_CONNECTING', 'WAITING_FOR_HOST_APPROVAL', 'WEBRTC_CONNECTING'].includes(controllerState);
 
-  const isHostWaiting = ['WAITING_FOR_CONTROLLER', 'AWAITING_HOST_APPROVAL'].includes(hostState);
+  const isHostWaiting = ['SIGNALING_CONNECTING', 'WAITING_FOR_CONTROLLER', 'AWAITING_HOST_APPROVAL'].includes(hostState);
 
   const isHost = hostState !== 'IDLE' && hostState !== 'REGISTERING_PIN' && hostState !== 'WAITING_FOR_CONTROLLER' && hostState !== 'AWAITING_HOST_APPROVAL';
   const isController = controllerState !== 'IDLE';
@@ -264,24 +263,37 @@ export function BrowserPanel() {
       <div className="browser-video-container">
         {isHostWaiting ? (
           <div className="browser-loading" style={{ gap: 20 }}>
-            {hostState === 'WAITING_FOR_CONTROLLER' && (
-              <>
+            {['SIGNALING_CONNECTING', 'WAITING_FOR_CONTROLLER'].includes(hostState) && (
+              <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <div style={{ fontSize: '18px', fontWeight: 600 }}>Waiting for Controller</div>
-                <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Share this PIN to allow remote control:</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '8px' }}>Share this PIN to allow remote control:</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '24px 0' }}>
                   <div style={{ 
                     fontSize: '48px', 
                     fontFamily: 'var(--font-mono)', 
                     fontWeight: 700, 
                     letterSpacing: '0.1em',
                     color: 'var(--accent)',
+                    minHeight: '60px',
+                    display: 'flex',
+                    alignItems: 'center',
                   }}>
-                    {pin || '...'}
+                    {pin ? (
+                      <span className="animate-pop-in">{pin}</span>
+                    ) : (
+                      <span className="animate-pulse" style={{ filter: 'blur(5px)', opacity: 0.4, userSelect: 'none' }}>000000000</span>
+                    )}
                   </div>
                   <button 
                     className="icon-btn" 
                     onClick={handleCopyPin}
-                    style={{ width: '40px', height: '40px', border: '1px solid var(--border)' }}
+                    style={{ 
+                      width: '40px', 
+                      height: '40px', 
+                      border: '1px solid var(--border)',
+                      opacity: pin ? 1 : 0.5,
+                      pointerEvents: pin ? 'auto' : 'none'
+                    }}
                     title="Copy PIN"
                   >
                     {hasCopiedPin ? <Check size={20} color="var(--success)" /> : <Copy size={20} />}
@@ -290,7 +302,7 @@ export function BrowserPanel() {
                 <button className="btn btn-ghost" onClick={handleStopHosting} style={{ color: 'var(--danger)' }}>
                   Stop Hosting
                 </button>
-              </>
+              </div>
             )}
             {hostState === 'AWAITING_HOST_APPROVAL' && (
               <div className="session-approval animate-fade-in" style={{
