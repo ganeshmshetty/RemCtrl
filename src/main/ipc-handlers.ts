@@ -33,7 +33,7 @@ import {
 } from './storage.js';
 import { SignalingClient } from './signaling-client.js';
 import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard, resetProfile } from './browser-manager.js';
-import { runAgentCommand, cancelAgentCommand, isAgentRunning, setAgentPaused } from './agent-executor.js';
+import { runAgent, cancelAgent, isAgentRunning, setAgentPaused } from './agent-runner.js';
 import { runWorkflow, cancelWorkflow, isWorkflowRunning, setWorkflowPaused } from './workflow-executor.js';
 import { submitCheckpointResponse } from './human-checkpoint.js';
 import { setScreencastWindow } from './screencast.js';
@@ -365,7 +365,7 @@ function registerIpcHandlers() {
     }
 
     try {
-      await runAgentCommand(
+      await runAgent(
         payload.commandId,
         payload.action,
         payload.instruction,
@@ -381,7 +381,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('browser:cancelAgent', async () => {
-    cancelAgentCommand();
+    cancelAgent();
     return { ok: true };
   });
 
