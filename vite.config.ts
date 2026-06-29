@@ -13,8 +13,6 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
-    strictPort: true,
     force: true, // always re-bundle on dev server start
     watch: {
       ignored: ['**/research/**', '**/release/**'],
