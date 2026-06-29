@@ -58,8 +58,6 @@ export function BrowserPanel() {
     }
   }, []);
   const sendData = isHost ? hostSendData : ctrlRTC.sendData;
-  const noop = useCallback(() => {}, []);
-  const onMessage = isHost ? noop : ctrlRTC.onMessage;
   const rtcStatus = isHost ? hostRTC.status : ctrlRTC.status;
 
   const lastMoveTimeRef = useRef<number>(0);
@@ -85,7 +83,12 @@ export function BrowserPanel() {
   }, [isHost]);
 
   useEffect(() => {
-    onMessage((msg) => {
+    if (isHost) {
+      ctrlRTC.onMessage(() => {});
+      return;
+    }
+
+    ctrlRTC.onMessage((msg) => {
       const store = useAgentStore.getState();
       if (msg.type === 'AGENT_STATUS_UPDATE') {
         store.handleAgentStatus(msg.payload as AgentStatusPayload);
@@ -101,7 +104,11 @@ export function BrowserPanel() {
         setTabs(msg.payload as TabInfo[]);
       }
     });
-  }, [onMessage]);
+
+    return () => {
+      ctrlRTC.onMessage(() => {});
+    };
+  }, [isHost, ctrlRTC.onMessage]);
 
   function handleBrowserAction(action: 'goBack' | 'goForward' | 'reload' | 'navigate' | 'closeTab' | 'newTab', tabId?: string) {
     sendData({

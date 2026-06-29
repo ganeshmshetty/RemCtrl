@@ -5,7 +5,7 @@
 - [x] **"Save as Workflow" button is broken**: The button in `AgentPanel.tsx` has no `onClick` handler.
 - [x] **Duplicate event listeners leak**: `onMessage` in `BrowserPanel.tsx` is called inline during render, creating duplicate listeners on every render cycle. Wrap it in `useEffect`.
 - [x] **Windows config path issue**: `human-checkpoint.ts` uses `~/.config/RemoteCtrl` (Linux/macOS style). Update it to use `app.getPath('userData')`.
-- [x] **Missing single-instance lock**: Two instances of the app can run simultaneously. Add `app.requestSingleInstanceLock()` in `index.ts`.
+- [ ] **Missing single-instance lock**: Two instances of the app can run simultaneously. Add `app.requestSingleInstanceLock()` in `index.ts`.
 
 ## 🟡 Medium Priority (UX / Performance)
 - [x] **Blocking Sync I/O**: `storage.ts` uses `readFileSync` on every getter call. Add an in-memory cache to prevent blocking the main thread on every IPC call.
