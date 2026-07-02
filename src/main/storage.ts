@@ -103,6 +103,21 @@ export function setHeadlessMode(headless: boolean) {
   saveSettings({ ...s, headlessMode: headless });
 }
 
+export function getCustomBaseUrl(provider: ApiProvider): string | undefined {
+  return loadSettings().customBaseUrls?.[provider];
+}
+
+export function setCustomBaseUrl(provider: ApiProvider, url: string | undefined) {
+  const s = loadSettings();
+  const nextUrls = { ...(s.customBaseUrls || {}) };
+  if (url) {
+    nextUrls[provider] = url;
+  } else {
+    delete nextUrls[provider];
+  }
+  saveSettings({ ...s, customBaseUrls: nextUrls });
+}
+
 // ─── Models Storage ─────────────────────────────────────────────────────────
 
 let _modelsCache: Record<string, string[]> | null = null;

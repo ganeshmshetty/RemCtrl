@@ -39,7 +39,7 @@ export async function parseInstruction(instruction: string, currentUrl: string =
   const provider = getPreferredProvider();
   const apiKey = getApiKey(provider);
 
-  const model = resolveModel(provider, apiKey, 'fast');
+  const model = resolveModel(provider, apiKey);
 
   const { object } = await generateObject({
     model,

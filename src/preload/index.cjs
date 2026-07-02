@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     setBrowserMode: (mode) => ipcRenderer.invoke('settings:setBrowserMode', mode),
     getHeadlessMode: () => ipcRenderer.invoke('settings:getHeadlessMode'),
     setHeadlessMode: (headless) => ipcRenderer.invoke('settings:setHeadlessMode', headless),
+    getCustomBaseUrl: (provider) => ipcRenderer.invoke('settings:getCustomBaseUrl', provider),
+    setCustomBaseUrl: (provider, url) => ipcRenderer.invoke('settings:setCustomBaseUrl', provider, url),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────

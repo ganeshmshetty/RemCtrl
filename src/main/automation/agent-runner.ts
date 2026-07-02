@@ -17,7 +17,7 @@ import { Stagehand } from '@browserbasehq/stagehand';
 import { getStagehand, closeStagehand } from './stagehand-pool.js';
 import { getPage, getCdpUrl } from '../browser-manager.js';
 import { parseInstruction } from './instruction-parser.js';
-import { getPreferredModel } from '../storage.js';
+import { getStagehandModelConfig } from './model-resolver.js';
 import { DynamicPlanner } from './task-planner.js';
 import { TaskEvaluator } from './task-evaluator.js';
 import { StrategyGenerator } from './strategy-generator.js';
@@ -99,28 +99,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getModelName(provider: string): string {
-  const preferred = getPreferredModel();
 
-  const ensurePrefix = (model: string, prov: string) => {
-    if (model.includes('/')) return model;
-    if (prov === 'gemini') return `google/${model}`;
-    return `${prov}/${model}`;
-  };
-
-  if (preferred) return ensurePrefix(preferred, provider);
-
-  switch (provider) {
-    case 'openai':      return 'openai/gpt-4o';
-    case 'anthropic':   return 'anthropic/claude-3-5-sonnet-latest';
-    case 'gemini':      return 'google/gemini-1.5-pro';
-    case 'groq':        return 'groq/llama-3.3-70b-versatile';
-    case 'deepseek':    return 'deepseek/deepseek-chat';
-    case 'nebius':      return 'nebius/meta-llama/Llama-3.3-70B-Instruct';
-    case 'openrouter':  return 'openrouter/anthropic/claude-3.5-sonnet';
-    default:            return 'openai/gpt-4o';
-  }
-}
 
 function isSimpleInstruction(instruction: string): boolean {
   if (instruction.length >= 50) return false;
@@ -200,8 +179,8 @@ export async function runAgent(
 
   // ── Complex pipeline ───────────────────────────────────────────────────────
 
-  const modelName = getModelName(provider);
-  emitLog(onLog, 'info', `Starting complex pipeline — model="${modelName}"`, '[AgentRunner]');
+  const stagehandConfig = getStagehandModelConfig(provider, apiKey);
+  emitLog(onLog, 'info', `Starting complex pipeline — model="${stagehandConfig.modelName}"`, '[AgentRunner]');
   onStatus({ commandId, state: 'running' });
 
   const executionLogger = new ExecutionLogger(commandId, instruction);
@@ -218,7 +197,7 @@ export async function runAgent(
 
     emitLog(onLog, 'info', 'Connecting to local browser via CDP...', '[AgentRunner]');
 
-    localStagehand = await getStagehand(cdpUrl, modelName, apiKey, (level, msg) => {
+    localStagehand = await getStagehand(cdpUrl, stagehandConfig, (level, msg) => {
       emitLog(onLog, level, msg, '[Stagehand]');
     });
 

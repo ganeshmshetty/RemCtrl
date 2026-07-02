@@ -216,7 +216,7 @@ export class TaskPlanner {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    const model = resolveModel(provider, apiKey, 'powerful');
+    const model = resolveModel(provider, apiKey);
 
     const PlannerSchema = z.object({
       subtasks: z.array(z.object({
@@ -281,7 +281,7 @@ export class DynamicPlanner {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    const model = resolveModel(provider, apiKey, 'powerful');
+    const model = resolveModel(provider, apiKey);
 
     const StepSchema = z.object({
       thought: z.string().describe('Your reasoning for what to do next based on the goal, history, and current page.'),

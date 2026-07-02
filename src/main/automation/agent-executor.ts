@@ -14,7 +14,7 @@ import { Stagehand } from '@browserbasehq/stagehand';
 import { getStagehand, closeStagehand } from './stagehand-pool.js';
 import { getPage, getCdpUrl } from '../browser-manager.js';
 import { parseInstruction } from './instruction-parser.js';
-import { getPreferredModel } from '../storage.js';
+import { getStagehandModelConfig } from './model-resolver.js';
 import type { AgentStatusPayload, AgentLogPayload, ApiProvider } from '../../shared/types.js';
 import type { Page } from 'playwright';
 import {
@@ -101,9 +101,9 @@ export async function runAgentCommand(
   cancelRequested = false;
   executionLogger = new ExecutionLogger(commandId, instruction);
 
-  const modelName = getModelName(provider);
+  const stagehandConfig = getStagehandModelConfig(provider, apiKey);
 
-  emitLog(onLog, 'info', `Starting — action="${action}" model="${modelName}"`, '[Agent]');
+  emitLog(onLog, 'info', `Starting — action="${action}" model="${stagehandConfig.modelName}"`, '[Agent]');
   onStatus({ commandId, state: 'running' });
 
   let localStagehand: Stagehand | null = null;
@@ -113,7 +113,7 @@ export async function runAgentCommand(
   try {
     emitLog(onLog, 'info', 'Connecting to local browser via CDP...', '[Agent]');
 
-    localStagehand = await getStagehand(cdpUrl, modelName, apiKey, (level, msg) => {
+    localStagehand = await getStagehand(cdpUrl, stagehandConfig, (level, msg) => {
       emitLog(onLog, level, msg, '[Stagehand]');
     });
 
@@ -486,36 +486,7 @@ function handleError(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function getModelName(provider: string): string {
-  const preferred = getPreferredModel();
 
-  const ensurePrefix = (model: string, prov: string) => {
-    if (model.includes('/')) return model;
-    if (prov === 'gemini') return `google/${model}`;
-    return `${prov}/${model}`;
-  };
-
-  if (preferred) return ensurePrefix(preferred, provider);
-
-  switch (provider) {
-    case 'openai':
-      return 'openai/gpt-4o';
-    case 'anthropic':
-      return 'anthropic/claude-3-5-sonnet-latest';
-    case 'gemini':
-      return 'google/gemini-1.5-pro';
-    case 'groq':
-      return 'groq/llama-3.3-70b-versatile';
-    case 'deepseek':
-      return 'deepseek/deepseek-chat';
-    case 'nebius':
-      return 'nebius/meta-llama/Llama-3.3-70B-Instruct';
-    case 'openrouter':
-      return 'openrouter/anthropic/claude-3.5-sonnet';
-    default:
-      return 'openai/gpt-4o';
-  }
-}
 
 function emitLog(
   onLog: AgentLogCb,

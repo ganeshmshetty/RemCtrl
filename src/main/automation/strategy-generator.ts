@@ -259,7 +259,7 @@ Generate a new plan that avoids the failure point.
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    const model = resolveModel(provider, apiKey, 'fast');
+    const model = resolveModel(provider, apiKey);
 
     try {
       const { object } = await generateObject({

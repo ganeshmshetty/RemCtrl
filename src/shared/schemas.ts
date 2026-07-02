@@ -56,6 +56,11 @@ export const SetPreferredModelSchema = z.object({
   model: z.string().min(1).max(200),
 });
 
+export const SetCustomBaseUrlSchema = z.object({
+  provider: ApiProviderSchema,
+  url: z.string().url().optional(),
+});
+
 // ─── Host IPC Schemas ─────────────────────────────────────────────────────────
 
 export const ApproveControllerSchema = z.object({
@@ -126,6 +131,7 @@ export const PersistedSettingsSchema = z.object({
   signalingUrl: z.string().url().default('https://remotectrl-signaling.onrender.com'),
   preferredProvider: ApiProviderSchema.default('openai'),
   preferredModel: z.string().optional(),
+  customBaseUrls: z.record(z.string(), z.string()).optional(),
   browserMode: BrowserModeSchema.default('internal'),
   headlessMode: z.boolean().default(true),
   // API keys are stored in a separate secure store — not in this file

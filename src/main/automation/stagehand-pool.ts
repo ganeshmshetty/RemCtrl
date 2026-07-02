@@ -9,6 +9,7 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { StagehandConnectionError } from '../errors.js';
 import type { AgentLogPayload } from '../../shared/types.js';
+import type { StagehandModelConfig } from './model-resolver.js';
 
 let activeStagehand: Stagehand | null = null;
 let activeCdpUrl: string | null = null;
@@ -17,8 +18,7 @@ let pendingInit: Promise<Stagehand> | null = null;
 
 export async function getStagehand(
   cdpUrl: string,
-  modelName: string,
-  apiKey: string,
+  config: StagehandModelConfig,
   onLog: (level: AgentLogPayload['level'], msg: string) => void,
 ): Promise<Stagehand> {
   if (pendingInit) {
@@ -27,7 +27,7 @@ export async function getStagehand(
   }
 
   // Reuse existing instance if connected to same CDP URL and model
-  if (activeStagehand && activeCdpUrl === cdpUrl && activeModelName === modelName) {
+  if (activeStagehand && activeCdpUrl === cdpUrl && activeModelName === config.modelName) {
     onLog('info', '[StagehandPool] Reusing active Stagehand singleton instance.');
     return activeStagehand;
   }
@@ -40,7 +40,11 @@ export async function getStagehand(
     const instance = new Stagehand({
       env: 'LOCAL',
       localBrowserLaunchOptions: { cdpUrl },
-      model: { modelName, apiKey },
+      model: {
+        modelName: config.modelName,
+        apiKey: config.modelClientOptions.apiKey,
+        baseURL: config.modelClientOptions.baseURL
+      },
       logger: (logLine: any) => {
         const level = (logLine.level || 'info') as AgentLogPayload['level'];
         const msg: string =
@@ -65,7 +69,7 @@ export async function getStagehand(
 
     activeStagehand = instance;
     activeCdpUrl = cdpUrl;
-    activeModelName = modelName;
+    activeModelName = config.modelName;
     return instance;
   })();
 

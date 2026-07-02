@@ -14,7 +14,7 @@
 import { Stagehand } from '@browserbasehq/stagehand';
 import { getStagehand } from './stagehand-pool.js';
 import type { Page } from 'playwright';
-import { getPreferredModel } from '../storage.js';
+import { getStagehandModelConfig } from './model-resolver.js';
 import type {
   AgentWorkflowBatchPayload,
   WorkflowStep,
@@ -125,7 +125,7 @@ export async function runWorkflow(
     return;
   }
 
-  const modelName = getModelName(provider);
+  const stagehandConfig = getStagehandModelConfig(provider, apiKey);
 
   activeRunId = workflowRunId;
   cancelRequested = false;
@@ -154,14 +154,14 @@ export async function runWorkflow(
   }
 
   onRunStatus({ workflowRunId, state: 'running', currentStepIndex: 0 });
-  emitLog(onLog, 'info', `Workflow "${name}" started — ${steps.length} step(s), model="${modelName}"`, '[Workflow]');
+  emitLog(onLog, 'info', `Workflow "${name}" started — ${steps.length} step(s), model="${stagehandConfig.modelName}"`, '[Workflow]');
 
   let stagehand: Stagehand | null = null;
 
   try {
     emitLog(onLog, 'info', `Connecting to local browser via CDP: ${cdpUrl}`, '[Workflow]');
 
-    stagehand = await getStagehand(cdpUrl, modelName, apiKey, (level, msg) => {
+    stagehand = await getStagehand(cdpUrl, stagehandConfig, (level, msg) => {
       emitLog(onLog, level, msg, '[Stagehand]');
     });
 
@@ -562,21 +562,7 @@ async function executeCheckStep(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function getModelName(provider: string): string {
-  const preferred = getPreferredModel();
-  if (preferred) return preferred;
 
-  switch (provider) {
-    case 'openai':      return 'gpt-4o';
-    case 'anthropic':   return 'claude-3-5-sonnet-latest';
-    case 'gemini':      return 'gemini-1.5-pro';
-    case 'groq':        return 'llama-3.3-70b-versatile';
-    case 'deepseek':    return 'deepseek-chat';
-    case 'nebius':      return 'meta-llama/Llama-3.3-70B-Instruct';
-    case 'openrouter':  return 'anthropic/claude-3.5-sonnet';
-    default:            return 'gpt-4o';
-  }
-}
 
 function emitLog(
   onLog: WorkflowLogCb,

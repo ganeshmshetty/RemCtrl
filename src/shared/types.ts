@@ -49,6 +49,7 @@ export interface AppSettings {
   signalingUrl: string;
   preferredProvider: ApiProvider;
   preferredModel?: string;
+  customBaseUrls?: Record<string, string>;
   browserMode: BrowserMode;
   // API keys are NOT stored in renderer — Main process holds them
 }
@@ -294,6 +295,8 @@ export interface RemoteCtrlAPI {
     setBrowserMode: (mode: BrowserMode) => Promise<void>;
     getHeadlessMode: () => Promise<boolean>;
     setHeadlessMode: (headless: boolean) => Promise<void>;
+    getCustomBaseUrl: (provider: ApiProvider) => Promise<string | undefined>;
+    setCustomBaseUrl: (provider: ApiProvider, url?: string) => Promise<void>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;

@@ -91,7 +91,7 @@ export class TaskEvaluator {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    const model = resolveModel(provider, apiKey, 'fast');
+    const model = resolveModel(provider, apiKey);
 
     const EvaluatorSchema = z.object({
       success: z.boolean().describe("Whether the task successfully satisfied the original request."),
