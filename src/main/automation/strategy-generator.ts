@@ -9,7 +9,8 @@
  * New Strategy: "Use keyboard navigation instead of clicking"
  */
 
-import { ConversationManager } from './conversation-manager.js';
+
+
 import { getPreferredProvider, getApiKey } from '../storage.js';
 import { generateObject } from 'ai';
 import { resolveModel } from './model-resolver.js';
@@ -110,13 +111,7 @@ const STRATEGY_TEMPLATES: Record<string, Omit<Strategy, 'id' | 'confidence' | 'e
 // ─── Strategy Generator Class ───────────────────────────────────────────────
 
 export class StrategyGenerator {
-  private conversationManager: ConversationManager;
-
-  constructor() {
-    this.conversationManager = new ConversationManager({
-      systemPrompt: 'You are an expert at generating alternative strategies when current approaches fail.',
-    });
-  }
+  constructor() {}
 
   /**
    * Generate alternative strategies when current approach fails
@@ -151,19 +146,9 @@ export class StrategyGenerator {
    */
   async replanTask(
     originalTask: string,
-    completedSteps: string[],
+    _completedSteps: string[],
     failureReason: string,
   ): Promise<string[]> {
-    const context = `
-Original task: ${originalTask}
-Completed steps: ${completedSteps.join(', ') || 'None'}
-Failed because: ${failureReason}
-
-Generate a new plan that avoids the failure point.
-`;
-
-    // Add to conversation for context
-    this.conversationManager.addMessage('user', context);
 
     // Generate new plan (simplified - would call LLM in full implementation)
     const newPlan = await this.generateReplan(originalTask, failureReason);

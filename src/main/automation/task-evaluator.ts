@@ -129,18 +129,45 @@ Execution Context:
 Steps Executed: ${executionContext.stepsExecuted}
 Errors Encountered: ${safeStringify(executionContext.errors)}
 Collected Data Length: ${collectedDataText.length} bytes
+Collected Data Content:
+${truncate(collectedDataText)}
 
 Evaluate the completeness and quality of this task output.
 If elements are missing, list them in 'missingElements' and set success to false.
 Provide suggestions on how to modify the approach to fix the gaps.
+${this.options.checkDataQuality ? "Pay special attention to dataQuality: ensure the data is actionable and well-formatted." : ""}
     `;
 
-    const { object } = await generateObject({
-      model,
-      schema: EvaluatorSchema,
-      system: EVALUATION_SYSTEM_PROMPT,
-      prompt: promptText,
-    });
+    let object;
+    try {
+      const result = await Promise.race([
+        generateObject({
+          model,
+          schema: EvaluatorSchema,
+          system: EVALUATION_SYSTEM_PROMPT,
+          prompt: promptText,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Evaluation timeout')), 30_000)
+        ),
+      ]);
+      object = result.object;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      object = {
+        success: false,
+        confidence: 0,
+        criteria: {
+          hasMinimumData: false,
+          dataQuality: 'low' as const,
+          completeness: 0,
+          accuracy: 0,
+          relevance: 0,
+        },
+        missingElements: [`Evaluation failed or timed out: ${errMsg}`],
+        suggestions: ['Retry the previous step or skip evaluation.'],
+      };
+    }
 
     // Enforce strict mode overrides if needed
     let finalSuccess = object.success;
@@ -161,7 +188,7 @@ Provide suggestions on how to modify the approach to fix the gaps.
       criteria: object.criteria,
       missingElements: object.missingElements,
       suggestions: object.suggestions,
-      canContinue: Boolean(nextStep),
+      canContinue: !finalSuccess,
       nextStep,
       timestamp: Date.now(),
     };

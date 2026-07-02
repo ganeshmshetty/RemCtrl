@@ -402,7 +402,8 @@ export function hashTextContent(text: string): string {
 export async function createPageFingerprint(page: Page): Promise<PageFingerprint> {
   const url = page.url();
   const [domContent, elementCount, scrollY] = await Promise.all([
-    page.content(),
+    // @ts-ignore
+    page.evaluate(() => document.documentElement.outerHTML),
     page.locator('*').count(),
     // @ts-ignore
     page.evaluate(() => window.scrollY),

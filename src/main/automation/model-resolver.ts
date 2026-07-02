@@ -68,8 +68,8 @@ export function getStagehandModelConfig(
   const targetModel = modelIdOverride || getPreferredModel() || profile.defaultModel;
   const baseURL = getCustomBaseUrl(typedProvider) || profile.baseURL;
 
-  const modelName = targetModel.includes('/') && !targetModel.startsWith(profile.stagehandPrefix)
-    ? `${profile.stagehandPrefix}${targetModel.split('/').pop()}`
+  const modelName = targetModel.startsWith(profile.stagehandPrefix)
+    ? targetModel
     : `${profile.stagehandPrefix}${targetModel}`;
 
   return {

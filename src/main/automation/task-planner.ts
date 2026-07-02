@@ -14,7 +14,6 @@
  * ]
  */
 
-import { ConversationManager } from './conversation-manager.js';
 import { getPreferredProvider, getApiKey } from '../storage.js';
 import { generateObject } from 'ai';
 import { resolveModel } from './model-resolver.js';
@@ -96,13 +95,7 @@ Respond with a JSON object.`;
 // ─── Task Planner Class (Static) ────────────────────────────────────────────
 
 export class TaskPlanner {
-  private conversationManager: ConversationManager;
-
-  constructor(_options?: PlanningOptions) {
-    this.conversationManager = new ConversationManager({
-      systemPrompt: PLANNING_SYSTEM_PROMPT,
-    });
-  }
+  constructor(_options?: PlanningOptions) {}
 
   /**
    * Create a plan for a complex task
@@ -210,9 +203,6 @@ export class TaskPlanner {
   // ─── Private Helpers ───────────────────────────────────────────────────────
 
   private async generateSubtasks(task: string): Promise<Omit<Subtask, 'id' | 'status'>[]> {
-    this.conversationManager.clear();
-    this.conversationManager.addMessage('user', task);
-
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
@@ -262,13 +252,7 @@ export interface DynamicStep {
 }
 
 export class DynamicPlanner {
-  private conversationManager: ConversationManager;
-
-  constructor() {
-    this.conversationManager = new ConversationManager({
-      systemPrompt: DYNAMIC_PLANNER_PROMPT,
-    });
-  }
+  constructor() {}
 
   /**
    * Determine the next logical step based on current state and history.
@@ -302,9 +286,6 @@ Title: ${currentPageState.title}
 Elements: ${currentPageState.elementCount}
 
 What is the very next logical step?`;
-
-    this.conversationManager.clear();
-    this.conversationManager.addMessage('user', prompt);
 
     const { object } = await generateObject({
       model,

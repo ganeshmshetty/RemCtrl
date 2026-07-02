@@ -46,7 +46,7 @@ export const PROVIDER_PROFILES: Record<ApiProvider, ProviderProfile> = {
     protocol: 'openai-compatible',
     // MUST use 'openai/' prefix for Stagehand to recognize the custom baseURL
     stagehandPrefix: 'openai/',
-    baseURL: 'https://api.studio.nebius.ai/v1/',
+    baseURL: 'https://api.studio.nebius.ai/v1',
     defaultModel: 'meta-llama/Llama-3.3-70B-Instruct',
   },
   openrouter: {

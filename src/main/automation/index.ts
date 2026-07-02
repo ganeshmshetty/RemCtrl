@@ -3,13 +3,12 @@
  *
  * Encapsulates:
  * - Singleton Stagehand CDP pooling and lifecycle (stagehand-pool)
- * - ReAct dynamic agent loops with stall detection and retry strategies
+ * - Unified ReAct agent pipeline via ExecutionEngine (replaces agent-executor + agent-runner)
  * - Linear and jump-based workflow recipe execution
  * - Human-in-the-loop checkpoint management
  */
 
-import { runAgent, cancelAgent, isAgentRunning, setAgentPaused } from './agent-runner.js';
-import { cancelAgentCommand } from './agent-executor.js';
+import { runAgent, cancelAgent, isAgentRunning, setAgentPaused } from './execution-engine.js';
 import { runWorkflow, cancelWorkflow, isWorkflowRunning, setWorkflowPaused } from './workflow-executor.js';
 import { submitCheckpointResponse } from './human-checkpoint.js';
 import { closeStagehand } from './stagehand-pool.js';
@@ -19,7 +18,6 @@ export {
   cancelAgent,
   isAgentRunning,
   setAgentPaused,
-  cancelAgentCommand,
   runWorkflow,
   cancelWorkflow,
   isWorkflowRunning,

@@ -33,6 +33,7 @@ import {
   BrowserNotReadyError,
   extractError,
 } from '../errors.js';
+import { TaskSession } from './task-session.js';
 
 // ─── Callback Types ─────────────────────────────────────────────────────────
 
@@ -57,35 +58,24 @@ const CHECK_POLL_INTERVAL_MS = 500;
 const CHECK_POLL_MAX_MS = 3_000;
 const WORKFLOW_MAX_TRANSITIONS = 100;
 
-// ─── Module State ───────────────────────────────────────────────────────────
+// ─── Module-level session ────────────────────────────────────────────────────
+// One session at a time. Public helpers below delegate to it.
 
-let activeRunId: string | null = null;
-let cancelRequested = false;
-let isPaused = false;
+let activeSession: TaskSession | null = null;
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export function isWorkflowRunning(): boolean {
-  return activeRunId !== null;
+  return activeSession?.isActive ?? false;
 }
 
 export function cancelWorkflow(): void {
-  if (activeRunId) cancelRequested = true;
+  activeSession?.cancel();
 }
 
 export function setWorkflowPaused(paused: boolean): void {
-  isPaused = paused;
-}
-
-async function waitForResume(onLog: WorkflowLogCb): Promise<void> {
-  if (!isPaused) return;
-  emitLog(onLog, 'info', 'Workflow paused for manual takeover. Waiting for resume…', '[Workflow]');
-  while (isPaused && !cancelRequested) {
-    await sleep(500);
-  }
-  if (!cancelRequested) {
-    emitLog(onLog, 'info', 'Workflow resumed. Capturing fresh page state…', '[Workflow]');
-  }
+  if (paused) activeSession?.pause();
+  else activeSession?.resume();
 }
 
 // ─── Main Executor ──────────────────────────────────────────────────────────
@@ -98,8 +88,8 @@ export async function runWorkflow(
 ): Promise<void> {
   const { workflowRunId, name, startUrl, steps } = payload;
 
-  if (activeRunId) {
-    const msg = `Another workflow (${activeRunId}) is already running.`;
+  if (activeSession?.isActive) {
+    const msg = 'Another workflow is already running.';
     emitLog(onLog, 'warn', msg, '[Workflow]');
     onRunStatus({ workflowRunId, state: 'failed', error: msg });
     return;
@@ -127,8 +117,9 @@ export async function runWorkflow(
 
   const stagehandConfig = getStagehandModelConfig(provider, apiKey);
 
-  activeRunId = workflowRunId;
-  cancelRequested = false;
+  const session = new TaskSession();
+  activeSession = session;
+  session.start();
 
   // Build step index for O(1) lookup (needed for check branching) and validate graph
   const stepMap = new Map<string, { step: WorkflowStep; index: number }>();
@@ -185,9 +176,12 @@ export async function runWorkflow(
         throw new Error(`Workflow exceeded ${WORKFLOW_MAX_TRANSITIONS} step transitions; possible branch cycle.`);
       }
 
-      if (isPaused) await waitForResume(onLog);
+      await session.waitIfPaused(
+        () => emitLog(onLog, 'info', 'Workflow paused for manual takeover. Waiting for resume…', '[Workflow]'),
+        () => emitLog(onLog, 'info', 'Workflow resumed. Capturing fresh page state…', '[Workflow]'),
+      );
 
-      if (cancelRequested) {
+      if (session.isCancelled) {
         const entry = stepMap.get(currentStepId);
         emitLog(onLog, 'info', `Workflow cancelled before step "${currentStepId}"`, '[Workflow]');
         if (entry) {
@@ -220,7 +214,7 @@ export async function runWorkflow(
       try {
         const result = await executeStepWithRetry(stagehand, page, step, onLog);
 
-        if (cancelRequested) {
+        if (session.isCancelled) {
           onStepStatus({ workflowRunId, stepId: step.id, index, state: 'skipped' });
           onRunStatus({ workflowRunId, state: 'cancelled' });
           return;
@@ -266,7 +260,7 @@ export async function runWorkflow(
 
   } catch (err) {
     const errorInfo = extractError(err);
-    if (cancelRequested) {
+    if (session.isCancelled) {
       emitLog(onLog, 'info', 'Workflow cancelled.', '[Workflow]');
       onRunStatus({ workflowRunId, state: 'cancelled' });
     } else {
@@ -274,8 +268,7 @@ export async function runWorkflow(
       onRunStatus({ workflowRunId, state: 'failed', error: errorInfo.message });
     }
   } finally {
-    activeRunId = null;
-    cancelRequested = false;
+    activeSession = null;
     stagehand = null;
   }
 }
@@ -330,7 +323,10 @@ async function executeStep(
   step: WorkflowStep,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
-  if (isPaused) await waitForResume(onLog);
+  await activeSession?.waitIfPaused(
+    () => emitLog(onLog, 'info', 'Workflow paused for manual takeover. Waiting for resume…', '[Workflow]'),
+    () => emitLog(onLog, 'info', 'Workflow resumed. Capturing fresh page state…', '[Workflow]'),
+  );
 
   switch (step.type) {
     case 'navigate': return executeNavigateStep(page, step, onLog);
@@ -400,8 +396,11 @@ async function executeDoStep(
   let goalAchieved = false;
 
   for (let i = 0; i < DO_MAX_STEPS; i++) {
-    if (isPaused) await waitForResume(onLog);
-    if (cancelRequested) break;
+    await activeSession?.waitIfPaused(
+      () => emitLog(onLog, 'info', 'Workflow paused for manual takeover. Waiting for resume…', '[Workflow]'),
+      () => emitLog(onLog, 'info', 'Workflow resumed. Capturing fresh page state…', '[Workflow]'),
+    );
+    if (activeSession?.isCancelled) break;
 
     const context = completedActions.length
       ? `Actions completed so far:\n${completedActions.map((a, n) => `  ${n + 1}. ${a}`).join('\n')}\n\n`
@@ -480,15 +479,17 @@ async function executeCollectStep(
   const allResults: unknown[] = [];
 
   for (let pageNum = 0; pageNum < COLLECT_MAX_PAGES; pageNum++) {
-    if (isPaused) await waitForResume(onLog);
-    if (cancelRequested) break;
+    await activeSession?.waitIfPaused(
+      () => emitLog(onLog, 'info', 'Workflow paused for manual takeover. Waiting for resume…', '[Workflow]'),
+      () => emitLog(onLog, 'info', 'Workflow resumed. Capturing fresh page state…', '[Workflow]'),
+    );
+    if (activeSession?.isCancelled) break;
 
     emitLog(onLog, 'info', `Extracting page ${pageNum + 1}…`, '[Collect]');
     const result = await stagehand.extract(step.instruction, { page });
     allResults.push(result);
 
-    if (isPaused) await waitForResume(onLog);
-    if (cancelRequested) break;
+    if (activeSession?.isCancelled) break;
 
     // Try to find and click a "Next" pagination button
     const nextObservation = await stagehand.observe(

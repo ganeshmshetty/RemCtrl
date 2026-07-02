@@ -11,26 +11,60 @@ import { StagehandConnectionError } from '../errors.js';
 import type { AgentLogPayload } from '../../shared/types.js';
 import type { StagehandModelConfig } from './model-resolver.js';
 
+interface TargetConfig {
+  cdpUrl: string;
+  modelName: string;
+  apiKey: string;
+  baseURL?: string;
+}
+
+function isSameConfig(a: TargetConfig | null, b: TargetConfig): boolean {
+  if (!a) return false;
+  return (
+    a.cdpUrl === b.cdpUrl &&
+    a.modelName === b.modelName &&
+    a.apiKey === b.apiKey &&
+    a.baseURL === b.baseURL
+  );
+}
+
 let activeStagehand: Stagehand | null = null;
-let activeCdpUrl: string | null = null;
-let activeModelName: string | null = null;
+let activeConfig: TargetConfig | null = null;
 let pendingInit: Promise<Stagehand> | null = null;
+let pendingConfig: TargetConfig | null = null;
 
 export async function getStagehand(
   cdpUrl: string,
   config: StagehandModelConfig,
   onLog: (level: AgentLogPayload['level'], msg: string) => void,
 ): Promise<Stagehand> {
+  const requestedConfig: TargetConfig = {
+    cdpUrl,
+    modelName: config.modelName,
+    apiKey: config.modelClientOptions.apiKey,
+    baseURL: config.modelClientOptions.baseURL,
+  };
+
   if (pendingInit) {
-    onLog('info', '[StagehandPool] Awaiting in-flight Stagehand initialization...');
-    return pendingInit;
+    if (isSameConfig(pendingConfig, requestedConfig)) {
+      onLog('info', '[StagehandPool] Awaiting in-flight Stagehand initialization...');
+      return pendingInit;
+    }
+    // If pending for a different config, wait for it to finish then replace it
+    try {
+      await pendingInit;
+    } catch {
+      // Ignore errors from the previous init
+    }
   }
 
   // Reuse existing instance if connected to same CDP URL and model
-  if (activeStagehand && activeCdpUrl === cdpUrl && activeModelName === config.modelName) {
+  if (activeStagehand && isSameConfig(activeConfig, requestedConfig)) {
     onLog('info', '[StagehandPool] Reusing active Stagehand singleton instance.');
     return activeStagehand;
   }
+
+  pendingConfig = requestedConfig;
 
   pendingInit = (async () => {
     // Otherwise, close old instance if present
@@ -55,28 +89,35 @@ export async function getStagehand(
     });
 
     onLog('info', '[StagehandPool] Initialising Stagehand...');
+    let initTimeoutId: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
         instance.init(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Stagehand init timed out after 30s')), 30000),
-        ),
+        new Promise<never>((_, reject) => {
+          initTimeoutId = setTimeout(() => reject(new Error('Stagehand init timed out after 30s')), 30000);
+        }),
       ]);
     } catch (initErr: any) {
+      await instance.close().catch(() => {});
       throw new StagehandConnectionError(initErr?.message ?? String(initErr));
+    } finally {
+      if (initTimeoutId) clearTimeout(initTimeoutId);
     }
     onLog('info', '[StagehandPool] Stagehand ready.');
 
     activeStagehand = instance;
-    activeCdpUrl = cdpUrl;
-    activeModelName = config.modelName;
+    activeConfig = requestedConfig;
     return instance;
   })();
 
   try {
     return await pendingInit;
   } finally {
-    pendingInit = null;
+    // Only clear if we are still the pending config (avoids race if another call queued up)
+    if (isSameConfig(pendingConfig, requestedConfig)) {
+      pendingInit = null;
+      pendingConfig = null;
+    }
   }
 }
 
@@ -88,8 +129,7 @@ async function closeStagehandInternal(): Promise<void> {
       // ignore errors on close
     }
     activeStagehand = null;
-    activeCdpUrl = null;
-    activeModelName = null;
+    activeConfig = null;
   }
 }
 

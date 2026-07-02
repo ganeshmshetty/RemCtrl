@@ -75,6 +75,11 @@ export const ConnectPinSchema = z.object({
 
 // ─── Agent Schemas ────────────────────────────────────────────────────────────
 
+export const CheckpointResponseSchema = z.object({
+  selectedOptionId: z.string().min(1),
+  customInput: z.string().optional(),
+});
+
 // AgentAction is separate from StepType (agent panel uses act/observe/extract)
 const AgentActionSchema = z.enum(['act', 'observe', 'extract']);
 

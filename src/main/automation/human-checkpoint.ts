@@ -1,53 +1,29 @@
 /**
- * Human Checkpoint - Ask for human input at decision points
- * 
- * When uncertain or at critical decision points, pause execution
- * and request human guidance before continuing.
- * 
- * Features:
- * - Pause execution at checkpoints
- * - Present options to human
- * - Wait for human decision
- * - Resume with human's choice
+ * Human Checkpoint — Live path for pausing an agent at a decision point.
+ *
+ * The live mechanism is a simple Map of pending Promise callbacks.
+ * When the agent calls ask(), it emits a UI event and then awaits a
+ * Promise that resolves when the user picks an option via IPC
+ * (browser:submitCheckpoint → submitCheckpointResponse).
+ *
+ * The HumanCheckpointManager class and UncertaintyDetector that previously
+ * lived here were never instantiated in any running path and have been removed.
+ * The file-backed persistence logic they contained can be reintroduced
+ * if resumable tasks become a roadmap item.
  */
 
-import { readFile, writeFile } from 'fs/promises';
-import { existsSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
-import { app, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import type { AgentCheckpointPayload, CheckpointResponse } from '../../shared/types.js';
 
-// Global registry to handle IPC routing to the right manager
-export const globalCheckpointCallbacks = new Map<string, (response: CheckpointResponse) => void>();
+// ─── Pending callbacks ────────────────────────────────────────────────────────
 
-export async function submitCheckpointResponse(checkpointId: string, response: CheckpointResponse): Promise<void> {
-  const callback = globalCheckpointCallbacks.get(checkpointId);
-  if (!callback) {
-    throw new Error(`No pending checkpoint found for ID: ${checkpointId}`);
-  }
-  callback(response);
-  globalCheckpointCallbacks.delete(checkpointId);
-}
+/** Keyed by checkpointId. Populated in ask(), consumed in submitCheckpointResponse(). */
+export const globalCheckpointCallbacks = new Map<
+  string,
+  (response: CheckpointResponse) => void
+>();
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface CheckpointQuestion {
-  id: string;
-  taskId: string;
-  step: number;
-  question: string;
-  options: CheckpointOption[];
-  context: {
-    currentPage: string;
-    taskProgress: string;
-    uncertainty?: string;
-  };
-  status: 'pending' | 'answered' | 'timeout';
-  createdAt: number;
-  answeredAt?: number;
-  selectedOption?: string;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CheckpointOption {
   id: string;
@@ -56,297 +32,84 @@ export interface CheckpointOption {
   recommended?: boolean;
 }
 
-// ─── Human Checkpoint Manager ───────────────────────────────────────────────
-
-const DEFAULT_CHECKPOINT_FILE = join(app.getPath('userData'), 'human-checkpoints.json');
-
-export class HumanCheckpointManager {
-  private checkpointFile: string;
-  private pendingCheckpoints: Map<string, CheckpointQuestion>;
-  private timeoutMs: number;
-
-  constructor(checkpointFile: string = DEFAULT_CHECKPOINT_FILE, timeoutMinutes: number = 10) {
-    this.checkpointFile = checkpointFile;
-    this.pendingCheckpoints = new Map();
-    this.timeoutMs = timeoutMinutes * 60 * 1000;
-  }
-
-  /**
-   * Create a checkpoint and wait for human response
-   */
-  async ask(
-    taskId: string,
-    step: number,
-    question: string,
-    options: CheckpointOption[],
-    context: CheckpointQuestion['context'],
-  ): Promise<string> {
-    const checkpoint: CheckpointQuestion = {
-      id: generateCheckpointId(),
-      taskId,
-      step,
-      question,
-      options,
-      context,
-      status: 'pending',
-      createdAt: Date.now(),
-    };
-
-    // Save checkpoint
-    this.pendingCheckpoints.set(checkpoint.id, checkpoint);
-    await this.saveCheckpoints();
-
-    // Emit event to all windows so renderer can show UI
-    const payload: AgentCheckpointPayload = {
-      checkpointId: checkpoint.id,
-      taskId,
-      step,
-      question,
-      options,
-      context,
-    };
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('browser:agentCheckpoint', payload);
-    });
-
-    // Wait for response with timeout
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        checkpoint.status = 'timeout';
-        this.pendingCheckpoints.set(checkpoint.id, checkpoint);
-        globalCheckpointCallbacks.delete(checkpoint.id);
-        reject(new Error(`Checkpoint ${checkpoint.id} timed out after ${this.timeoutMs}ms`));
-      }, this.timeoutMs);
-
-      globalCheckpointCallbacks.set(checkpoint.id, (response: CheckpointResponse) => {
-        clearTimeout(timeout);
-        if (response.selectedOptionId === '__CANCELLED__') {
-          checkpoint.status = 'timeout';
-          this.pendingCheckpoints.delete(checkpoint.id);
-          this.saveCheckpoints();
-          reject(new Error(`Checkpoint ${checkpoint.id} cancelled`));
-          return;
-        }
-        const validOptionIds = checkpoint.options.map((o) => o.id);
-        if (!validOptionIds.includes(response.selectedOptionId)) {
-          throw new Error(`Invalid option ID: "${response.selectedOptionId}". Valid options are: ${validOptionIds.join(', ')}`);
-        }
-        checkpoint.status = 'answered';
-        checkpoint.answeredAt = Date.now();
-        checkpoint.selectedOption = response.selectedOptionId;
-        
-        this.pendingCheckpoints.delete(checkpoint.id);
-        this.saveCheckpoints();
-        
-        resolve(response.selectedOptionId);
-      });
-    });
-  }
-
-  /**
-   * Submit response to a checkpoint
-   */
-  async submitResponse(checkpointId: string, response: CheckpointResponse): Promise<void> {
-    await submitCheckpointResponse(checkpointId, response);
-  }
-
-  /**
-   * Get pending checkpoints
-   */
-  getPendingCheckpoints(): CheckpointQuestion[] {
-    return Array.from(this.pendingCheckpoints.values());
-  }
-
-  /**
-   * Cancel a checkpoint
-   */
-  cancelCheckpoint(checkpointId: string): void {
-    const cancelCallback = globalCheckpointCallbacks.get(checkpointId);
-    if (cancelCallback) {
-      try {
-        cancelCallback({ selectedOptionId: '__CANCELLED__' });
-      } catch {
-        // ignore errors
-      }
-    }
-    this.pendingCheckpoints.delete(checkpointId);
-    globalCheckpointCallbacks.delete(checkpointId);
-    this.saveCheckpoints();
-  }
-
-  /**
-   * Save checkpoints to disk
-   */
-  private async saveCheckpoints(): Promise<void> {
-    try {
-      const checkpoints = Array.from(this.pendingCheckpoints.values());
-      await writeFile(this.checkpointFile, JSON.stringify(checkpoints, null, 2), 'utf-8');
-    } catch (err) {
-      console.error('[HumanCheckpoint] Failed to save checkpoints:', err);
-    }
-  }
-
-  /**
-   * Load checkpoints from disk
-   */
-  async loadCheckpoints(): Promise<void> {
-    let content: string | null = null;
-    try {
-      content = await readFile(this.checkpointFile, 'utf-8');
-    } catch (err) {
-      // If the target file doesn't exist and we're loading the default path, try migrating from legacy path
-      if (this.checkpointFile === DEFAULT_CHECKPOINT_FILE) {
-        const legacyPath = join(homedir(), '.config', 'RemoteCtrl', 'human-checkpoints.json');
-        if (existsSync(legacyPath)) {
-          try {
-            console.log(`[HumanCheckpoint] Migrating legacy checkpoints from ${legacyPath} to ${this.checkpointFile}`);
-            const legacyContent = await readFile(legacyPath, 'utf-8');
-            await writeFile(this.checkpointFile, legacyContent, 'utf-8');
-            content = legacyContent;
-          } catch (migrateErr) {
-            console.error('[HumanCheckpoint] Failed to migrate legacy checkpoints:', migrateErr);
-          }
-        }
-      }
-    }
-
-    if (content) {
-      try {
-        const checkpoints: CheckpointQuestion[] = JSON.parse(content);
-        let modified = false;
-        for (const checkpoint of checkpoints) {
-          if (checkpoint.status === 'pending') {
-            const elapsed = Date.now() - checkpoint.createdAt;
-            if (elapsed >= this.timeoutMs) {
-              checkpoint.status = 'timeout';
-              modified = true;
-            } else {
-              this.pendingCheckpoints.set(checkpoint.id, checkpoint);
-              const remainingMs = this.timeoutMs - elapsed;
-              const timeout = setTimeout(() => {
-                checkpoint.status = 'timeout';
-                this.pendingCheckpoints.delete(checkpoint.id);
-                globalCheckpointCallbacks.delete(checkpoint.id);
-                this.saveCheckpoints();
-              }, remainingMs);
-
-              globalCheckpointCallbacks.set(checkpoint.id, (response: CheckpointResponse) => {
-                clearTimeout(timeout);
-                if (response.selectedOptionId === '__CANCELLED__') {
-                  checkpoint.status = 'timeout';
-                  this.pendingCheckpoints.delete(checkpoint.id);
-                  this.saveCheckpoints();
-                  return;
-                }
-                const validOptionIds = checkpoint.options.map((o) => o.id);
-                if (!validOptionIds.includes(response.selectedOptionId)) {
-                  throw new Error(`Invalid option ID: "${response.selectedOptionId}". Valid options are: ${validOptionIds.join(', ')}`);
-                }
-                checkpoint.status = 'answered';
-                checkpoint.answeredAt = Date.now();
-                checkpoint.selectedOption = response.selectedOptionId;
-                this.pendingCheckpoints.delete(checkpoint.id);
-                this.saveCheckpoints();
-              });
-            }
-          }
-        }
-        if (modified) {
-          await this.saveCheckpoints();
-        }
-      } catch (parseErr) {
-        console.error('[HumanCheckpoint] Failed to parse checkpoints:', parseErr);
-      }
-    }
-  }
-}
-
-// ─── Uncertainty Detector ───────────────────────────────────────────────────
-
-export interface UncertaintyCheck {
-  shouldAsk: boolean;
-  confidence: number;
-  reason: string;
-  suggestedQuestion?: string;
-  suggestedOptions?: CheckpointOption[];
-}
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Detect when human input is needed
+ * Pause execution and ask the user to choose an option.
+ *
+ * Emits `browser:agentCheckpoint` to all renderer windows, then suspends
+ * until the user submits a response or the optional timeout fires.
+ *
+ * @returns The selectedOptionId chosen by the user.
  */
-export class UncertaintyDetector {
-  private thresholds = {
-    lowConfidence: 0.6,      // Ask if confidence < 60%
-    highStakes: true,        // Always ask for high-stakes decisions
-    multipleOptions: 3,      // Ask if more than 3 viable options
+export async function ask(
+  taskId: string,
+  step: number,
+  question: string,
+  options: CheckpointOption[],
+  context: AgentCheckpointPayload['context'],
+  timeoutMs = 10 * 60 * 1000,
+): Promise<string> {
+  const checkpointId = generateCheckpointId();
+
+  const payload: AgentCheckpointPayload = {
+    checkpointId,
+    taskId,
+    step,
+    question,
+    options,
+    context,
   };
 
-  /**
-   * Check if human input is needed
-   */
-  shouldAskHuman(context: {
-    confidence: number;
-    decisionType: string;
-    options: any[];
-    taskImportance: 'low' | 'medium' | 'high';
-  }): UncertaintyCheck {
-    const { confidence, options, taskImportance } = context;
+  BrowserWindow.getAllWindows().forEach((win) => {
+    win.webContents.send('browser:agentCheckpoint', payload);
+  });
 
-    // Low confidence
-    if (confidence < this.thresholds.lowConfidence) {
-      return {
-        shouldAsk: true,
-        confidence,
-        reason: `Low confidence (${Math.round(confidence * 100)}%) in decision`,
-        suggestedQuestion: `I'm not sure about the next step. Which option should I choose?`,
-        suggestedOptions: this.generateOptions(options),
-      };
-    }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      globalCheckpointCallbacks.delete(checkpointId);
+      reject(new Error(`Checkpoint ${checkpointId} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
 
-    // High-stakes decision
-    if (this.thresholds.highStakes && taskImportance === 'high') {
-      return {
-        shouldAsk: true,
-        confidence,
-        reason: 'High-stakes decision requires human approval',
-        suggestedQuestion: 'This is an important decision. How should I proceed?',
-        suggestedOptions: this.generateOptions(options),
-      };
-    }
+    globalCheckpointCallbacks.set(checkpointId, (response: CheckpointResponse) => {
+      if (response.selectedOptionId === '__CANCELLED__') {
+        clearTimeout(timeout);
+        globalCheckpointCallbacks.delete(checkpointId);
+        reject(new Error(`Checkpoint ${checkpointId} cancelled`));
+        return;
+      }
 
-    // Multiple viable options
-    if (options.length > this.thresholds.multipleOptions) {
-      return {
-        shouldAsk: true,
-        confidence,
-        reason: `Multiple options available (${options.length})`,
-        suggestedQuestion: 'I found several options. Which one should I choose?',
-        suggestedOptions: this.generateOptions(options),
-      };
-    }
+      const validIds = options.map((o) => o.id);
+      if (!validIds.includes(response.selectedOptionId)) {
+        throw new Error(
+          `Invalid option ID "${response.selectedOptionId}". Valid: ${validIds.join(', ')}`,
+        );
+      }
 
-    return {
-      shouldAsk: false,
-      confidence,
-      reason: 'No human input needed',
-    };
-  }
-
-  private generateOptions(options: any[]): CheckpointOption[] {
-    return options.slice(0, 5).map((opt, index) => ({
-      id: `option_${index}`,
-      label: typeof opt === 'string' ? opt : JSON.stringify(opt),
-      description: undefined,
-      recommended: index === 0, // First option recommended by default
-    }));
-  }
+      clearTimeout(timeout);
+      globalCheckpointCallbacks.delete(checkpointId);
+      resolve(response.selectedOptionId);
+    });
+  });
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 /**
- * Generate checkpoint ID
+ * Called by the IPC handler when the user submits a checkpoint response.
+ * Routes to the correct pending Promise via checkpointId.
  */
+export async function submitCheckpointResponse(
+  checkpointId: string,
+  response: CheckpointResponse,
+): Promise<void> {
+  const callback = globalCheckpointCallbacks.get(checkpointId);
+  if (!callback) {
+    throw new Error(`No pending checkpoint found for ID: ${checkpointId}`);
+  }
+  callback(response);
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 export function generateCheckpointId(): string {
   return `checkpoint_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
