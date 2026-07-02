@@ -1,5 +1,7 @@
 # RemoteCtrl
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ganeshmshetty/RemoteCtrl)
+
 **Remote browser control and AI agent automation — as a desktop app.**
 
 RemoteCtrl is an Electron desktop application that lets you remotely control a browser over WebRTC and run AI agents against it. A **host** machine launches a Playwright-managed browser and streams it live; a **controller** connects via a PIN to see, control, and automate that browser — all without exposing it to the internet.
