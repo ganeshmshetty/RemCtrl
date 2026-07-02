@@ -147,9 +147,9 @@ export class ExecutionLogger {
     step: number,
     tokens: TokenUsage,
     model: string,
-    provider: 'openai' | 'anthropic' | 'gemini',
+    provider: string,
   ): void {
-    const stepRecord = this.steps[step - 1];
+    const stepRecord = this.steps.find((s) => s.step === step);
     if (!stepRecord) return;
 
     stepRecord.tokensUsed = tokens;
@@ -308,7 +308,7 @@ export class ExecutionLogger {
 export function calculateCost(
   tokens: TokenUsage,
   model: string,
-  provider: 'openai' | 'anthropic' | 'gemini',
+  provider: string,
 ): CostBreakdown {
   const pricing = (TOKEN_PRICES as any)[provider]?.[model as any];
   if (!pricing) {

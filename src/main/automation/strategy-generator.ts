@@ -10,11 +10,9 @@
  */
 
 import { ConversationManager } from './conversation-manager.js';
-import { getPreferredProvider, getApiKey } from './storage.js';
+import { getPreferredProvider, getApiKey } from '../storage.js';
 import { generateObject } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { resolveModel } from './model-resolver.js';
 import { z } from 'zod';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -193,20 +191,20 @@ Generate a new plan that avoids the failure point.
   private classifyFailure(failureReason: string): string {
     const reason = failureReason.toLowerCase();
 
-    if (reason.includes('navigat') || reason.includes('url') || reason.includes('page')) {
-      return 'navigation_failure';
-    }
-    if (reason.includes('extract') || reason.includes('selector') || reason.includes('element')) {
-      return 'extraction_failure';
-    }
-    if (reason.includes('click') || reason.includes('interact') || reason.includes('input')) {
-      return 'interaction_failure';
-    }
     if (reason.includes('stuck') || reason.includes('loop') || reason.includes('stall')) {
       return 'stall_recovery';
     }
     if (reason.includes('rate') || reason.includes('limit') || reason.includes('429')) {
       return 'rate_limit_recovery';
+    }
+    if (reason.includes('click') || reason.includes('interact') || reason.includes('input')) {
+      return 'interaction_failure';
+    }
+    if (reason.includes('extract') || reason.includes('selector') || reason.includes('element')) {
+      return 'extraction_failure';
+    }
+    if (reason.includes('navigat') || reason.includes('url') || reason.includes('page')) {
+      return 'navigation_failure';
     }
 
     return 'stall_recovery'; // Default fallback
@@ -261,23 +259,7 @@ Generate a new plan that avoids the failure point.
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    if (!apiKey) {
-      throw new Error(`No API key found for provider: ${provider}`);
-    }
-
-    let model;
-    if (provider === 'openai') {
-      const openai = createOpenAI({ apiKey });
-      model = openai('gpt-4o');
-    } else if (provider === 'anthropic') {
-      const anthropic = createAnthropic({ apiKey });
-      model = anthropic('claude-3-5-haiku-20241022');
-    } else if (provider === 'gemini') {
-      const google = createGoogleGenerativeAI({ apiKey });
-      model = google('gemini-2.5-flash');
-    } else {
-      throw new Error(`Unsupported provider: ${provider}`);
-    }
+    const model = resolveModel(provider, apiKey, 'fast');
 
     try {
       const { object } = await generateObject({

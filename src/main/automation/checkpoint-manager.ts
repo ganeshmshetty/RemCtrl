@@ -9,7 +9,7 @@
  * Checkpoints are saved to disk and can be loaded later.
  */
 
-import { writeFile, readFile, mkdir, readdir } from 'fs/promises';
+import { writeFile, readFile, mkdir, readdir, unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { app } from 'electron';
 import { ConversationManager, type Message } from './conversation-manager.js';
@@ -172,9 +172,7 @@ export class CheckpointManager {
   async delete(taskId: string): Promise<void> {
     try {
       const filePath = this.getCheckpointPath(taskId);
-      await readFile(filePath); // Check if exists
-      // Don't delete - keep for debugging. Or uncomment to delete:
-      // await unlink(filePath);
+      await unlink(filePath);
     } catch {
       // File doesn't exist
     }
@@ -236,7 +234,11 @@ export class CheckpointManager {
 
     this.autoSaveInterval = setInterval(async () => {
       if (this.currentCheckpoint) {
-        await this.save(this.currentCheckpoint);
+        try {
+          await this.save(this.currentCheckpoint);
+        } catch {
+          // already logged in save()
+        }
       }
     }, intervalMs);
   }

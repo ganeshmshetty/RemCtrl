@@ -16,7 +16,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { app, BrowserWindow } from 'electron';
-import type { AgentCheckpointPayload, CheckpointResponse } from '../shared/types.js';
+import type { AgentCheckpointPayload, CheckpointResponse } from '../../shared/types.js';
 
 // Global registry to handle IPC routing to the right manager
 export const globalCheckpointCallbacks = new Map<string, (response: CheckpointResponse) => void>();
@@ -120,6 +120,17 @@ export class HumanCheckpointManager {
 
       globalCheckpointCallbacks.set(checkpoint.id, (response: CheckpointResponse) => {
         clearTimeout(timeout);
+        if (response.selectedOptionId === '__CANCELLED__') {
+          checkpoint.status = 'timeout';
+          this.pendingCheckpoints.delete(checkpoint.id);
+          this.saveCheckpoints();
+          reject(new Error(`Checkpoint ${checkpoint.id} cancelled`));
+          return;
+        }
+        const validOptionIds = checkpoint.options.map((o) => o.id);
+        if (!validOptionIds.includes(response.selectedOptionId)) {
+          throw new Error(`Invalid option ID: "${response.selectedOptionId}". Valid options are: ${validOptionIds.join(', ')}`);
+        }
         checkpoint.status = 'answered';
         checkpoint.answeredAt = Date.now();
         checkpoint.selectedOption = response.selectedOptionId;
@@ -150,6 +161,14 @@ export class HumanCheckpointManager {
    * Cancel a checkpoint
    */
   cancelCheckpoint(checkpointId: string): void {
+    const cancelCallback = globalCheckpointCallbacks.get(checkpointId);
+    if (cancelCallback) {
+      try {
+        cancelCallback({ selectedOptionId: '__CANCELLED__' });
+      } catch {
+        // ignore errors
+      }
+    }
     this.pendingCheckpoints.delete(checkpointId);
     globalCheckpointCallbacks.delete(checkpointId);
     this.saveCheckpoints();
@@ -194,10 +213,46 @@ export class HumanCheckpointManager {
     if (content) {
       try {
         const checkpoints: CheckpointQuestion[] = JSON.parse(content);
+        let modified = false;
         for (const checkpoint of checkpoints) {
           if (checkpoint.status === 'pending') {
-            this.pendingCheckpoints.set(checkpoint.id, checkpoint);
+            const elapsed = Date.now() - checkpoint.createdAt;
+            if (elapsed >= this.timeoutMs) {
+              checkpoint.status = 'timeout';
+              modified = true;
+            } else {
+              this.pendingCheckpoints.set(checkpoint.id, checkpoint);
+              const remainingMs = this.timeoutMs - elapsed;
+              const timeout = setTimeout(() => {
+                checkpoint.status = 'timeout';
+                this.pendingCheckpoints.delete(checkpoint.id);
+                globalCheckpointCallbacks.delete(checkpoint.id);
+                this.saveCheckpoints();
+              }, remainingMs);
+
+              globalCheckpointCallbacks.set(checkpoint.id, (response: CheckpointResponse) => {
+                clearTimeout(timeout);
+                if (response.selectedOptionId === '__CANCELLED__') {
+                  checkpoint.status = 'timeout';
+                  this.pendingCheckpoints.delete(checkpoint.id);
+                  this.saveCheckpoints();
+                  return;
+                }
+                const validOptionIds = checkpoint.options.map((o) => o.id);
+                if (!validOptionIds.includes(response.selectedOptionId)) {
+                  throw new Error(`Invalid option ID: "${response.selectedOptionId}". Valid options are: ${validOptionIds.join(', ')}`);
+                }
+                checkpoint.status = 'answered';
+                checkpoint.answeredAt = Date.now();
+                checkpoint.selectedOption = response.selectedOptionId;
+                this.pendingCheckpoints.delete(checkpoint.id);
+                this.saveCheckpoints();
+              });
+            }
           }
+        }
+        if (modified) {
+          await this.saveCheckpoints();
         }
       } catch (parseErr) {
         console.error('[HumanCheckpoint] Failed to parse checkpoints:', parseErr);

@@ -10,8 +10,7 @@ import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { setMainWindow } from './ipc-handlers.js';
 import { closeBrowser } from './browser-manager.js';
-import { cancelAgentCommand } from './agent-executor.js';
-import { cancelWorkflow } from './workflow-executor.js';
+import { automationOrchestrator } from './automation/index.js';
 
 // __dirname is available natively in CJS (esbuild target: cjs)
 
@@ -244,8 +243,8 @@ app.on('window-all-closed', () => {
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Cancel any running agent/workflow and close the Playwright browser before quitting.
 app.on('before-quit', async () => {
-  cancelAgentCommand();
-  cancelWorkflow();
+  automationOrchestrator.cancelActiveTask();
+  await automationOrchestrator.closePool().catch(() => { });
   await closeBrowser().catch(() => { });
 });
 

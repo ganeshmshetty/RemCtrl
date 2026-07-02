@@ -12,17 +12,18 @@
  */
 
 import { Stagehand } from '@browserbasehq/stagehand';
+import { getStagehand } from './stagehand-pool.js';
 import type { Page } from 'playwright';
-import { getPreferredModel } from './storage.js';
+import { getPreferredModel } from '../storage.js';
 import type {
   AgentWorkflowBatchPayload,
   WorkflowStep,
   WorkflowRunStatus,
   WorkflowStepStatus,
   AgentLogPayload,
-} from '../shared/types.js';
-import { getPage, getCdpUrl } from './browser-manager.js';
-import { getPreferredProvider, getApiKey } from './storage.js';
+} from '../../shared/types.js';
+import { getPage, getCdpUrl } from '../browser-manager.js';
+import { getPreferredProvider, getApiKey } from '../storage.js';
 import {
   StallDetector,
   createPageFingerprint,
@@ -30,9 +31,8 @@ import {
 import {
   AgentStalledError,
   BrowserNotReadyError,
-  StagehandConnectionError,
   extractError,
-} from './errors.js';
+} from '../errors.js';
 
 // ─── Callback Types ─────────────────────────────────────────────────────────
 
@@ -55,6 +55,7 @@ const COLLECT_MAX_PAGES = 10;
 /** Polling window for `check` implicit DOM settling (ms) */
 const CHECK_POLL_INTERVAL_MS = 500;
 const CHECK_POLL_MAX_MS = 3_000;
+const WORKFLOW_MAX_TRANSITIONS = 100;
 
 // ─── Module State ───────────────────────────────────────────────────────────
 
@@ -129,9 +130,28 @@ export async function runWorkflow(
   activeRunId = workflowRunId;
   cancelRequested = false;
 
-  // Build step index for O(1) lookup (needed for check branching)
+  // Build step index for O(1) lookup (needed for check branching) and validate graph
   const stepMap = new Map<string, { step: WorkflowStep; index: number }>();
-  steps.forEach((s, i) => stepMap.set(s.id, { step: s, index: i }));
+  for (const [i, s] of steps.entries()) {
+    if (stepMap.has(s.id)) {
+      const msg = `Duplicate workflow step ID "${s.id}".`;
+      emitLog(onLog, 'error', msg, '[Workflow]');
+      onRunStatus({ workflowRunId, state: 'failed', error: msg });
+      return;
+    }
+    stepMap.set(s.id, { step: s, index: i });
+  }
+
+  for (const s of steps) {
+    for (const target of [s.onTrue, s.onFalse]) {
+      if (target && !stepMap.has(target)) {
+        const msg = `Step "${s.id}" branches to unknown step ID "${target}".`;
+        emitLog(onLog, 'error', msg, '[Workflow]');
+        onRunStatus({ workflowRunId, state: 'failed', error: msg });
+        return;
+      }
+    }
+  }
 
   onRunStatus({ workflowRunId, state: 'running', currentStepIndex: 0 });
   emitLog(onLog, 'info', `Workflow "${name}" started — ${steps.length} step(s), model="${modelName}"`, '[Workflow]');
@@ -141,25 +161,9 @@ export async function runWorkflow(
   try {
     emitLog(onLog, 'info', `Connecting to local browser via CDP: ${cdpUrl}`, '[Workflow]');
 
-    stagehand = new Stagehand({
-      env: 'LOCAL',
-      localBrowserLaunchOptions: { cdpUrl },
-      model: { modelName, apiKey },
-      logger: (line: any) => {
-        const level = (line.level || 'info') as AgentLogPayload['level'];
-        const msg: string = line.message ?? (typeof line === 'object' ? JSON.stringify(line) : String(line));
-        emitLog(onLog, level, msg, '[Stagehand]');
-      },
-      verbose: 2,
+    stagehand = await getStagehand(cdpUrl, modelName, apiKey, (level, msg) => {
+      emitLog(onLog, level, msg, '[Stagehand]');
     });
-
-    emitLog(onLog, 'info', 'Initialising Stagehand…', '[Workflow]');
-    try {
-      await stagehand.init();
-    } catch (initErr: any) {
-      throw new StagehandConnectionError(initErr?.message ?? String(initErr));
-    }
-    emitLog(onLog, 'info', 'Stagehand ready.', '[Workflow]');
 
     // Navigate to startUrl if provided
     if (startUrl) {
@@ -174,8 +178,13 @@ export async function runWorkflow(
     // can branch freely without re-indexing.
 
     let currentStepId: string | null = steps[0]?.id ?? null;
+    let transitions = 0;
 
     while (currentStepId !== null) {
+      if (++transitions > WORKFLOW_MAX_TRANSITIONS) {
+        throw new Error(`Workflow exceeded ${WORKFLOW_MAX_TRANSITIONS} step transitions; possible branch cycle.`);
+      }
+
       if (isPaused) await waitForResume(onLog);
 
       if (cancelRequested) {
@@ -190,8 +199,10 @@ export async function runWorkflow(
 
       const entry = stepMap.get(currentStepId);
       if (!entry) {
-        emitLog(onLog, 'warn', `Step ID "${currentStepId}" not found in step map — stopping.`, '[Workflow]');
-        break;
+        const msg = `Step ID "${currentStepId}" not found in step map.`;
+        emitLog(onLog, 'error', msg, '[Workflow]');
+        onRunStatus({ workflowRunId, state: 'failed', error: msg });
+        return;
       }
 
       const { step, index } = entry;
@@ -279,12 +290,16 @@ async function executeStepWithRetry(
 ): Promise<unknown> {
   let lastError: Error | null = null;
   let attempt = 0;
+  const maxAttempts =
+    step.type === 'navigate' || step.type === 'check'
+      ? RETRY_MAX_ATTEMPTS
+      : 1;
 
-  while (attempt < RETRY_MAX_ATTEMPTS) {
+  while (attempt < maxAttempts) {
     attempt++;
     try {
       if (attempt > 1) {
-        emitLog(onLog, 'info', `Attempt ${attempt}/${RETRY_MAX_ATTEMPTS}`, '[Workflow]');
+        emitLog(onLog, 'info', `Attempt ${attempt}/${maxAttempts}`, '[Workflow]');
       }
       return await executeStep(stagehand, page, step, onLog);
     } catch (err) {
@@ -293,7 +308,7 @@ async function executeStepWithRetry(
 
       emitLog(onLog, 'warn', `Attempt ${attempt} failed: ${errorInfo.message}`, '[Workflow]');
 
-      if (attempt === RETRY_MAX_ATTEMPTS || !errorInfo.retryable) break;
+      if (attempt === maxAttempts || !errorInfo.retryable) break;
 
       const delay = Math.min(
         RETRY_INITIAL_DELAY_MS * Math.pow(RETRY_BACKOFF, attempt - 1),
@@ -382,6 +397,7 @@ async function executeDoStep(
   const completedActions: string[] = [];
   let lastResult: unknown = null;
   let successfulActions = 0;
+  let goalAchieved = false;
 
   for (let i = 0; i < DO_MAX_STEPS; i++) {
     if (isPaused) await waitForResume(onLog);
@@ -413,6 +429,7 @@ async function executeDoStep(
 
       if (desc.includes('GOAL_ACHIEVED')) {
         emitLog(onLog, 'info', `Goal achieved after ${i + 1} sub-action(s).`, '[Do]');
+        goalAchieved = true;
         break;
       }
     } catch (err: any) {
@@ -440,6 +457,10 @@ async function executeDoStep(
     throw new Error(`Do step failed: all ${DO_MAX_STEPS} sub-action attempts failed for "${step.instruction}"`);
   }
 
+  if (!goalAchieved) {
+    throw new Error(`Do step did not reach GOAL_ACHIEVED within ${DO_MAX_STEPS} sub-actions for "${step.instruction}"`);
+  }
+
   return lastResult ?? { success: true, message: 'Do step completed.' };
 }
 
@@ -459,9 +480,15 @@ async function executeCollectStep(
   const allResults: unknown[] = [];
 
   for (let pageNum = 0; pageNum < COLLECT_MAX_PAGES; pageNum++) {
+    if (isPaused) await waitForResume(onLog);
+    if (cancelRequested) break;
+
     emitLog(onLog, 'info', `Extracting page ${pageNum + 1}…`, '[Collect]');
     const result = await stagehand.extract(step.instruction, { page });
     allResults.push(result);
+
+    if (isPaused) await waitForResume(onLog);
+    if (cancelRequested) break;
 
     // Try to find and click a "Next" pagination button
     const nextObservation = await stagehand.observe(
@@ -488,7 +515,12 @@ async function executeCollectStep(
     }
   }
 
-  const flattened = allResults.length === 1 ? allResults[0] : allResults;
+  const flattened =
+    allResults.length === 1
+      ? allResults[0]
+      : allResults.every(Array.isArray)
+        ? allResults.flat()
+        : allResults;
   emitLog(onLog, 'info', `Collection complete — ${allResults.length} page(s) processed.`, '[Collect]');
   return flattened;
 }

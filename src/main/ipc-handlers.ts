@@ -34,9 +34,16 @@ import {
 } from './storage.js';
 import { SignalingClient } from './signaling-client.js';
 import { launchBrowser, closeBrowser, getCaptureMetadata, injectMouse, injectKeyboard, resetProfile } from './browser-manager.js';
-import { runAgent, cancelAgent, isAgentRunning, setAgentPaused } from './agent-runner.js';
-import { runWorkflow, cancelWorkflow, isWorkflowRunning, setWorkflowPaused } from './workflow-executor.js';
-import { submitCheckpointResponse } from './human-checkpoint.js';
+import {
+  runAgent,
+  cancelAgent,
+  isAgentRunning,
+  runWorkflow,
+  cancelWorkflow,
+  isWorkflowRunning,
+  submitCheckpointResponse,
+  automationOrchestrator,
+} from './automation/index.js';
 import { setScreencastWindow } from './screencast.js';
 import { setBrowserNotifyWindow, getTabs, switchTab, goBack, goForward, reload, navigate, closeTab, newTab } from './browser-manager.js';
 import type { AgentWorkflowBatchPayload } from '../shared/types.js';
@@ -389,8 +396,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('browser:setTakeoverActive', async (_e, active: unknown) => {
     const isPaused = Boolean(active);
-    setAgentPaused(isPaused);
-    setWorkflowPaused(isPaused);
+    automationOrchestrator.setPaused(isPaused);
     return { ok: true };
   });
 

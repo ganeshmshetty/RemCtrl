@@ -84,6 +84,9 @@ export class StallDetector {
   private actionHistory: string[] = [];
   private fingerprintHistory: PageFingerprint[] = [];
   private totalRepetitions = 0;
+  private lastCountedActionLen = 0;
+  private lastCountedFpLen = 0;
+  private cachedStuckResult: StallCheckResult | null = null;
   private config: StallDetectorConfig;
 
   constructor(config?: Partial<StallDetectorConfig>) {
@@ -119,75 +122,99 @@ export class StallDetector {
    * Check if the agent appears to be stuck.
    */
   isStuck(): StallCheckResult {
-    // Check for repeated actions
-    const actionRepetitions = this.countTrailingRepetitions(this.actionHistory);
-
-    if (actionRepetitions >= this.config.maxRepeatedActions) {
-      this.totalRepetitions += actionRepetitions;
-      const severity = this.getSeverity(actionRepetitions);
-      return {
-        stuck: true,
-        reason: `Same action repeated ${actionRepetitions} times`,
-        severity,
-      };
+    // If neither action history nor fingerprint history has changed since last evaluation, return cached result
+    if (
+      this.cachedStuckResult &&
+      this.actionHistory.length === this.lastCountedActionLen &&
+      this.fingerprintHistory.length === this.lastCountedFpLen
+    ) {
+      return this.cachedStuckResult;
     }
 
-    // Check for action cycle (A -> B -> A -> B)
-    if (this.actionHistory.length >= 4) {
-      const last4 = this.actionHistory.slice(-4);
-      if (last4[0] === last4[2] && last4[1] === last4[3]) {
-        this.totalRepetitions += 2;
+    const isNewObservation =
+      this.actionHistory.length !== this.lastCountedActionLen ||
+      this.fingerprintHistory.length !== this.lastCountedFpLen;
+
+    if (isNewObservation) {
+      this.lastCountedActionLen = this.actionHistory.length;
+      this.lastCountedFpLen = this.fingerprintHistory.length;
+    }
+
+    const computeResult = (): StallCheckResult => {
+      // Check for repeated actions
+      const actionRepetitions = this.countTrailingRepetitions(this.actionHistory);
+
+      if (actionRepetitions >= this.config.maxRepeatedActions) {
+        if (isNewObservation) this.totalRepetitions += actionRepetitions;
+        const severity = this.getSeverity(actionRepetitions);
         return {
           stuck: true,
-          reason: 'Detected action cycle (alternating between two actions)',
-          severity: this.getSeverity(this.totalRepetitions),
+          reason: `Same action repeated ${actionRepetitions} times`,
+          severity,
         };
       }
-    }
 
-    // Check for triple cycle (A -> B -> C -> A -> B -> C)
-    if (this.actionHistory.length >= 6) {
-      const last6 = this.actionHistory.slice(-6);
-      if (
-        last6[0] === last6[3] &&
-        last6[1] === last6[4] &&
-        last6[2] === last6[5]
-      ) {
-        this.totalRepetitions += 3;
+      // Check for action cycle (A -> B -> A -> B)
+      if (this.actionHistory.length >= 4) {
+        const last4 = this.actionHistory.slice(-4);
+        if (last4[0] === last4[2] && last4[1] === last4[3]) {
+          if (isNewObservation) this.totalRepetitions += 2;
+          return {
+            stuck: true,
+            reason: 'Detected action cycle (alternating between two actions)',
+            severity: this.getSeverity(this.totalRepetitions),
+          };
+        }
+      }
+
+      // Check for triple cycle (A -> B -> C -> A -> B -> C)
+      if (this.actionHistory.length >= 6) {
+        const last6 = this.actionHistory.slice(-6);
+        if (
+          last6[0] === last6[3] &&
+          last6[1] === last6[4] &&
+          last6[2] === last6[5]
+        ) {
+          if (isNewObservation) this.totalRepetitions += 3;
+          return {
+            stuck: true,
+            reason: 'Detected 3-step action cycle',
+            severity: this.getSeverity(this.totalRepetitions),
+          };
+        }
+      }
+
+      // Check for repeated fingerprints (same page state)
+      const fpRepetitions = this.countTrailingRepetitions(
+        this.fingerprintHistory.map((fp) => this.hashFingerprint(fp)),
+      );
+
+      if (fpRepetitions >= this.config.maxRepeatedFingerprints) {
+        if (isNewObservation) this.totalRepetitions += fpRepetitions;
         return {
           stuck: true,
-          reason: 'Detected 3-step action cycle',
-          severity: this.getSeverity(this.totalRepetitions),
+          reason: `Page state unchanged for ${fpRepetitions} steps`,
+          severity: this.getSeverity(fpRepetitions),
         };
       }
-    }
 
-    // Check for repeated fingerprints (same page state)
-    const fpRepetitions = this.countTrailingRepetitions(
-      this.fingerprintHistory.map((fp) => this.hashFingerprint(fp)),
-    );
+      // Check for consecutive stagnant pages
+      const stagnantCount = this.countConsecutiveStagnantPages();
+      if (stagnantCount >= this.config.maxStagnantPages) {
+        if (isNewObservation) this.totalRepetitions += stagnantCount;
+        return {
+          stuck: true,
+          reason: `Page appears stagnant for ${stagnantCount} consecutive steps (same URL and element structure)`,
+          severity: this.getSeverity(stagnantCount),
+        };
+      }
 
-    if (fpRepetitions >= this.config.maxRepeatedFingerprints) {
-      this.totalRepetitions += fpRepetitions;
-      return {
-        stuck: true,
-        reason: `Page state unchanged for ${fpRepetitions} steps`,
-        severity: this.getSeverity(fpRepetitions),
-      };
-    }
+      return { stuck: false, severity: 0 };
+    };
 
-    // Check for consecutive stagnant pages
-    const stagnantCount = this.countConsecutiveStagnantPages();
-    if (stagnantCount >= this.config.maxStagnantPages) {
-      this.totalRepetitions += stagnantCount;
-      return {
-        stuck: true,
-        reason: `Page appears stagnant for ${stagnantCount} consecutive steps (same URL and element structure)`,
-        severity: this.getSeverity(stagnantCount),
-      };
-    }
-
-    return { stuck: false, severity: 0 };
+    const res = computeResult();
+    this.cachedStuckResult = res;
+    return res;
   }
 
   /**
@@ -217,6 +244,9 @@ export class StallDetector {
     this.actionHistory = [];
     this.fingerprintHistory = [];
     this.totalRepetitions = 0;
+    this.lastCountedActionLen = 0;
+    this.lastCountedFpLen = 0;
+    this.cachedStuckResult = null;
   }
 
   // ─── Private Helpers ─────────────────────────────────────────────────────

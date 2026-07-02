@@ -166,14 +166,7 @@ export class ConversationManager {
         },
       },
       ...recentMessages,
-    ].filter((m, i, arr) => {
-      // Remove duplicate system messages
-      if (m.role === 'system') {
-        const firstSystem = arr.findIndex((msg) => msg.role === 'system');
-        return i === firstSystem;
-      }
-      return true;
-    });
+    ];
 
     this.compactionCount++;
     this.tokenCount = this.estimateTokenCount();
@@ -288,7 +281,7 @@ export function truncateToTokens(
     return text;
   }
 
-  return text.slice(0, maxChars - suffix.length) + suffix;
+  return text.slice(0, Math.max(0, maxChars - suffix.length)) + suffix;
 }
 
 /**

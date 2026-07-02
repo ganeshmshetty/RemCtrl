@@ -15,11 +15,9 @@
  */
 
 import { ConversationManager } from './conversation-manager.js';
-import { getPreferredProvider, getApiKey } from './storage.js';
+import { getPreferredProvider, getApiKey } from '../storage.js';
 import { generateObject } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { resolveModel } from './model-resolver.js';
 import { z } from 'zod';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -159,8 +157,8 @@ export class TaskPlanner {
     }
 
     subtask.status = status;
-    if (result) subtask.result = result;
-    if (error) subtask.error = error;
+    if (result !== undefined) subtask.result = result;
+    if (error !== undefined) subtask.error = error;
 
     // Update plan status
     if (plan.subtasks.every((s) => s.status === 'completed')) {
@@ -174,7 +172,14 @@ export class TaskPlanner {
    * Get next pending subtask
    */
   getNextSubtask(plan: TaskPlan): Subtask | null {
-    const pending = plan.subtasks.find((s) => s.status === 'pending');
+    const pending = plan.subtasks.find(
+      (s) =>
+        s.status === 'pending' &&
+        (s.dependencies ?? []).every(
+          (dependencyId) =>
+            plan.subtasks.find((dependency) => dependency.id === dependencyId)?.status === 'completed',
+        ),
+    );
     return pending || null;
   }
 
@@ -211,21 +216,7 @@ export class TaskPlanner {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    if (!apiKey) {
-      throw new Error(`No API key found for provider: ${provider}`);
-    }
-
-    let model;
-    if (provider === 'openai') {
-      const openai = createOpenAI({ apiKey });
-      model = openai('gpt-4o');
-    } else if (provider === 'anthropic') {
-      const anthropic = createAnthropic({ apiKey });
-      model = anthropic('claude-3-5-sonnet-latest');
-    } else {
-      const google = createGoogleGenerativeAI({ apiKey });
-      model = google('gemini-2.5-flash');
-    }
+    const model = resolveModel(provider, apiKey, 'powerful');
 
     const PlannerSchema = z.object({
       subtasks: z.array(z.object({
@@ -290,21 +281,7 @@ export class DynamicPlanner {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    if (!apiKey) {
-      throw new Error(`No API key found for provider: ${provider}`);
-    }
-
-    let model;
-    if (provider === 'openai') {
-      const openai = createOpenAI({ apiKey });
-      model = openai('gpt-4o');
-    } else if (provider === 'anthropic') {
-      const anthropic = createAnthropic({ apiKey });
-      model = anthropic('claude-3-5-sonnet-latest');
-    } else {
-      const google = createGoogleGenerativeAI({ apiKey });
-      model = google('gemini-2.5-flash');
-    }
+    const model = resolveModel(provider, apiKey, 'powerful');
 
     const StepSchema = z.object({
       thought: z.string().describe('Your reasoning for what to do next based on the goal, history, and current page.'),

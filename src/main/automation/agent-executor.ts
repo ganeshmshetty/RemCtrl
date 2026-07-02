@@ -11,10 +11,11 @@
  */
 
 import { Stagehand } from '@browserbasehq/stagehand';
-import { getPage, getCdpUrl } from './browser-manager.js';
+import { getStagehand, closeStagehand } from './stagehand-pool.js';
+import { getPage, getCdpUrl } from '../browser-manager.js';
 import { parseInstruction } from './instruction-parser.js';
-import { getPreferredModel } from './storage.js';
-import type { AgentStatusPayload, AgentLogPayload, ApiProvider } from '../shared/types.js';
+import { getPreferredModel } from '../storage.js';
+import type { AgentStatusPayload, AgentLogPayload, ApiProvider } from '../../shared/types.js';
 import type { Page } from 'playwright';
 import {
   StallDetector,
@@ -25,9 +26,8 @@ import {
   AgentTimeoutError,
   RetryExhaustedError,
   BrowserNotReadyError,
-  StagehandConnectionError,
   extractError,
-} from './errors.js';
+} from '../errors.js';
 import { ExecutionLogger } from './execution-logger.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -104,7 +104,6 @@ export async function runAgentCommand(
   const modelName = getModelName(provider);
 
   emitLog(onLog, 'info', `Starting — action="${action}" model="${modelName}"`, '[Agent]');
-  emitLog(onLog, 'info', `Instruction: ${instruction}`, '[Agent]');
   onStatus({ commandId, state: 'running' });
 
   let localStagehand: Stagehand | null = null;
@@ -112,28 +111,11 @@ export async function runAgentCommand(
   let cancelIntervalId: NodeJS.Timeout | undefined;
 
   try {
-    emitLog(onLog, 'info', `Connecting to local browser via CDP: ${cdpUrl}`, '[Agent]');
+    emitLog(onLog, 'info', 'Connecting to local browser via CDP...', '[Agent]');
 
-    localStagehand = new Stagehand({
-      env: 'LOCAL',
-      localBrowserLaunchOptions: { cdpUrl },
-      model: { modelName, apiKey },
-      logger: (logLine: any) => {
-        const level = (logLine.level || 'info') as AgentLogPayload['level'];
-        const msg: string = logLine.message ??
-          (typeof logLine === 'object' ? JSON.stringify(logLine) : String(logLine));
-        emitLog(onLog, level, msg, '[Stagehand]');
-      },
-      verbose: 2,
+    localStagehand = await getStagehand(cdpUrl, modelName, apiKey, (level, msg) => {
+      emitLog(onLog, level, msg, '[Stagehand]');
     });
-
-    emitLog(onLog, 'info', 'Initialising Stagehand...', '[Agent]');
-    try {
-      await localStagehand.init();
-    } catch (initErr: any) {
-      throw new StagehandConnectionError(initErr?.message ?? String(initErr));
-    }
-    emitLog(onLog, 'info', 'Stagehand ready.', '[Agent]');
 
     // Setup timeout
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -151,8 +133,9 @@ export async function runAgentCommand(
     });
 
     // Execute with retries
+    const stallDetector = new StallDetector();
     const result = await Promise.race([
-      executeWithRetries(localStagehand, page, action, instruction, onLog),
+      executeWithRetries(localStagehand, page, action, instruction, onLog, stallDetector),
       timeoutPromise,
       cancelPromise,
     ]);
@@ -166,13 +149,18 @@ export async function runAgentCommand(
       const summary = executionLogger?.getSummary();
       if (summary) {
         emitLog(onLog, 'info',
-          `Command completed in ${summary.totalDuration}ms — ${summary.totalSteps} step(s). Result: ${JSON.stringify(result)}`,
+          `Command completed in ${summary.totalDuration}ms — ${summary.totalSteps} step(s).`,
           '[Agent]');
       }
       onStatus({ commandId, state: 'completed', result });
     }
   } catch (err) {
-    executionLogger?.fail();
+    if (cancelRequested) {
+      executionLogger?.cancel();
+    } else {
+      executionLogger?.fail();
+    }
+    await closeStagehand().catch(() => {});
     handleError(err, commandId, onLog, onStatus);
   } finally {
     clearTimeout(timeoutId);
@@ -213,18 +201,20 @@ async function executeWithRetries(
   action: 'act' | 'observe' | 'extract',
   instruction: string,
   onLog: AgentLogCb,
+  stallDetector: StallDetector,
 ): Promise<any> {
   const config = DEFAULT_RETRY_CONFIG;
   let lastError: Error | null = null;
   let attempt = 0;
+  const maxAttempts = action === 'act' ? 1 : config.maxAttempts;
 
-  while (attempt < config.maxAttempts) {
+  while (attempt < maxAttempts) {
     attempt++;
-    const isLastAttempt = attempt === config.maxAttempts;
+    const isLastAttempt = attempt === maxAttempts;
 
     try {
-      emitLog(onLog, 'info', `Attempt ${attempt}/${config.maxAttempts}`, '[Agent]');
-      const result = await executeWithStallDetection(stagehand, page, action, instruction, onLog);
+      emitLog(onLog, 'info', `Attempt ${attempt}/${maxAttempts}`, '[Agent]');
+      const result = await executeWithStallDetection(stagehand, page, action, instruction, onLog, stallDetector);
 
       if (attempt > 1) {
         emitLog(onLog, 'info', `Succeeded on attempt ${attempt}`, '[Agent]');
@@ -237,8 +227,11 @@ async function executeWithRetries(
 
       emitLog(onLog, 'warn', `Attempt ${attempt} failed: ${errorInfo.message}`, '[Agent]');
 
-      // Don't retry if not retryable or last attempt
-      if (isLastAttempt || !errorInfo.retryable) {
+      if (!errorInfo.retryable) {
+        throw lastError;
+      }
+
+      if (isLastAttempt) {
         break;
       }
 
@@ -273,10 +266,12 @@ async function executeMultiStepAction(
   page: Page,
   goal: string,
   onLog: AgentLogCb,
+  stallDetector: StallDetector,
 ): Promise<any> {
   let lastResult: any = null;
   const completedSteps: string[] = [];
   let successfulSteps = 0;
+  let goalAchieved = false;
 
   for (let step = 0; step < POST_NAV_MAX_STEPS; step++) {
     if (isPaused) {
@@ -309,11 +304,23 @@ async function executeMultiStepAction(
       completedSteps.push(actionDesc);
       emitLog(onLog, 'info', `Step ${step + 1} done: ${actionDesc}`, '[Agent]');
 
+      stallDetector.recordAction('act', actionDesc);
+      const fp = await createPageFingerprint(page);
+      stallDetector.recordFingerprint(fp);
+      const stallCheck = stallDetector.isStuck();
+      if (stallCheck.stuck) {
+        const nudge = stallDetector.getLoopNudgeMessage();
+        if (nudge) emitLog(onLog, 'info', `Stall nudge: ${nudge}`, '[Agent]');
+        throw new AgentStalledError(stallCheck.reason, true);
+      }
+
       if (actionDesc.includes('GOAL_ACHIEVED')) {
+        goalAchieved = true;
         emitLog(onLog, 'info', `Goal achieved after ${step + 1} step(s).`, '[Agent]');
         break;
       }
     } catch (error: any) {
+      if (error instanceof AgentStalledError) throw error;
       const errorMsg = error?.message || 'Unknown execution error';
       emitLog(onLog, 'warn', `Step ${step + 1} failed: ${errorMsg}. Retrying...`, '[Agent]');
       // Push the failure into context so the LLM knows what NOT to do next time
@@ -328,6 +335,10 @@ async function executeMultiStepAction(
     throw new Error(`Multi-step action failed: all ${POST_NAV_MAX_STEPS} attempts failed`);
   }
 
+  if (!goalAchieved) {
+    throw new Error(`Multi-step action stopped after ${POST_NAV_MAX_STEPS} steps before the goal was achieved`);
+  }
+
   return lastResult ?? { success: true, message: 'Multi-step action completed.' };
 }
 
@@ -339,8 +350,8 @@ async function executeWithStallDetection(
   action: 'act' | 'observe' | 'extract',
   instruction: string,
   onLog: AgentLogCb,
+  stallDetector: StallDetector,
 ): Promise<any> {
-  const stallDetector = new StallDetector();
   let step = 0;
   let lastStallCheck = 0;
 
@@ -369,7 +380,7 @@ async function executeWithStallDetection(
         }
 
         emitLog(onLog, 'info', `Executing post-navigation action: "${parsed.remainingAction}"`, '[Agent]');
-        return await executeMultiStepAction(stagehand, page, parsed.remainingAction, onLog);
+        return await executeMultiStepAction(stagehand, page, parsed.remainingAction, onLog, stallDetector);
       }
 
       // No navigation — pass full instruction to Stagehand
@@ -470,7 +481,7 @@ function handleError(
   const fullMessage = suggestion ? `${userMessage} ${suggestion}` : userMessage;
 
   emitLog(onLog, 'error', `Command failed:\n${fullMessage}`, '[Agent]');
-  onStatus({ commandId, state: 'failed', error: userMessage });
+  onStatus({ commandId, state: 'failed', error: fullMessage });
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

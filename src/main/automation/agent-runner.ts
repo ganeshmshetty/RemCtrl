@@ -14,9 +14,10 @@
  */
 
 import { Stagehand } from '@browserbasehq/stagehand';
-import { getPage, getCdpUrl } from './browser-manager.js';
+import { getStagehand, closeStagehand } from './stagehand-pool.js';
+import { getPage, getCdpUrl } from '../browser-manager.js';
 import { parseInstruction } from './instruction-parser.js';
-import { getPreferredModel } from './storage.js';
+import { getPreferredModel } from '../storage.js';
 import { DynamicPlanner } from './task-planner.js';
 import { TaskEvaluator } from './task-evaluator.js';
 import { StrategyGenerator } from './strategy-generator.js';
@@ -28,22 +29,33 @@ import {
 import {
   AgentTimeoutError,
   BrowserNotReadyError,
-  StagehandConnectionError,
   extractError,
-} from './errors.js';
+} from '../errors.js';
 import {
   runAgentCommand as runSimpleAgentCommand,
   cancelAgentCommand,
   isAgentRunning as isSimpleAgentRunning,
   setAgentPaused as setSimpleAgentPaused,
 } from './agent-executor.js';
-import type { AgentStatusPayload, AgentLogPayload, ApiProvider } from '../shared/types.js';
+import type { AgentStatusPayload, AgentLogPayload, ApiProvider } from '../../shared/types.js';
 
 // ─── Re-export simple agent helpers so ipc-handlers only imports from here ──
 
-export { cancelAgentCommand as cancelAgent };
-export { isSimpleAgentRunning as isAgentRunning };
-export { setSimpleAgentPaused as setAgentPaused };
+export function cancelAgent(): void {
+  cancelAgentCommand();
+  if (activeCommandId !== null) {
+    cancelRequested = true;
+  }
+}
+
+export function isAgentRunning(): boolean {
+  return isSimpleAgentRunning() || activeCommandId !== null;
+}
+
+export function setAgentPaused(paused: boolean): void {
+  setSimpleAgentPaused(paused);
+  isPaused = paused;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -163,6 +175,9 @@ export async function runAgent(
     return;
   }
 
+  activeCommandId = commandId;
+  cancelRequested = false;
+
   // ── Step 1: Complexity detection ──────────────────────────────────────────
 
   // Parse for navigation intent (quick check, reused below for the first subtask)
@@ -177,6 +192,7 @@ export async function runAgent(
   const simple = !hasNavigation && isSimpleInstruction(instruction);
 
   if (simple) {
+    activeCommandId = null;
     emitLog(onLog, 'info', 'Simple instruction detected — delegating to agent-executor.', '[AgentRunner]');
     // Delegate entirely to the robust single-command executor
     return runSimpleAgentCommand(commandId, action, instruction, apiKey, provider, onStatus, onLog);
@@ -184,12 +200,8 @@ export async function runAgent(
 
   // ── Complex pipeline ───────────────────────────────────────────────────────
 
-  activeCommandId = commandId;
-  cancelRequested = false;
-
   const modelName = getModelName(provider);
   emitLog(onLog, 'info', `Starting complex pipeline — model="${modelName}"`, '[AgentRunner]');
-  emitLog(onLog, 'info', `Instruction: ${instruction}`, '[AgentRunner]');
   onStatus({ commandId, state: 'running' });
 
   const executionLogger = new ExecutionLogger(commandId, instruction);
@@ -204,29 +216,11 @@ export async function runAgent(
   try {
     // ── Connect Stagehand ────────────────────────────────────────────────────
 
-    emitLog(onLog, 'info', `Connecting to local browser via CDP: ${cdpUrl}`, '[AgentRunner]');
+    emitLog(onLog, 'info', 'Connecting to local browser via CDP...', '[AgentRunner]');
 
-    localStagehand = new Stagehand({
-      env: 'LOCAL',
-      localBrowserLaunchOptions: { cdpUrl },
-      model: { modelName, apiKey },
-      logger: (logLine: any) => {
-        const level = (logLine.level || 'info') as AgentLogPayload['level'];
-        const msg: string =
-          logLine.message ??
-          (typeof logLine === 'object' ? JSON.stringify(logLine) : String(logLine));
-        emitLog(onLog, level, msg, '[Stagehand]');
-      },
-      verbose: 2,
+    localStagehand = await getStagehand(cdpUrl, modelName, apiKey, (level, msg) => {
+      emitLog(onLog, level, msg, '[Stagehand]');
     });
-
-    emitLog(onLog, 'info', 'Initialising Stagehand...', '[AgentRunner]');
-    try {
-      await localStagehand.init();
-    } catch (initErr: any) {
-      throw new StagehandConnectionError(initErr?.message ?? String(initErr));
-    }
-    emitLog(onLog, 'info', 'Stagehand ready.', '[AgentRunner]');
 
     // ── Timeout + cancellation promises ─────────────────────────────────────
     // Start the clock AFTER init so slow model cold-starts don't burn the budget.
@@ -258,8 +252,8 @@ export async function runAgent(
       let stepCount = 0;
       const MAX_STEPS = 25;
 
-      // Record initial page fingerprint (use browser-manager page for Playwright ops)
-      const initFp = await createPageFingerprint(page);
+      // Record initial page fingerprint (use activePage for Playwright ops)
+      const initFp = await createPageFingerprint(activePage as any);
       stallDetector.recordFingerprint(initFp);
 
       while (!goalAchieved && stepCount < MAX_STEPS) {
@@ -273,9 +267,9 @@ export async function runAgent(
         emitLog(onLog, 'info', `[Step ${stepCount}] Asking Dynamic Planner for next move...`, '[AgentRunner]');
         
         const pageState = {
-          url: page.url(),
-          title: await page.title().catch(() => ''),
-          elementCount: await page.locator('button, input, select, a, [role="button"]').count().catch(() => 0),
+          url: activePage.url(),
+          title: await activePage.title().catch(() => ''),
+          elementCount: await activePage.locator('button, input, select, a, [role="button"]').count().catch(() => 0),
         };
 
         const nextStep = await dynamicPlanner.getNextStep(instruction, scratchpad, pageState);
@@ -297,13 +291,13 @@ export async function runAgent(
         for (let attempt = 0; attempt <= 1; attempt++) {
           try {
             // ── 3c. Parse navigation intent ──────────────────────────────────
-            const parsed = await parseInstruction(finalInstruction, page.url());
+            const parsed = await parseInstruction(finalInstruction, activePage.url());
 
             // ── 3d. Navigate if needed ───────────────────────────────────────
             if (parsed.navigationUrl) {
               emitLog(onLog, 'info', `Navigating to ${parsed.navigationUrl}`, '[AgentRunner]');
-              await page.goto(parsed.navigationUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
-              await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+              await activePage.goto(parsed.navigationUrl, { waitUntil: 'domcontentloaded', timeoutMs: 15_000 });
+              await activePage.waitForLoadState('networkidle', 10_000).catch(() => {});
 
               if (parsed.navigationOnly || !parsed.remainingAction) {
                 subtaskResult = { success: true, navigatedTo: parsed.navigationUrl };
@@ -336,7 +330,7 @@ export async function runAgent(
 
             // ── 3f. Stall detection ──────────────────────────────────────────
             stallDetector.recordAction(nextStep.action, finalInstruction);
-            const currentFp = await createPageFingerprint(page);
+            const currentFp = await createPageFingerprint(activePage as any);
             stallDetector.recordFingerprint(currentFp);
             const stallCheck = stallDetector.isStuck();
             if (stallCheck.stuck) {
@@ -359,7 +353,10 @@ export async function runAgent(
                   { stepsExecuted: stepCount, errors: [], collectedData: {} },
                 );
               } catch (evalErr) {
-                emitLog(onLog, 'warn', `Evaluation failed: ${evalErr instanceof Error ? evalErr.message : String(evalErr)}`, '[AgentRunner]');
+                const msg = evalErr instanceof Error ? evalErr.message : String(evalErr);
+                emitLog(onLog, 'warn', `Evaluation failed: ${msg}`, '[AgentRunner]');
+                subtaskError = `Evaluation error: ${msg}`;
+                subtaskResult = null;
                 break; // Skip recovery on evaluator crash
               }
 
@@ -371,26 +368,31 @@ export async function runAgent(
               );
 
               // ── 3h. Recovery if evaluation failed ───────────────────────────
-              if (!evaluation.success && attempt === 0) {
-                const strategyContext = {
-                  task: nextStep.instruction,
-                  currentApproach: finalInstruction,
-                  failureReason: evaluation.missingElements.join('; ') || 'low confidence',
-                  stepsAttempted: stepCount,
-                  stepsRemaining: MAX_STEPS - stepCount,
-                  pageState: {
-                    url: page.url(),
-                    title: await page.title().catch(() => ''),
-                  },
-                };
+              if (!evaluation.success) {
+                if (attempt === 0) {
+                  const strategyContext = {
+                    task: nextStep.instruction,
+                    currentApproach: finalInstruction,
+                    failureReason: evaluation.missingElements.join('; ') || 'low confidence',
+                    stepsAttempted: stepCount,
+                    stepsRemaining: MAX_STEPS - stepCount,
+                    pageState: {
+                      url: activePage.url(),
+                      title: await activePage.title().catch(() => ''),
+                    },
+                  };
 
-                const suggestion = await strategyGen.generateAlternatives(strategyContext);
-                emitLog(onLog, 'info', `Recovery suggestion: ${suggestion.recommendation}`, '[AgentRunner]');
+                  const suggestion = await strategyGen.generateAlternatives(strategyContext);
+                  emitLog(onLog, 'info', `Recovery suggestion: ${suggestion.recommendation}`, '[AgentRunner]');
 
-                // Prepend recommendation to the instruction and retry
-                finalInstruction = `${suggestion.recommendation}\n\nOriginal task: ${nextStep.instruction}`;
-                emitLog(onLog, 'info', `Retrying step with adjusted instruction...`, '[AgentRunner]');
-                continue; // retry loop
+                  // Prepend recommendation to the instruction and retry
+                  finalInstruction = `${suggestion.recommendation}\n\nOriginal task: ${nextStep.instruction}`;
+                  emitLog(onLog, 'info', `Retrying step with adjusted instruction...`, '[AgentRunner]');
+                  continue; // retry loop
+                } else {
+                  subtaskError = `Extraction evaluation failed: ${evaluation.missingElements.join('; ') || 'low confidence'}`;
+                  subtaskResult = null;
+                }
               }
             }
 
@@ -438,6 +440,7 @@ export async function runAgent(
 
     if (cancelRequested) {
       executionLogger.cancel();
+      await closeStagehand().catch(() => {});
       emitLog(onLog, 'info', 'Pipeline cancelled.', '[AgentRunner]');
       onStatus({ commandId, state: 'cancelled' });
     } else {
@@ -455,6 +458,7 @@ export async function runAgent(
 
   } catch (err) {
     executionLogger.fail();
+    await closeStagehand().catch(() => {});
     const errInfo = extractError(err);
 
     if (cancelRequested) {

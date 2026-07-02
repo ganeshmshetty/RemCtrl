@@ -15,13 +15,9 @@
  * }
  */
 
-import { getPreferredProvider, getApiKey } from './storage.js';
+import { getPreferredProvider, getApiKey } from '../storage.js';
 import { generateObject } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createGroq } from '@ai-sdk/groq';
-import { createDeepSeek } from '@ai-sdk/deepseek';
+import { resolveModel } from './model-resolver.js';
 import { z } from 'zod';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -95,54 +91,7 @@ export class TaskEvaluator {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    if (!apiKey) {
-      throw new Error(`No API key found for provider: ${provider}`);
-    }
-
-    let model;
-    switch (provider) {
-      case 'openai': {
-        const openai = createOpenAI({ apiKey });
-        model = openai('gpt-4o-mini');
-        break;
-      }
-      case 'anthropic': {
-        const anthropic = createAnthropic({ apiKey });
-        model = anthropic('claude-3-5-haiku-latest');
-        break;
-      }
-      case 'gemini': {
-        const google = createGoogleGenerativeAI({ apiKey });
-        model = google('gemini-2.5-flash');
-        break;
-      }
-      case 'groq': {
-        const groq = createGroq({ apiKey });
-        model = groq('llama-3.3-70b-versatile');
-        break;
-      }
-      case 'deepseek': {
-        const deepseek = createDeepSeek({ apiKey });
-        model = deepseek('deepseek-chat');
-        break;
-      }
-      case 'nebius': {
-        // Nebius is OpenAI-compatible
-        const nebius = createOpenAI({ apiKey, baseURL: 'https://api.studio.nebius.ai/v1' });
-        model = nebius('meta-llama/Llama-3.3-70B-Instruct');
-        break;
-      }
-      case 'openrouter': {
-        // OpenRouter is OpenAI-compatible
-        const openrouter = createOpenAI({ apiKey, baseURL: 'https://openrouter.ai/api/v1' });
-        model = openrouter('anthropic/claude-3.5-haiku');
-        break;
-      }
-      default: {
-        const openai = createOpenAI({ apiKey });
-        model = openai('gpt-4o-mini');
-      }
-    }
+    const model = resolveModel(provider, apiKey, 'fast');
 
     const EvaluatorSchema = z.object({
       success: z.boolean().describe("Whether the task successfully satisfied the original request."),
@@ -158,16 +107,28 @@ export class TaskEvaluator {
       suggestions: z.array(z.string()).describe("Actionable suggestions for how to fix or retry the missing elements."),
     });
 
+    const safeStringify = (value: unknown): string => {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch (err) {
+        return `[Unserializable value: ${err instanceof Error ? err.message : String(err)}]`;
+      }
+    };
+    const truncate = (value: string, maxLength = 12_000): string =>
+      value.length > maxLength ? `${value.slice(0, maxLength)}\n...[truncated]` : value;
+    const resultText = truncate(safeStringify(result));
+    const collectedDataText = safeStringify(executionContext.collectedData);
+
     const promptText = `
 Task Request: "${originalTask}"
 
 Result Data: 
-${JSON.stringify(result, null, 2)}
+${resultText}
 
 Execution Context:
 Steps Executed: ${executionContext.stepsExecuted}
-Errors Encountered: ${JSON.stringify(executionContext.errors)}
-Collected Data Length: ${JSON.stringify(executionContext.collectedData).length} bytes
+Errors Encountered: ${safeStringify(executionContext.errors)}
+Collected Data Length: ${collectedDataText.length} bytes
 
 Evaluate the completeness and quality of this task output.
 If elements are missing, list them in 'missingElements' and set success to false.
@@ -190,6 +151,8 @@ Provide suggestions on how to modify the approach to fix the gaps.
       finalSuccess = false;
     }
 
+    const nextStep = !finalSuccess ? object.suggestions[0] : undefined;
+
     const evaluation: EvaluationResult = {
       taskId,
       originalTask,
@@ -198,8 +161,8 @@ Provide suggestions on how to modify the approach to fix the gaps.
       criteria: object.criteria,
       missingElements: object.missingElements,
       suggestions: object.suggestions,
-      canContinue: !finalSuccess && object.missingElements.length > 0,
-      nextStep: !finalSuccess ? object.suggestions[0] : undefined,
+      canContinue: Boolean(nextStep),
+      nextStep,
       timestamp: Date.now(),
     };
 
