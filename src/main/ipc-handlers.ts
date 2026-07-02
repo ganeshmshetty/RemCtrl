@@ -10,6 +10,7 @@ import {
   RemoteKeyboardPayloadSchema,
   AgentPromptSchema,
   AgentWorkflowBatchSchema,
+  BrowserModeSchema,
 } from '../shared/schemas.js';
 import {
   hasApiKey,
@@ -182,7 +183,8 @@ function registerIpcHandlers() {
   ipcMain.handle('settings:getBrowserMode', async () => getBrowserMode());
 
   ipcMain.handle('settings:setBrowserMode', async (_e, mode: unknown) => {
-    setBrowserMode(mode as any);
+    const parsed = BrowserModeSchema.parse(mode);
+    setBrowserMode(parsed);
   });
 
   ipcMain.handle('settings:getHeadlessMode', async () => getHeadlessMode());

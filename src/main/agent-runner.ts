@@ -27,6 +27,8 @@ import {
 } from './stall-detector.js';
 import {
   AgentTimeoutError,
+  BrowserNotReadyError,
+  StagehandConnectionError,
   extractError,
 } from './errors.js';
 import {
@@ -50,7 +52,7 @@ export type AgentLogCb    = (payload: AgentLogPayload) => void;
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
-const COMMAND_TIMEOUT_MS = 90_000;
+const COMMAND_TIMEOUT_MS = 180_000; // 3 minutes — Stagehand init + LLM calls can be slow
 
 /** Keywords that indicate a multi-step / complex request */
 const MULTI_STEP_KEYWORDS = [
@@ -155,9 +157,9 @@ export async function runAgent(
   const cdpUrl = getCdpUrl();
 
   if (!page || !cdpUrl) {
-    const msg = 'Browser is not running. Launch a browser from the Host session first.';
-    emitLog(onLog, 'error', msg);
-    onStatus({ commandId, state: 'failed', error: msg });
+    const err = new BrowserNotReadyError('Launch a browser from the Host session first.');
+    emitLog(onLog, 'error', err.message);
+    onStatus({ commandId, state: 'failed', error: err.message });
     return;
   }
 
@@ -219,10 +221,15 @@ export async function runAgent(
     });
 
     emitLog(onLog, 'info', 'Initialising Stagehand...', '[AgentRunner]');
-    await localStagehand.init();
+    try {
+      await localStagehand.init();
+    } catch (initErr: any) {
+      throw new StagehandConnectionError(initErr?.message ?? String(initErr));
+    }
     emitLog(onLog, 'info', 'Stagehand ready.', '[AgentRunner]');
 
-    // ── Timeout + cancellation promises ──────────────────────────────────────
+    // ── Timeout + cancellation promises ─────────────────────────────────────
+    // Start the clock AFTER init so slow model cold-starts don't burn the budget.
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(
@@ -238,6 +245,11 @@ export async function runAgent(
     });
 
     // ── Step 3: Execute via Dynamic Goal Refinement ──────────────────────────
+    // After init(), Stagehand has connected to the CDP browser and manages its own
+    // Playwright context. We MUST use its active page for act/extract/observe — 
+    // passing the browser-manager's page causes silent hangs (different Playwright instances).
+    const stagehandPages = await localStagehand.context.pages();
+    const activePage = stagehandPages[0] ?? page; // fallback to browser-manager page
 
     const runPipeline = async () => {
       const stallDetector = new StallDetector();
@@ -246,7 +258,7 @@ export async function runAgent(
       let stepCount = 0;
       const MAX_STEPS = 25;
 
-      // Record initial page fingerprint
+      // Record initial page fingerprint (use browser-manager page for Playwright ops)
       const initFp = await createPageFingerprint(page);
       stallDetector.recordFingerprint(initFp);
 
@@ -310,11 +322,11 @@ export async function runAgent(
               remainingAction,
               async () => {
                 if (nextStep.action === 'extract') {
-                  return await localStagehand!.extract(remainingAction, { page });
+                  return await localStagehand!.extract(remainingAction, { page: activePage });
                 } else if (nextStep.action === 'observe') {
-                  return await localStagehand!.observe(remainingAction, { page });
+                  return await localStagehand!.observe(remainingAction, { page: activePage });
                 } else {
-                  return await localStagehand!.act(remainingAction, { page });
+                  return await localStagehand!.act(remainingAction, { page: activePage });
                 }
               },
               pageState,

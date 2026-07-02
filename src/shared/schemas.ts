@@ -2,14 +2,28 @@ import { z } from 'zod';
 
 // ─── Workflow Schemas ──────────────────────────────────────────────────────────
 
-export const WorkflowStepActionSchema = z.enum(['act', 'observe', 'extract']);
+export const StepTypeSchema = z.enum(['navigate', 'do', 'collect', 'check']);
 
 export const WorkflowStepSchema = z.object({
   id: z.string().min(1),
-  action: WorkflowStepActionSchema,
-  instruction: z.string().min(1),
-  expected: z.string().optional(),
-});
+  type: StepTypeSchema,
+  // navigate
+  url: z.string().optional(),
+  // do, collect, check
+  instruction: z.string().optional(),
+  // check branching — step IDs
+  onTrue: z.string().optional(),
+  onFalse: z.string().optional(),
+  // recovery policy
+  onFailure: z.enum(['stop', 'skip']),
+}).refine(
+  (s) => {
+    if (s.type === 'navigate') return !!s.url;
+    if (s.type === 'do' || s.type === 'collect' || s.type === 'check') return !!s.instruction;
+    return true;
+  },
+  { message: 'navigate requires url; do/collect/check require instruction' },
+);
 
 export const LocalWorkflowSchema = z.object({
   id: z.string().min(1),
@@ -56,9 +70,12 @@ export const ConnectPinSchema = z.object({
 
 // ─── Agent Schemas ────────────────────────────────────────────────────────────
 
+// AgentAction is separate from StepType (agent panel uses act/observe/extract)
+const AgentActionSchema = z.enum(['act', 'observe', 'extract']);
+
 export const AgentPromptSchema = z.object({
   commandId: z.string().uuid(),
-  action: WorkflowStepActionSchema,
+  action: AgentActionSchema,
   instruction: z.string().min(1).max(5000),
 });
 

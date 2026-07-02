@@ -87,7 +87,7 @@ export async function newTab(): Promise<void> {
   if (context) {
     try {
       const page = await context.newPage();
-      await page.goto('https://google.com');
+      await page.goto('about:blank');
     } catch (err) {
       console.error('[browser] failed to open new tab:', err);
     }

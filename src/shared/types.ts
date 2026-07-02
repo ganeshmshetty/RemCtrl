@@ -1,12 +1,24 @@
 // ─── Workflow Types ────────────────────────────────────────────────────────────
 
-export type WorkflowStepAction = 'act' | 'observe' | 'extract';
+/** Intent-based step types per Smart Workflow architecture */
+export type StepType = 'navigate' | 'do' | 'collect' | 'check';
 
 export interface WorkflowStep {
   id: string;
-  action: WorkflowStepAction;
-  instruction: string;
-  expected?: string;
+  type: StepType;
+
+  // navigate
+  url?: string;
+
+  // do, collect, check
+  instruction?: string;
+
+  // check — step IDs to jump to
+  onTrue?: string;
+  onFalse?: string;
+
+  // recovery
+  onFailure: 'stop' | 'skip';
 }
 
 export interface LocalWorkflow {
@@ -71,9 +83,12 @@ export type ControllerSessionState =
 
 // ─── Agent Types ───────────────────────────────────────────────────────────────
 
+/** Actions used by the Agent panel — separate from workflow StepType */
+export type AgentAction = 'act' | 'observe' | 'extract';
+
 export interface AgentPromptPayload {
   commandId: string;
-  action: WorkflowStepAction;
+  action: AgentAction;
   instruction: string;
 }
 
@@ -115,7 +130,7 @@ export interface AgentWorkflowBatchPayload {
   workflowId: string;
   name: string;
   startUrl?: string;
-  steps: WorkflowStep[];
+  steps: WorkflowStep[]; // WorkflowStep uses new StepType model
 }
 
 export interface WorkflowRunStatus {

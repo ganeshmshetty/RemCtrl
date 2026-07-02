@@ -1,8 +1,58 @@
 import { useState, useEffect } from 'react';
-import { Save, Plus, GripVertical, Play } from 'lucide-react';
+import { Save, Plus, GripVertical, Globe, MousePointerClick, ClipboardList, GitBranch } from 'lucide-react';
 import { useUIStore } from '../stores/useUIStore';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
-import type { WorkflowStep } from '../../shared/types';
+import type { WorkflowStep, StepType } from '../../shared/types';
+
+// ─── Step type metadata ──────────────────────────────────────────────────────
+
+const STEP_TYPES: {
+  type: StepType;
+  icon: React.ReactNode;
+  label: string;
+  placeholder: string;
+  field: 'url' | 'instruction';
+}[] = [
+  {
+    type: 'navigate',
+    icon: <Globe size={13} />,
+    label: 'Go to',
+    placeholder: 'https://example.com',
+    field: 'url',
+  },
+  {
+    type: 'do',
+    icon: <MousePointerClick size={13} />,
+    label: 'Do',
+    placeholder: 'e.g., Click the login button and type my email',
+    field: 'instruction',
+  },
+  {
+    type: 'collect',
+    icon: <ClipboardList size={13} />,
+    label: 'Collect',
+    placeholder: 'e.g., Get all product names and prices',
+    field: 'instruction',
+  },
+  {
+    type: 'check',
+    icon: <GitBranch size={13} />,
+    label: 'Check',
+    placeholder: 'e.g., Is there a cookie consent banner?',
+    field: 'instruction',
+  },
+];
+
+function defaultStep(): WorkflowStep {
+  return {
+    id: crypto.randomUUID(),
+    type: 'do',
+    instruction: '',
+    onFailure: 'stop',
+  };
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function WorkflowEditorModal() {
   const { isWorkflowEditorOpen, closeWorkflowEditor, editingWorkflowId } = useUIStore();
@@ -28,7 +78,7 @@ export function WorkflowEditorModal() {
         setName('');
         setDescription('');
         setStartUrl('');
-        setSteps([{ id: crypto.randomUUID(), instruction: '', action: 'act' }]);
+        setSteps([defaultStep()]);
       }
     }
   }, [isWorkflowEditorOpen, editingWorkflowId, workflows]);
@@ -41,8 +91,29 @@ export function WorkflowEditorModal() {
     setSteps(newSteps);
   }
 
+  function changeStepType(index: number, type: StepType) {
+    // Reset fields that don't apply to the new type
+    const base: WorkflowStep = {
+      id: steps[index].id,
+      type,
+      onFailure: steps[index].onFailure,
+    };
+    if (type === 'navigate') {
+      base.url = steps[index].url || '';
+    } else {
+      base.instruction = steps[index].instruction || '';
+    }
+    if (type === 'check') {
+      base.onTrue = steps[index].onTrue;
+      base.onFalse = steps[index].onFalse;
+    }
+    const newSteps = [...steps];
+    newSteps[index] = base;
+    setSteps(newSteps);
+  }
+
   function addStep() {
-    setSteps([...steps, { id: crypto.randomUUID(), instruction: '', action: 'act' }]);
+    setSteps([...steps, defaultStep()]);
   }
 
   function removeStep(index: number) {
@@ -53,18 +124,27 @@ export function WorkflowEditorModal() {
     if (!name.trim()) return;
     setIsSaving(true);
     try {
-      const newWf = {
-        name,
-        description,
-        startUrl,
-        steps: steps.filter(s => s.instruction.trim()),
+      const validSteps = steps.filter(s =>
+        s.type === 'navigate' ? !!s.url?.trim() : !!s.instruction?.trim(),
+      );
+      const wf = {
+        id: editingWorkflowId || crypto.randomUUID(),
+        name: name.trim(),
+        description: description.trim(),
+        startUrl: startUrl.trim(),
+        steps: validSteps,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       };
-      await saveWorkflow({ id: editingWorkflowId || crypto.randomUUID(), ...newWf, createdAt: Date.now(), updatedAt: Date.now() } as any);
+      await saveWorkflow(wf as any);
       closeWorkflowEditor();
     } finally {
       setIsSaving(false);
     }
   }
+
+  // Build a list of step IDs for the check-branch dropdowns
+  const stepIdOptions = steps.map((s, i) => ({ id: s.id, label: `Step ${i + 1}` }));
 
   return (
     <div className="wf-editor-overlay">
@@ -73,13 +153,13 @@ export function WorkflowEditorModal() {
           <h3>{editingWorkflowId ? 'Edit Workflow' : 'Create Workflow'}</h3>
           <button className="icon-btn" onClick={closeWorkflowEditor}>✕</button>
         </div>
-        
+
         <div className="wf-editor-body">
           <div className="wf-editor-field">
             <label>Name</label>
-            <input 
-              value={name} 
-              onChange={e => setName(e.target.value)} 
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
               placeholder="e.g., Daily Login"
               autoFocus
             />
@@ -88,48 +168,123 @@ export function WorkflowEditorModal() {
           <div className="wf-editor-fields-row">
             <div className="wf-editor-field">
               <label>Description (Optional)</label>
-              <input 
-                value={description} 
-                onChange={e => setDescription(e.target.value)} 
-                placeholder="What does this do?"
+              <input
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="What does this workflow do?"
               />
             </div>
             <div className="wf-editor-field">
               <label>Start URL (Optional)</label>
-              <input 
-                value={startUrl} 
-                onChange={e => setStartUrl(e.target.value)} 
-                placeholder="https://..."
+              <input
+                value={startUrl}
+                onChange={e => setStartUrl(e.target.value)}
+                placeholder="https://…"
               />
             </div>
           </div>
 
           <h4 className="wf-editor-steps-title">Steps</h4>
-          
-          {steps.map((step, idx) => (
-            <div key={idx} className="wf-editor-step">
-              <div className="wf-editor-step-grip">
-                <GripVertical size={16} />
-              </div>
-              <div className="wf-editor-step-body">
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                  <span className="wf-editor-step-label">Step {idx + 1}</span>
-                  <button className="icon-btn" style={{width: 24, height: 24}} onClick={() => removeStep(idx)}>✕</button>
+
+          {steps.map((step, idx) => {
+            const meta = STEP_TYPES.find(t => t.type === step.type) ?? STEP_TYPES[1];
+            return (
+              <div key={step.id} className="wf-editor-step">
+                <div className="wf-editor-step-grip">
+                  <GripVertical size={16} />
                 </div>
-                <input 
-                  className="wf-editor-step-input"
-                  value={step.instruction}
-                  onChange={e => updateStep(idx, { instruction: e.target.value })}
-                  placeholder="e.g., Click the login button"
-                />
-                <div className="wf-editor-step-actions">
-                  <button className="wf-editor-step-test-btn">
-                    <Play size={12} /> Test Step
-                  </button>
+
+                <div className="wf-editor-step-body">
+                  {/* Header row: step number + type picker + remove */}
+                  <div className="wf-editor-step-header">
+                    <span className="wf-editor-step-label">Step {idx + 1}</span>
+                    <div className="wf-editor-step-type-pills">
+                      {STEP_TYPES.map(t => (
+                        <button
+                          key={t.type}
+                          className={`wf-step-type-pill${step.type === t.type ? ' active' : ''}`}
+                          onClick={() => changeStepType(idx, t.type)}
+                          title={t.label}
+                        >
+                          {t.icon} {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      className="icon-btn"
+                      style={{ width: 24, height: 24, flexShrink: 0 }}
+                      onClick={() => removeStep(idx)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Main input field */}
+                  <input
+                    className="wf-editor-step-input"
+                    value={meta.field === 'url' ? (step.url ?? '') : (step.instruction ?? '')}
+                    onChange={e =>
+                      updateStep(idx, meta.field === 'url'
+                        ? { url: e.target.value }
+                        : { instruction: e.target.value })
+                    }
+                    placeholder={meta.placeholder}
+                  />
+
+                  {/* Check step: branch selectors */}
+                  {step.type === 'check' && (
+                    <div className="wf-editor-step-branches">
+                      <div className="wf-editor-branch-row">
+                        <span className="wf-editor-branch-label wf-branch-true">✓ If true →</span>
+                        <select
+                          value={step.onTrue ?? ''}
+                          onChange={e => updateStep(idx, { onTrue: e.target.value || undefined })}
+                          className="wf-editor-branch-select"
+                        >
+                          <option value="">Continue to next step</option>
+                          {stepIdOptions.filter(o => o.id !== step.id).map(o => (
+                            <option key={o.id} value={o.id}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="wf-editor-branch-row">
+                        <span className="wf-editor-branch-label wf-branch-false">✗ If false →</span>
+                        <select
+                          value={step.onFalse ?? ''}
+                          onChange={e => updateStep(idx, { onFalse: e.target.value || undefined })}
+                          className="wf-editor-branch-select"
+                        >
+                          <option value="">Continue to next step</option>
+                          {stepIdOptions.filter(o => o.id !== step.id).map(o => (
+                            <option key={o.id} value={o.id}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* onFailure toggle */}
+                  <div className="wf-editor-step-footer">
+                    <span className="wf-editor-failure-label">On failure:</span>
+                    <div className="wf-editor-failure-pills">
+                      <button
+                        className={`wf-failure-pill${step.onFailure === 'stop' ? ' active danger' : ''}`}
+                        onClick={() => updateStep(idx, { onFailure: 'stop' })}
+                      >
+                        Stop
+                      </button>
+                      <button
+                        className={`wf-failure-pill${step.onFailure === 'skip' ? ' active' : ''}`}
+                        onClick={() => updateStep(idx, { onFailure: 'skip' })}
+                      >
+                        Skip
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           <button className="wf-editor-add-step-btn" onClick={addStep}>
             <Plus size={16} /> Add Step
@@ -138,12 +293,12 @@ export function WorkflowEditorModal() {
 
         <div className="wf-editor-footer">
           <button className="btn btn-ghost" onClick={closeWorkflowEditor}>Cancel</button>
-          <button 
-            className="btn btn-primary" 
-            onClick={handleSave} 
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
             disabled={!name.trim() || isSaving}
           >
-            <Save size={16} /> {isSaving ? 'Saving...' : 'Save Workflow'}
+            <Save size={16} /> {isSaving ? 'Saving…' : 'Save Workflow'}
           </button>
         </div>
       </div>

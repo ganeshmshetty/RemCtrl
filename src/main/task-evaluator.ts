@@ -20,6 +20,8 @@ import { generateObject } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createGroq } from '@ai-sdk/groq';
+import { createDeepSeek } from '@ai-sdk/deepseek';
 import { z } from 'zod';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -98,15 +100,48 @@ export class TaskEvaluator {
     }
 
     let model;
-    if (provider === 'openai') {
-      const openai = createOpenAI({ apiKey });
-      model = openai('gpt-4o');
-    } else if (provider === 'anthropic') {
-      const anthropic = createAnthropic({ apiKey });
-      model = anthropic('claude-3-5-sonnet-latest');
-    } else {
-      const google = createGoogleGenerativeAI({ apiKey });
-      model = google('gemini-2.5-flash');
+    switch (provider) {
+      case 'openai': {
+        const openai = createOpenAI({ apiKey });
+        model = openai('gpt-4o-mini');
+        break;
+      }
+      case 'anthropic': {
+        const anthropic = createAnthropic({ apiKey });
+        model = anthropic('claude-3-5-haiku-latest');
+        break;
+      }
+      case 'gemini': {
+        const google = createGoogleGenerativeAI({ apiKey });
+        model = google('gemini-2.5-flash');
+        break;
+      }
+      case 'groq': {
+        const groq = createGroq({ apiKey });
+        model = groq('llama-3.3-70b-versatile');
+        break;
+      }
+      case 'deepseek': {
+        const deepseek = createDeepSeek({ apiKey });
+        model = deepseek('deepseek-chat');
+        break;
+      }
+      case 'nebius': {
+        // Nebius is OpenAI-compatible
+        const nebius = createOpenAI({ apiKey, baseURL: 'https://api.studio.nebius.ai/v1' });
+        model = nebius('meta-llama/Llama-3.3-70B-Instruct');
+        break;
+      }
+      case 'openrouter': {
+        // OpenRouter is OpenAI-compatible
+        const openrouter = createOpenAI({ apiKey, baseURL: 'https://openrouter.ai/api/v1' });
+        model = openrouter('anthropic/claude-3.5-haiku');
+        break;
+      }
+      default: {
+        const openai = createOpenAI({ apiKey });
+        model = openai('gpt-4o-mini');
+      }
     }
 
     const EvaluatorSchema = z.object({

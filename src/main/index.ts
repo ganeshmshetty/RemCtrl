@@ -17,6 +17,10 @@ import { cancelWorkflow } from './workflow-executor.js';
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// In dev, detect if we are the 2nd instance so we can load Vite on the next port.
+// We store this before requestSingleInstanceLock so it's available in createWindow.
+let devClientPort = 5173;
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
@@ -49,8 +53,7 @@ function createWindow() {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    mainWindow.loadURL(`http://localhost:${devClientPort}`);
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
@@ -146,77 +149,91 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  app.quit();
+// ── Single Instance Lock ──────────────────────────────────────────────────────
+// In development: allow multiple instances for host/controller testing.
+//   - The 2nd instance shifts its userData dir so Chromium doesn't lock-crash.
+//   - It also loads Vite on port 5174 instead of 5173.
+// In production: enforce strict single-instance.
+if (isDev) {
+  const isPrimary = app.requestSingleInstanceLock();
+  if (!isPrimary) {
+    // We are the second dev instance (controller window).
+    // Shift userData so Chromium doesn't crash on its DB locks.
+    app.setPath('userData', app.getPath('userData') + '-dev-client');
+    devClientPort = 5174;
+  }
 } else {
-  app.on('second-instance', () => {
-    // Focus existing window if user tries to open a second instance
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-
-  app.whenReady().then(() => {
-    createMenu();
-    const win = createWindow();
-    setMainWindow(win);
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        const newWin = createWindow();
-        setMainWindow(newWin);
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    app.quit();
+  } else {
+    app.on('second-instance', () => {
+      // Focus existing window if a second production instance tries to launch
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
       }
     });
-
-    // ── Auto Updater configuration ──
-    autoUpdater.autoDownload = false; // Prompt user before downloading
-    autoUpdater.allowPrerelease = true; // Allow downloading pre-releases
-
-    autoUpdater.on('update-available', async (info) => {
-      const { response } = await dialog.showMessageBox({
-        type: 'info',
-        title: 'Update Available',
-        message: `Version ${info.version} of RemoteCtrl is available.`,
-        detail: 'Would you like to download it now?',
-        buttons: ['Download', 'Skip'],
-        defaultId: 0,
-        cancelId: 1
-      });
-
-      if (response === 0) {
-        autoUpdater.downloadUpdate();
-      }
-    });
-
-    autoUpdater.on('update-downloaded', async () => {
-      const { response } = await dialog.showMessageBox({
-        type: 'info',
-        title: 'Update Ready',
-        message: 'The update has been successfully downloaded.',
-        detail: 'Would you like to restart the application to apply the updates now?',
-        buttons: ['Restart', 'Later'],
-        defaultId: 0,
-        cancelId: 1
-      });
-
-      if (response === 0) {
-        autoUpdater.quitAndInstall();
-      }
-    });
-
-    autoUpdater.on('error', (err) => {
-      console.error('AutoUpdater Error:', err);
-    });
-
-    // Check for updates (only in production)
-    if (!isDev) {
-      autoUpdater.checkForUpdates();
-    }
-  });
+  }
 }
+
+app.whenReady().then(() => {
+  createMenu();
+  const win = createWindow();
+  setMainWindow(win);
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const newWin = createWindow();
+      setMainWindow(newWin);
+    }
+  });
+
+  // ── Auto Updater configuration ──
+  autoUpdater.autoDownload = false; // Prompt user before downloading
+  autoUpdater.allowPrerelease = true; // Allow downloading pre-releases
+
+  autoUpdater.on('update-available', async (info) => {
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Available',
+      message: `Version ${info.version} of RemoteCtrl is available.`,
+      detail: 'Would you like to download it now?',
+      buttons: ['Download', 'Skip'],
+      defaultId: 0,
+      cancelId: 1
+    });
+
+    if (response === 0) {
+      autoUpdater.downloadUpdate();
+    }
+  });
+
+  autoUpdater.on('update-downloaded', async () => {
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Ready',
+      message: 'The update has been successfully downloaded.',
+      detail: 'Would you like to restart the application to apply the updates now?',
+      buttons: ['Restart', 'Later'],
+      defaultId: 0,
+      cancelId: 1
+    });
+
+    if (response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('AutoUpdater Error:', err);
+  });
+
+  // Check for updates (only in production)
+  if (!isDev) {
+    autoUpdater.checkForUpdates();
+  }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -235,7 +252,7 @@ app.on('before-quit', async () => {
 // Security: block navigation away from the app
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-navigate', (event, url) => {
-    const appUrl = isDev ? 'http://localhost:5173' : 'app://';
+    const appUrl = isDev ? `http://localhost:${devClientPort}` : 'app://';
     if (!url.startsWith(appUrl)) {
       event.preventDefault();
     }

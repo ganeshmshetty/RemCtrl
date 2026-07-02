@@ -267,6 +267,18 @@ function ChatBubble({
     );
   }
 
+  // Stall warning — visually distinct amber banner
+  if (msg.type === 'warn') {
+    return (
+      <div className="agent-msg">
+        <div className="agent-msg-warn">
+          <span className="agent-msg-warn-icon">⚠️</span>
+          <span>{msg.text}</span>
+        </div>
+      </div>
+    );
+  }
+
   // Standard user/agent bubble
   return (
     <div className={`agent-msg ${isUser ? 'user' : ''}`}>

@@ -19,29 +19,21 @@ import type { Page } from 'playwright';
 import {
   StallDetector,
   createPageFingerprint,
-  type StallCheckResult
 } from './stall-detector.js';
 import {
   AgentStalledError,
   AgentTimeoutError,
   RetryExhaustedError,
+  BrowserNotReadyError,
+  StagehandConnectionError,
   extractError,
 } from './errors.js';
+import { ExecutionLogger } from './execution-logger.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type AgentStatusCb = (payload: AgentStatusPayload) => void;
 export type AgentLogCb = (payload: AgentLogPayload) => void;
-
-interface ExecutionLogEntry {
-  step: number;
-  timestamp: number;
-  action: string;
-  instruction: string;
-  result?: string;
-  error?: string;
-  stallCheck?: StallCheckResult;
-}
 
 interface RetryConfig {
   maxAttempts: number;
@@ -66,21 +58,13 @@ const STALL_CHECK_INTERVAL = 3; // Check for stalls every N steps
 
 let activeCommandId: string | null = null;
 let cancelRequested = false;
-let executionLog: ExecutionLogEntry[] = [];
+let executionLogger: ExecutionLogger | null = null;
 let isPaused = false;
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export function isAgentRunning(): boolean {
   return activeCommandId !== null;
-}
-
-export function getExecutionLog(): ExecutionLogEntry[] {
-  return [...executionLog];
-}
-
-export function clearExecutionLog(): void {
-  executionLog = [];
 }
 
 /**
@@ -107,15 +91,15 @@ export async function runAgentCommand(
   const cdpUrl = getCdpUrl();
 
   if (!page || !cdpUrl) {
-    const msg = 'Browser is not running. Launch a browser from the Host session first.';
-    emitLog(onLog, 'error', msg, '[Agent]');
-    onStatus({ commandId, state: 'failed', error: msg });
+    const err = new BrowserNotReadyError('Launch a browser from the Host session first.');
+    emitLog(onLog, 'error', err.message, '[Agent]');
+    onStatus({ commandId, state: 'failed', error: err.message });
     return;
   }
 
   activeCommandId = commandId;
   cancelRequested = false;
-  executionLog = [];
+  executionLogger = new ExecutionLogger(commandId, instruction);
 
   const modelName = getModelName(provider);
 
@@ -144,7 +128,11 @@ export async function runAgentCommand(
     });
 
     emitLog(onLog, 'info', 'Initialising Stagehand...', '[Agent]');
-    await localStagehand.init();
+    try {
+      await localStagehand.init();
+    } catch (initErr: any) {
+      throw new StagehandConnectionError(initErr?.message ?? String(initErr));
+    }
     emitLog(onLog, 'info', 'Stagehand ready.', '[Agent]');
 
     // Setup timeout
@@ -170,13 +158,21 @@ export async function runAgentCommand(
     ]);
 
     if (cancelRequested) {
+      executionLogger?.cancel();
       emitLog(onLog, 'info', 'Command cancelled.', '[Agent]');
       onStatus({ commandId, state: 'cancelled' });
     } else {
-      emitLog(onLog, 'info', `Command completed. Result: ${JSON.stringify(result)}`, '[Agent]');
+      executionLogger?.complete();
+      const summary = executionLogger?.getSummary();
+      if (summary) {
+        emitLog(onLog, 'info',
+          `Command completed in ${summary.totalDuration}ms — ${summary.totalSteps} step(s). Result: ${JSON.stringify(result)}`,
+          '[Agent]');
+      }
       onStatus({ commandId, state: 'completed', result });
     }
   } catch (err) {
+    executionLogger?.fail();
     handleError(err, commandId, onLog, onStatus);
   } finally {
     clearTimeout(timeoutId);
@@ -184,6 +180,7 @@ export async function runAgentCommand(
     activeCommandId = null;
     cancelRequested = false;
     localStagehand = null;
+    executionLogger = null;
   }
 }
 
@@ -416,8 +413,21 @@ async function executeWithStallDetection(
     }
   }
 
-  // Log execution
-  logExecution(step, action, instruction, JSON.stringify(result));
+  // Log execution via ExecutionLogger
+  executionLogger?.log({
+    step,
+    action,
+    instruction,
+    result,
+    tokensUsed: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    cost: { inputCost: 0, outputCost: 0, totalCost: 0 },
+    duration: 0,
+    pageState: {
+      url: page.url(),
+      title: '',
+      elementCount: 0,
+    },
+  });
 
   return result;
 }
@@ -511,20 +521,4 @@ function emitLog(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function logExecution(
-  step: number,
-  action: string,
-  instruction: string,
-  result?: string,
-): void {
-  const entry: ExecutionLogEntry = {
-    step,
-    timestamp: Date.now(),
-    action,
-    instruction,
-    ...(result ? { result } : {}),
-  };
-  executionLog.push(entry);
 }

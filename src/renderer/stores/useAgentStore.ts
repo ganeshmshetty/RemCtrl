@@ -10,7 +10,7 @@ import type {
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'agent';
-  type: 'prompt' | 'status' | 'log' | 'error' | 'workflow' | 'checkpoint';
+  type: 'prompt' | 'status' | 'log' | 'warn' | 'error' | 'workflow' | 'checkpoint';
   text: string;
   timestamp: number;
   checkpointPayload?: AgentCheckpointPayload;
@@ -113,12 +113,32 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handleAgentLog: (payload) => {
     set((state) => {
-      // Only set current action if it's an info-level log without being overly verbose.
-      // Stagehand logs can be chatty, so we'll just pick the most recent one.
       const isActionable = payload.level === 'info' && !payload.message.includes('browser-use') && !payload.message.includes('playwright');
+
+      // Surface stall warnings + recovery suggestions visibly in the chat
+      const isStallWarning =
+        payload.level === 'warn' &&
+        (payload.message.toLowerCase().includes('stall') ||
+          payload.message.toLowerCase().includes('stuck') ||
+          payload.message.toLowerCase().includes('recovery'));
+
+      const newHistory = isStallWarning
+        ? [
+            ...state.chatHistory,
+            {
+              id: `warn-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              sender: 'agent' as const,
+              type: 'warn' as const,
+              text: payload.message,
+              timestamp: Date.now(),
+            },
+          ]
+        : state.chatHistory;
+
       return {
         executionLogs: [...(state.executionLogs || []), payload],
         currentAction: isActionable ? payload.message : state.currentAction,
+        chatHistory: newHistory,
       };
     });
   },

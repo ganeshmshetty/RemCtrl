@@ -702,6 +702,25 @@ code, pre, kbd {
   word-break: break-word;
 }
 
+.agent-msg-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: #fbbf24;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  max-width: 95%;
+  word-break: break-word;
+}
+
+.agent-msg-warn-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
 .agent-msg-workflow {
   display: flex;
   align-items: center;
@@ -1122,11 +1141,13 @@ code, pre, kbd {
 }
 
 .wf-editor-step-label {
-  font-size: 12px;
+  display: flex;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 .wf-editor-step-input {
@@ -1141,25 +1162,114 @@ code, pre, kbd {
 }
 .wf-editor-step-input:focus { border-color: var(--accent); }
 
-.wf-editor-step-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.wf-editor-step-test-btn {
+.wf-editor-step-header {
   display: flex;
   align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.wf-editor-step-type-pills {
+  display: flex;
   gap: 4px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.wf-step-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.wf-step-type-pill:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.wf-step-type-pill.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.wf-editor-step-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.wf-editor-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-editor-branch-label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  width: 90px;
+  flex-shrink: 0;
+}
+.wf-branch-true  { color: #4ade80; }
+.wf-branch-false { color: #f87171; }
+
+.wf-editor-branch-select {
+  flex: 1;
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 4px 8px;
+  color: var(--text-primary);
   font-size: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
+  padding: 4px 8px;
 }
-.wf-editor-step-test-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+.wf-editor-branch-select:focus { outline: none; border-color: var(--accent); }
+
+.wf-editor-step-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.wf-editor-failure-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.wf-editor-failure-pills {
+  display: flex;
+  gap: 4px;
+}
+
+.wf-failure-pill {
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.wf-failure-pill:hover { border-color: var(--accent); color: var(--text-primary); }
+.wf-failure-pill.active { background: rgba(99,102,241,0.18); border-color: var(--accent); color: var(--accent); }
+.wf-failure-pill.active.danger { background: rgba(239,68,68,0.18); border-color: #ef4444; color: #ef4444; }
 
 .wf-editor-add-step-btn {
   display: flex;

@@ -7,7 +7,7 @@
   "scripts": {
     "postinstall": "playwright install chromium",
     "dev:renderer": "vite",
-    "dev:main": "node build-electron.mjs && cross-env NODE_ENV=development electron dist/main/index.cjs",
+    "dev:main": "cross-env NODE_ENV=development node build-electron.mjs && cross-env NODE_ENV=development electron dist/main/index.cjs",
     "dev": "concurrently -k -n RENDERER,MAIN -c cyan,yellow \"npm run dev:renderer\" \"wait-on http://localhost:5173 && npm run dev:main\"",
     "server": "tsx server/signaling.ts",
     "build:renderer": "vite build",
