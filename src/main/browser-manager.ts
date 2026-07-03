@@ -3,6 +3,7 @@ import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
 import { startScreencast, stopScreencast } from './screencast.js';
 import { getBrowserMode, getHeadlessMode, getUseVisionCUA } from './storage.js';
+import { closeStagehand } from './automation/stagehand-pool.js';
 import type { BrowserWindow } from 'electron';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
@@ -87,7 +88,9 @@ export async function newTab(): Promise<void> {
   if (context) {
     try {
       if (activePageEntry) {
-        await activePageEntry.page.evaluate(() => window.open('about:blank', '_blank'));
+        const pagePromise = context.waitForEvent('page');
+        await activePageEntry.page.evaluate("window.open('about:blank', '_blank')");
+        await pagePromise;
       } else {
         const page = await context.newPage();
         await page.goto('about:blank');
@@ -255,6 +258,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 export async function closeBrowser(): Promise<void> {
   await stopScreencast();
   try {
+    await closeStagehand().catch(() => {});
     await context?.close();
     await browser?.close();
   } catch {

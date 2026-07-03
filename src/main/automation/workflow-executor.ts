@@ -212,7 +212,10 @@ export async function runWorkflow(
       let jumpToStepId: string | null = nextStepId; // may be overridden by `check`
 
       try {
-        const result = await executeStepWithRetry(stagehand, page, step, onLog);
+        const activePage = await stagehand.context.activePage();
+        if (!activePage) throw new Error('Stagehand cannot find an active page to operate on.');
+        
+        const result = await executeStepWithRetry(stagehand, activePage as any, step, onLog);
 
         if (session.isCancelled) {
           onStepStatus({ workflowRunId, stepId: step.id, index, state: 'skipped' });

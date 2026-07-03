@@ -10,6 +10,7 @@ import { Stagehand } from '@browserbasehq/stagehand';
 import { StagehandConnectionError } from '../errors.js';
 import type { AgentLogPayload } from '../../shared/types.js';
 import type { StagehandModelConfig } from './model-resolver.js';
+import { STAGEHAND_CACHE_DIR } from '../storage.js';
 
 interface TargetConfig {
   cdpUrl: string;
@@ -74,6 +75,7 @@ export async function getStagehand(
     const instance = new Stagehand({
       env: 'LOCAL',
       localBrowserLaunchOptions: { cdpUrl },
+      cacheDir: STAGEHAND_CACHE_DIR,
       model: {
         modelName: config.modelName,
         apiKey: config.modelClientOptions.apiKey,

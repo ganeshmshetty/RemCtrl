@@ -73,7 +73,7 @@ export function setAgentPaused(paused: boolean): void {
 
 export async function runAgent(
   commandId: string,
-  action: 'act' | 'observe' | 'extract',
+  action: string,
   instruction: string,
   apiKey: string,
   provider: ApiProvider,
@@ -150,7 +150,8 @@ export async function runAgent(
       let goalAchieved = false;
       let stepCount = 0;
 
-      let activePage = (await localStagehand.context.activePage()) ?? page;
+      let activePage = await localStagehand!.context.activePage();
+      if (!activePage) throw new Error('Stagehand cannot find an active page to operate on.');
       const initFp = await createPageFingerprint(activePage as any);
       stallDetector.recordFingerprint(initFp);
 
@@ -164,7 +165,8 @@ export async function runAgent(
 
         if (session.isCancelled) break;
 
-        activePage = (await localStagehand.context.activePage()) ?? page;
+        activePage = await localStagehand!.context.activePage();
+        if (!activePage) throw new Error('Stagehand cannot find an active page to operate on.');
         stepCount++;
 
         // ── 1. Ask the planner for the next move ─────────────────────────────
@@ -220,11 +222,7 @@ export async function runAgent(
 
             if (parsed.openNewTab) {
               log(onLog, 'info', 'Opening a new tab...');
-              const [newPage] = await Promise.all([
-                activePage.context().waitForEvent('page'),
-                activePage.evaluate(() => window.open('about:blank', '_blank'))
-              ]);
-              activePage = newPage;
+              activePage = await localStagehand!.context.newPage();
             }
 
             // ── 3. Navigate if a URL was detected ─────────────────────────────
@@ -249,6 +247,7 @@ export async function runAgent(
               : finalInstruction;
 
             // ── 4. Execute the action ─────────────────────────────────────────
+            const currentActivePage = activePage;
             subtaskResult = await executionLogger.logWithTiming(
               stepCount,
               stepAction,
@@ -256,12 +255,12 @@ export async function runAgent(
               async () => {
                 if (stepAction === 'extract') {
                   return await localStagehand!.extract(actionInstruction, {
-                    page: activePage,
+                    page: currentActivePage,
                     ...(session.variables && { variables: session.variables })
                   });
                 } else if (stepAction === 'observe') {
                   return await localStagehand!.observe(actionInstruction, {
-                    page: activePage,
+                    page: currentActivePage,
                   });
                 } else if (stepAction === 'clipboard_read') {
                   return await (localStagehand!.context as any).clipboard?.readText?.();
@@ -269,18 +268,18 @@ export async function runAgent(
                   await (localStagehand!.context as any).clipboard?.writeText?.(actionInstruction);
                   return { success: true };
                 } else if (stepAction === 'invoke_mcp') {
-                  const invocation = await (activePage as any).invokeWebMCPTool(actionInstruction, {});
+                  const invocation = await (currentActivePage as any).invokeWebMCPTool(actionInstruction, {});
                   return await invocation.result;
                 } else if (stepAction === 'playwright_action') {
-                  if (typeof (activePage as any).deepLocator === 'function') {
-                    await (activePage as any).deepLocator(actionInstruction).click();
+                  if (typeof (currentActivePage as any).deepLocator === 'function') {
+                    await (currentActivePage as any).deepLocator(actionInstruction).click();
                   } else {
-                    await activePage.locator(actionInstruction).click();
+                    await currentActivePage.locator(actionInstruction).click();
                   }
                   return { success: true };
                 } else {
                   return await localStagehand!.act(actionInstruction, {
-                    page: activePage,
+                    page: currentActivePage,
                     ...(session.variables && { variables: session.variables })
                   });
                 }
