@@ -79,6 +79,7 @@ export async function runAgent(
   provider: ApiProvider,
   onStatus: AgentStatusCb,
   onLog: AgentLogCb,
+  variables?: Record<string, string>,
 ): Promise<void> {
   if (activeSession?.isActive) {
     const msg = 'Another command is already running. Cancel it first.';
@@ -99,7 +100,7 @@ export async function runAgent(
     return;
   }
 
-  const session = new TaskSession();
+  const session = new TaskSession({ initialGoal: instruction, variables });
   activeSession = session;
   session.start();
 
@@ -133,10 +134,8 @@ export async function runAgent(
 
     localStagehand = await Promise.race([connectionPromise, timeoutPromise]);
 
-    // Stagehand manages its own Playwright context — use its active page for
-    // act/extract/observe to avoid silent hangs from mixing Playwright instances.
-    const stagehandPages = await localStagehand.context.pages();
-    const activePage = stagehandPages[0] ?? page;
+    // Stagehand manages its own Playwright context. We will resolve the active page
+    // dynamically inside the loop so new tabs are automatically tracked.
 
     const cancelPromise = new Promise<never>((_, reject) => {
       cancelIntervalId = setInterval(() => {
@@ -151,6 +150,7 @@ export async function runAgent(
       let goalAchieved = false;
       let stepCount = 0;
 
+      let activePage = (await localStagehand.context.activePage()) ?? page;
       const initFp = await createPageFingerprint(activePage as any);
       stallDetector.recordFingerprint(initFp);
 
@@ -164,10 +164,15 @@ export async function runAgent(
 
         if (session.isCancelled) break;
 
+        activePage = (await localStagehand.context.activePage()) ?? page;
         stepCount++;
 
         // ── 1. Ask the planner for the next move ─────────────────────────────
         log(onLog, 'info', `[Step ${stepCount}] Asking planner for next move...`);
+
+        const webMCPTools = typeof (activePage as any).listWebMCPTools === 'function' 
+          ? await (activePage as any).listWebMCPTools().catch(() => []) 
+          : [];
 
         const pageState = {
           url: activePage.url(),
@@ -176,6 +181,7 @@ export async function runAgent(
             .locator('button, input, select, a, [role="button"]')
             .count()
             .catch(() => 0),
+          webMCPTools,
         };
 
         const nextStep = await dynamicPlanner.getNextStep(
@@ -212,6 +218,15 @@ export async function runAgent(
             // ── 2. Parse navigation intent ────────────────────────────────────
             const parsed = await parseInstruction(finalInstruction, activePage.url());
 
+            if (parsed.openNewTab) {
+              log(onLog, 'info', 'Opening a new tab...');
+              const [newPage] = await Promise.all([
+                activePage.context().waitForEvent('page'),
+                activePage.evaluate(() => window.open('about:blank', '_blank'))
+              ]);
+              activePage = newPage;
+            }
+
             // ── 3. Navigate if a URL was detected ─────────────────────────────
             if (parsed.navigationUrl) {
               log(onLog, 'info', `Navigating to ${parsed.navigationUrl}`);
@@ -242,14 +257,31 @@ export async function runAgent(
                 if (stepAction === 'extract') {
                   return await localStagehand!.extract(actionInstruction, {
                     page: activePage,
+                    ...(session.variables && { variables: session.variables })
                   });
                 } else if (stepAction === 'observe') {
                   return await localStagehand!.observe(actionInstruction, {
                     page: activePage,
                   });
+                } else if (stepAction === 'clipboard_read') {
+                  return await (localStagehand!.context as any).clipboard?.readText?.();
+                } else if (stepAction === 'clipboard_write') {
+                  await (localStagehand!.context as any).clipboard?.writeText?.(actionInstruction);
+                  return { success: true };
+                } else if (stepAction === 'invoke_mcp') {
+                  const invocation = await (activePage as any).invokeWebMCPTool(actionInstruction, {});
+                  return await invocation.result;
+                } else if (stepAction === 'playwright_action') {
+                  if (typeof (activePage as any).deepLocator === 'function') {
+                    await (activePage as any).deepLocator(actionInstruction).click();
+                  } else {
+                    await activePage.locator(actionInstruction).click();
+                  }
+                  return { success: true };
                 } else {
                   return await localStagehand!.act(actionInstruction, {
                     page: activePage,
+                    ...(session.variables && { variables: session.variables })
                   });
                 }
               },
@@ -376,7 +408,10 @@ export async function runAgent(
       onStatus({ commandId, state: 'cancelled' });
     } else {
       executionLogger.complete();
-      const summary = executionLogger.getSummary();
+      const summary = executionLogger.getSummary() as Record<string, any>;
+      const history = await localStagehand.history;
+      summary.stagehandHistory = history;
+
       log(
         onLog,
         'info',

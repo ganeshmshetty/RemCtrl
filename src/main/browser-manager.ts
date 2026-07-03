@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
 import { startScreencast, stopScreencast } from './screencast.js';
-import { getBrowserMode, getHeadlessMode } from './storage.js';
+import { getBrowserMode, getHeadlessMode, getUseVisionCUA } from './storage.js';
 import type { BrowserWindow } from 'electron';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
@@ -86,8 +86,12 @@ export async function closeTab(tabId: string): Promise<void> {
 export async function newTab(): Promise<void> {
   if (context) {
     try {
-      const page = await context.newPage();
-      await page.goto('about:blank');
+      if (activePageEntry) {
+        await activePageEntry.page.evaluate(() => window.open('about:blank', '_blank'));
+      } else {
+        const page = await context.newPage();
+        await page.goto('about:blank');
+      }
     } catch (err) {
       console.error('[browser] failed to open new tab:', err);
     }
@@ -185,16 +189,20 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
   } else {
     const headless = getHeadlessMode();
     console.log(`[browser] Launching internal browser (headless: ${headless}) on CDP port ${INTERNAL_CDP_PORT}...`);
+    const useCua = getUseVisionCUA();
+    const width = useCua ? 1288 : 1280;
+    const height = useCua ? 711 : 800;
+
     browser = await chromium.launch({
       headless,
       args: [
         `--remote-debugging-port=${INTERNAL_CDP_PORT}`,
-        '--window-size=1280,800',
+        `--window-size=${width},${height}`,
         '--window-position=100,100',
       ],
     });
     context = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
+      viewport: { width, height },
     });
     // Resolve the actual ws:// URL from the CDP HTTP endpoint
     cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${INTERNAL_CDP_PORT}`);
