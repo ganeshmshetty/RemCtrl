@@ -24,6 +24,8 @@ import {
   saveModelsList,
   getCustomBaseUrl,
   setCustomBaseUrl,
+  getUseVisionCUA,
+  setUseVisionCUA,
 } from '../storage.js';
 
 export function registerSettingsIpc() {
@@ -141,6 +143,12 @@ export function registerSettingsIpc() {
 
   ipcMain.handle('settings:setHeadlessMode', async (_e, headless: unknown) => {
     setHeadlessMode(Boolean(headless));
+  });
+
+  ipcMain.handle('settings:getUseVisionCUA', async () => getUseVisionCUA());
+
+  ipcMain.handle('settings:setUseVisionCUA', async (_e, useCua: unknown) => {
+    setUseVisionCUA(Boolean(useCua));
   });
 
   ipcMain.handle('settings:getCustomBaseUrl', async (_e, provider: unknown) => {

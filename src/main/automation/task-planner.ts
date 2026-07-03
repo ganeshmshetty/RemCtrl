@@ -261,7 +261,7 @@ export function generatePlanId(): string {
 
 export interface DynamicStep {
   thought: string;
-  action: 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action' | 'new_tab';
+  action: 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action' | 'new_tab' | 'done';
   instruction: string;
   is_goal_achieved: boolean;
 }
@@ -284,8 +284,9 @@ export class DynamicPlanner {
 
     const StepSchema = z.object({
       thought: z.string().describe('Your reasoning for what to do next based on the goal, history, and current page.'),
-      action: z.enum(['act', 'observe', 'extract', 'clipboard_read', 'clipboard_write', 'invoke_mcp', 'playwright_action', 'new_tab']),
-      instruction: z.string().describe('The plain English instruction for the action (e.g. "click the login button"). Leave empty if goal is achieved.'),
+      action: z.enum(['act', 'observe', 'extract', 'clipboard_read', 'clipboard_write', 'invoke_mcp', 'playwright_action', 'new_tab', 'done'])
+        .describe('The action to take. Select "done" ONLY if the goal is ALREADY achieved and NO further action is needed.'),
+      instruction: z.string().describe('The plain English instruction for the action (e.g. "click the login button"). Leave empty if action is "done".'),
       is_goal_achieved: z.boolean().describe('True if the global goal has been fully satisfied.'),
     });
 

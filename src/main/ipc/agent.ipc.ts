@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { z } from 'zod';
-import { AgentPromptSchema, AgentWorkflowBatchSchema, CheckpointResponseSchema } from '../../shared/schemas.js';
+import { AgentPromptPayloadSchema, AgentWorkflowBatchSchema, CheckpointResponseSchema } from '../../shared/schemas.js';
 import { getPreferredProvider, getApiKey } from '../storage.js';
 import {
   runAgent,
@@ -25,7 +25,7 @@ export function registerAgentIpc(win: BrowserWindow) {
 
     let payload;
     try {
-      payload = AgentPromptSchema.parse(rawPayload);
+      payload = AgentPromptPayloadSchema.parse(rawPayload);
     } catch (err) {
       return { ok: false, error: `Invalid agent payload: ${err instanceof Error ? err.message : String(err)}` };
     }
@@ -45,6 +45,7 @@ export function registerAgentIpc(win: BrowserWindow) {
         provider,
         (status) => { if (!win.isDestroyed()) win.webContents.send('agent:status', status); },
         (log) => { if (!win.isDestroyed()) win.webContents.send('agent:log', log); },
+        payload.variables,
       );
       return { ok: true };
     } catch (err) {

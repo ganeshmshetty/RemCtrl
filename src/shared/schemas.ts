@@ -81,12 +81,13 @@ export const CheckpointResponseSchema = z.object({
 });
 
 // AgentAction is separate from StepType (agent panel uses act/observe/extract)
-const AgentActionSchema = z.enum(['act', 'observe', 'extract']);
+const AgentActionSchema = z.enum(['act', 'observe', 'extract', 'clipboard_read', 'clipboard_write', 'invoke_mcp', 'playwright_action']);
 
-export const AgentPromptSchema = z.object({
+export const AgentPromptPayloadSchema = z.object({
   commandId: z.string().uuid(),
   action: AgentActionSchema,
   instruction: z.string().min(1).max(5000),
+  variables: z.record(z.string(), z.string()).optional(),
 });
 
 export const AgentWorkflowBatchSchema = z.object({
@@ -95,6 +96,7 @@ export const AgentWorkflowBatchSchema = z.object({
   name: z.string().min(1),
   startUrl: z.union([z.string().url(), z.literal('')]).optional(),
   steps: z.array(WorkflowStepSchema).min(1).max(100),
+  variables: z.record(z.string(), z.string()).optional(),
 });
 
 // ─── Capture Metadata Schema ──────────────────────────────────────────────────
@@ -139,6 +141,7 @@ export const PersistedSettingsSchema = z.object({
   customBaseUrls: z.record(z.string(), z.string()).optional(),
   browserMode: BrowserModeSchema.default('internal'),
   headlessMode: z.boolean().default(true),
+  useVisionCUA: z.boolean().default(true),
   // API keys are stored in a separate secure store — not in this file
 });
 

@@ -14,6 +14,7 @@ const SETTINGS_FILE = path.join(USER_DATA, 'settings.json');
 const WORKFLOWS_FILE = path.join(USER_DATA, 'workflows.json');
 const API_KEYS_FILE = path.join(USER_DATA, 'api-keys.json');
 const MODELS_FILE = path.join(USER_DATA, 'models.json');
+export const STAGEHAND_CACHE_DIR = path.join(USER_DATA, 'stagehand-cache');
 
 function ensureDir(filePath: string) {
   const dir = path.dirname(filePath);
@@ -96,6 +97,15 @@ export function setBrowserMode(mode: BrowserMode) {
 
 export function getHeadlessMode(): boolean {
   return loadSettings().headlessMode;
+}
+
+export function getUseVisionCUA(): boolean {
+  return loadSettings().useVisionCUA;
+}
+
+export function setUseVisionCUA(useCua: boolean) {
+  const s = loadSettings();
+  saveSettings({ ...s, useVisionCUA: useCua });
 }
 
 export function setHeadlessMode(headless: boolean) {

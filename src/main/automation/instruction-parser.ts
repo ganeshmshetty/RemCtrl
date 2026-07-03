@@ -16,6 +16,10 @@ export interface ParsedInstruction {
    * In this case remainingAction will be empty.
    */
   navigationOnly: boolean;
+  /**
+   * True if the instruction explicitly asks to open a new tab or window.
+   */
+  openNewTab?: boolean;
 }
 
 /**
@@ -46,16 +50,11 @@ export async function parseInstruction(instruction: string, currentUrl: string =
     schema: z.object({
       navigationUrl: z
         .string()
-        .url()
-        .refine((url) => url.startsWith('https://') || url.startsWith('http://'), {
-          message: 'URL must use https:// or http:// scheme',
-        })
         .nullable()
         .describe(
-          "The URL to navigate to first. Must be a full valid URL starting with https://. " +
-          "If the user says a site name (e.g. 'youtube', 'youtue', 'wiki', 'wikipedia'), " +
-          "infer the correct canonical URL (e.g. 'https://www.youtube.com', 'https://www.wikipedia.org'). " +
-          "If the instruction is just an action on the current page (e.g. 'click login'), return null."
+          "The URL to navigate to first. Must be a full valid URL starting with https://, http://, or about:blank. " +
+          "If the user says a site name (e.g. 'youtube', 'wiki'), infer the canonical URL. " +
+          "If the instruction is just an action on the current page, return null."
         ),
       remainingAction: z
         .string()
@@ -63,6 +62,9 @@ export async function parseInstruction(instruction: string, currentUrl: string =
       navigationOnly: z
         .boolean()
         .describe("True if the instruction was ONLY to navigate with no follow-up action. False otherwise."),
+      openNewTab: z
+        .boolean()
+        .describe("True if the instruction asks to open a new tab, window, or workspace."),
     }),
     prompt: `Analyze the following user instruction and determine if there is an explicit or implicit navigation intent.
 
@@ -75,12 +77,14 @@ Guidelines:
 3. If they ask to do something ON a specific website (e.g. "search for dogs on google"), extract the website as 'navigationUrl' and the remaining action as 'remainingAction'.
 4. CRITICAL: If the user asks to do something on a website, but the "Current Page URL" shows they are ALREADY on that website or a related subdomain (e.g., instruction is "search for despacito on youtube" and currentUrl is "https://www.youtube.com/"), DO NOT navigate. Set navigationUrl to null and leave the whole instruction as the remainingAction.
 5. If there is no navigation intent (e.g., "click the login button", "scroll down"), set navigationUrl to null.
-6. If the request is JUST navigation (e.g., "go to https://example.com"), set navigationOnly to true and remainingAction to an empty string.`,
+6. If the request is JUST navigation (e.g., "go to https://example.com"), set navigationOnly to true and remainingAction to an empty string.
+7. If the user explicitly asks to "open a new tab" or "new window", set openNewTab to true. If they provide a URL along with it (e.g., "open a new tab to youtube"), extract the URL into navigationUrl as well.`,
   });
 
   return {
     navigationUrl: object.navigationUrl,
     remainingAction: object.remainingAction,
     navigationOnly: object.navigationOnly,
+    openNewTab: object.openNewTab,
   };
 }

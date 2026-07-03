@@ -85,12 +85,13 @@ export type ControllerSessionState =
 // ─── Agent Types ───────────────────────────────────────────────────────────────
 
 /** Actions used by the Agent panel — separate from workflow StepType */
-export type AgentAction = 'act' | 'observe' | 'extract';
+export type AgentAction = 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action';
 
 export interface AgentPromptPayload {
   commandId: string;
   action: AgentAction;
   instruction: string;
+  variables?: Record<string, string>;
 }
 
 export interface AgentStatusPayload {
@@ -132,6 +133,7 @@ export interface AgentWorkflowBatchPayload {
   name: string;
   startUrl?: string;
   steps: WorkflowStep[]; // WorkflowStep uses new StepType model
+  variables?: Record<string, string>;
 }
 
 export interface WorkflowRunStatus {

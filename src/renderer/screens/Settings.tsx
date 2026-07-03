@@ -24,6 +24,8 @@ export function Settings() {
     setApiKey,
     headlessMode,
     setHeadlessMode,
+    useVisionCUA,
+    setUseVisionCUA,
   } = useSettingsStore();
 
   const [apiInput, setApiInput] = useState('');
@@ -286,6 +288,21 @@ export function Settings() {
                 />
                 <span className="settings-radio-label">
                   Run invisibly in background (prevents stealing OS focus)
+                </span>
+              </label>
+            </SettingField>
+          )}
+
+          {browserMode === 'internal' && (
+            <SettingField label="Computer Use API (Vision)" status="">
+              <label className="settings-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={useVisionCUA}
+                  onChange={(e) => setUseVisionCUA(e.target.checked)}
+                />
+                <span className="settings-radio-label">
+                  Enable Vision/CUA fallback for complex apps. Forces viewport to 1288x711.
                 </span>
               </label>
             </SettingField>

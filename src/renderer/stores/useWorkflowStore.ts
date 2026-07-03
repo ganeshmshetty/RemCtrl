@@ -82,6 +82,8 @@ interface SettingsState {
   setPreferredModel: (model: string) => Promise<void>;
   setApiKey: (provider: ApiProvider, value: string) => Promise<void>;
   setHeadlessMode: (headless: boolean) => Promise<void>;
+  useVisionCUA: boolean;
+  setUseVisionCUA: (useCua: boolean) => Promise<void>;
   isSettingsOpen: boolean;
   setSettingsOpen: (isOpen: boolean) => void;
 }
@@ -98,13 +100,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hasNebiusKey: false,
   hasOpenRouterKey: false,
   headlessMode: true,
+  useVisionCUA: true,
   isLoading: false,
   isSettingsOpen: false,
 
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode] =
+      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA] =
         await Promise.all([
           window.RemoteCtrlAPI.settings.getSignalingUrl(),
           window.RemoteCtrlAPI.settings.getPreferredProvider(),
@@ -117,8 +120,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           window.RemoteCtrlAPI.settings.hasApiKey('nebius'),
           window.RemoteCtrlAPI.settings.hasApiKey('openrouter'),
           window.RemoteCtrlAPI.settings.getHeadlessMode(),
+          window.RemoteCtrlAPI.settings.getUseVisionCUA(),
         ]);
-      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, isLoading: false });
+      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA, isLoading: false });
     } catch {
       set({ isLoading: false });
     }
@@ -157,6 +161,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setHeadlessMode: async (headless) => {
     await window.RemoteCtrlAPI.settings.setHeadlessMode(headless);
     set({ headlessMode: headless });
+  },
+
+  setUseVisionCUA: async (useCua) => {
+    await window.RemoteCtrlAPI.settings.setUseVisionCUA(useCua);
+    set({ useVisionCUA: useCua });
   },
 
   setSettingsOpen: (isOpen) => {
