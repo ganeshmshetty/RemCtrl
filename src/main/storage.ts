@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import { LocalWorkflow, ApiProvider, BrowserMode } from '../shared/types.js';
 import { PersistedSettingsSchema, PersistedSettings, LocalWorkflowSchema } from '../shared/schemas.js';
 
@@ -201,14 +201,38 @@ export function hasApiKey(provider: ApiProvider): boolean {
 
 export function setApiKey(provider: ApiProvider, value: string) {
   const store = loadApiKeys();
-  const nextStore = { ...store, [provider]: value };
+  let storedValue = value;
+  
+  if (safeStorage.isEncryptionAvailable()) {
+    storedValue = `enc:${safeStorage.encryptString(value).toString('base64')}`;
+  }
+
+  const nextStore = { ...store, [provider]: storedValue };
   writeJson(API_KEYS_FILE, nextStore);
   _apiKeysCache = nextStore;
 }
 
 export function getApiKey(provider: ApiProvider): string | null {
   const store = loadApiKeys();
-  return store[provider] ?? null;
+  const rawValue = store[provider];
+  if (!rawValue) return null;
+
+  if (rawValue.startsWith('enc:')) {
+    if (safeStorage.isEncryptionAvailable()) {
+      try {
+        const buffer = Buffer.from(rawValue.slice(4), 'base64');
+        return safeStorage.decryptString(buffer);
+      } catch (err) {
+        console.error(`Failed to decrypt API key for ${provider}:`, err);
+        return null;
+      }
+    } else {
+      console.error(`Encryption not available to decrypt API key for ${provider}`);
+      return null;
+    }
+  }
+
+  return rawValue; // legacy unencrypted fallback
 }
 
 // ─── Workflow Storage ─────────────────────────────────────────────────────────
