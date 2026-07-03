@@ -1,5 +1,23 @@
 import { useState, useEffect } from 'react';
 import { Save, Plus, GripVertical, Globe, MousePointerClick, ClipboardList, GitBranch } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
 import { useUIStore } from '../stores/useUIStore';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
 import type { WorkflowStep, StepType } from '../../shared/types';
@@ -52,7 +70,140 @@ function defaultStep(): WorkflowStep {
   };
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── Sortable Item Component ──────────────────────────────────────────────────
+
+function SortableStepRow({
+  step,
+  idx,
+  stepIdOptions,
+  changeStepType,
+  removeStep,
+  updateStep,
+}: {
+  step: WorkflowStep;
+  idx: number;
+  stepIdOptions: { id: string; label: string }[];
+  changeStepType: (index: number, type: StepType) => void;
+  removeStep: (index: number) => void;
+  updateStep: (index: number, updates: Partial<WorkflowStep>) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: step.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    opacity: isDragging ? 0.9 : 1,
+  };
+
+  const meta = STEP_TYPES.find(t => t.type === step.type) ?? STEP_TYPES[1];
+
+  return (
+    <div ref={setNodeRef} style={style} className="wf-editor-step">
+      <div 
+        className="wf-editor-step-grip" 
+        {...attributes} 
+        {...listeners} 
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      >
+        <GripVertical size={16} />
+      </div>
+
+      <div className="wf-editor-step-body">
+        {/* Header row: step number + type picker + remove */}
+        <div className="wf-editor-step-header">
+          <span className="wf-editor-step-label">Step {idx + 1}</span>
+          <div className="wf-editor-step-type-pills">
+            {STEP_TYPES.map(t => (
+              <button
+                key={t.type}
+                className={`wf-step-type-pill${step.type === t.type ? ' active' : ''}`}
+                onClick={() => changeStepType(idx, t.type)}
+                title={t.label}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+          <button
+            className="icon-btn"
+            style={{ width: 24, height: 24, flexShrink: 0 }}
+            onClick={() => removeStep(idx)}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Main input field */}
+        <input
+          className="wf-editor-step-input"
+          value={meta.field === 'url' ? (step.url ?? '') : (step.instruction ?? '')}
+          onChange={e =>
+            updateStep(idx, meta.field === 'url'
+              ? { url: e.target.value }
+              : { instruction: e.target.value })
+          }
+          placeholder={meta.placeholder}
+        />
+
+        {/* Check step: branch selectors */}
+        {step.type === 'check' && (
+          <div className="wf-editor-step-branches">
+            <div className="wf-editor-branch-row">
+              <span className="wf-editor-branch-label wf-branch-true">✓ If true →</span>
+              <select
+                value={step.onTrue ?? ''}
+                onChange={e => updateStep(idx, { onTrue: e.target.value || undefined })}
+                className="wf-editor-branch-select"
+              >
+                <option value="">Continue to next step</option>
+                {stepIdOptions.filter(o => o.id !== step.id).map(o => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="wf-editor-branch-row">
+              <span className="wf-editor-branch-label wf-branch-false">✗ If false →</span>
+              <select
+                value={step.onFalse ?? ''}
+                onChange={e => updateStep(idx, { onFalse: e.target.value || undefined })}
+                className="wf-editor-branch-select"
+              >
+                <option value="">Continue to next step</option>
+                {stepIdOptions.filter(o => o.id !== step.id).map(o => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* onFailure toggle */}
+        <div className="wf-editor-step-footer">
+          <span className="wf-editor-failure-label">On failure:</span>
+          <div className="wf-editor-failure-pills">
+            <button
+              className={`wf-failure-pill${step.onFailure === 'stop' ? ' active danger' : ''}`}
+              onClick={() => updateStep(idx, { onFailure: 'stop' })}
+            >
+              Stop
+            </button>
+            <button
+              className={`wf-failure-pill${step.onFailure === 'skip' ? ' active' : ''}`}
+              onClick={() => updateStep(idx, { onFailure: 'skip' })}
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export function WorkflowEditorModal() {
   const { isWorkflowEditorOpen, closeWorkflowEditor, editingWorkflowId } = useUIStore();
@@ -63,6 +214,11 @@ export function WorkflowEditorModal() {
   const [startUrl, setStartUrl] = useState('');
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     if (isWorkflowEditorOpen) {
@@ -85,6 +241,17 @@ export function WorkflowEditorModal() {
 
   if (!isWorkflowEditorOpen) return null;
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setSteps((items) => {
+        const oldIndex = items.findIndex(item => item.id === active.id);
+        const newIndex = items.findIndex(item => item.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  }
+
   function updateStep(index: number, updates: Partial<WorkflowStep>) {
     const newSteps = [...steps];
     newSteps[index] = { ...newSteps[index], ...updates };
@@ -92,7 +259,6 @@ export function WorkflowEditorModal() {
   }
 
   function changeStepType(index: number, type: StepType) {
-    // Reset fields that don't apply to the new type
     const base: WorkflowStep = {
       id: steps[index].id,
       type,
@@ -143,7 +309,6 @@ export function WorkflowEditorModal() {
     }
   }
 
-  // Build a list of step IDs for the check-branch dropdowns
   const stepIdOptions = steps.map((s, i) => ({ id: s.id, label: `Step ${i + 1}` }));
 
   return (
@@ -186,105 +351,28 @@ export function WorkflowEditorModal() {
 
           <h4 className="wf-editor-steps-title">Steps</h4>
 
-          {steps.map((step, idx) => {
-            const meta = STEP_TYPES.find(t => t.type === step.type) ?? STEP_TYPES[1];
-            return (
-              <div key={step.id} className="wf-editor-step">
-                <div className="wf-editor-step-grip">
-                  <GripVertical size={16} />
-                </div>
-
-                <div className="wf-editor-step-body">
-                  {/* Header row: step number + type picker + remove */}
-                  <div className="wf-editor-step-header">
-                    <span className="wf-editor-step-label">Step {idx + 1}</span>
-                    <div className="wf-editor-step-type-pills">
-                      {STEP_TYPES.map(t => (
-                        <button
-                          key={t.type}
-                          className={`wf-step-type-pill${step.type === t.type ? ' active' : ''}`}
-                          onClick={() => changeStepType(idx, t.type)}
-                          title={t.label}
-                        >
-                          {t.icon} {t.label}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      className="icon-btn"
-                      style={{ width: 24, height: 24, flexShrink: 0 }}
-                      onClick={() => removeStep(idx)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* Main input field */}
-                  <input
-                    className="wf-editor-step-input"
-                    value={meta.field === 'url' ? (step.url ?? '') : (step.instruction ?? '')}
-                    onChange={e =>
-                      updateStep(idx, meta.field === 'url'
-                        ? { url: e.target.value }
-                        : { instruction: e.target.value })
-                    }
-                    placeholder={meta.placeholder}
-                  />
-
-                  {/* Check step: branch selectors */}
-                  {step.type === 'check' && (
-                    <div className="wf-editor-step-branches">
-                      <div className="wf-editor-branch-row">
-                        <span className="wf-editor-branch-label wf-branch-true">✓ If true →</span>
-                        <select
-                          value={step.onTrue ?? ''}
-                          onChange={e => updateStep(idx, { onTrue: e.target.value || undefined })}
-                          className="wf-editor-branch-select"
-                        >
-                          <option value="">Continue to next step</option>
-                          {stepIdOptions.filter(o => o.id !== step.id).map(o => (
-                            <option key={o.id} value={o.id}>{o.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="wf-editor-branch-row">
-                        <span className="wf-editor-branch-label wf-branch-false">✗ If false →</span>
-                        <select
-                          value={step.onFalse ?? ''}
-                          onChange={e => updateStep(idx, { onFalse: e.target.value || undefined })}
-                          className="wf-editor-branch-select"
-                        >
-                          <option value="">Continue to next step</option>
-                          {stepIdOptions.filter(o => o.id !== step.id).map(o => (
-                            <option key={o.id} value={o.id}>{o.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* onFailure toggle */}
-                  <div className="wf-editor-step-footer">
-                    <span className="wf-editor-failure-label">On failure:</span>
-                    <div className="wf-editor-failure-pills">
-                      <button
-                        className={`wf-failure-pill${step.onFailure === 'stop' ? ' active danger' : ''}`}
-                        onClick={() => updateStep(idx, { onFailure: 'stop' })}
-                      >
-                        Stop
-                      </button>
-                      <button
-                        className={`wf-failure-pill${step.onFailure === 'skip' ? ' active' : ''}`}
-                        onClick={() => updateStep(idx, { onFailure: 'skip' })}
-                      >
-                        Skip
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          <DndContext 
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext 
+              items={steps.map(s => s.id)} 
+              strategy={verticalListSortingStrategy}
+            >
+              {steps.map((step, idx) => (
+                <SortableStepRow
+                  key={step.id}
+                  step={step}
+                  idx={idx}
+                  stepIdOptions={stepIdOptions}
+                  changeStepType={changeStepType}
+                  removeStep={removeStep}
+                  updateStep={updateStep}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
 
           <button className="wf-editor-add-step-btn" onClick={addStep}>
             <Plus size={16} /> Add Step

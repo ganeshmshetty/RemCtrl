@@ -3,7 +3,6 @@
 ## 🔴 High Priority
 
 ## 🟡 Medium Priority (UX / Performance)
-- [ ] **Workflow Editor UX**: Add drag-and-drop step reordering support for better user experience.
 - [ ] **Signaling Server Optimization**: `server/signaling.ts` has an O(n) room lookup on every signal. Needs refactoring to use a Map for O(1) lookups to scale properly.
 
 ## 🟢 Low Priority / Enhancements
@@ -12,6 +11,7 @@
 ---
 
 ## ✅ Recently Completed
+- [x] **Workflow Editor UX**: Implemented drag-and-drop workflow step reordering using `@dnd-kit` for a much smoother editing experience.
 - [x] **API Key Security**: Implemented Electron `safeStorage` to encrypt API keys before storing them in JSON, utilizing OS-level keychain encryption.
 - [x] **Local / Solo Mode**: Added ability to launch the browser and use Agent/Workflow panels without spinning up WebRTC or hosting.
 - [x] **Event-Driven Cancellation**: Replaced 200ms `setInterval` polling in `execution-engine.ts` with `AbortController` for zero-latency, clean cancellation.
