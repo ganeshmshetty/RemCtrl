@@ -66,7 +66,14 @@ export function ConnectionPlaceholder() {
         />
         <button 
           type="submit" 
-          className="btn btn-ghost cp-join-btn"
+          className={`btn cp-join-btn ${
+            pinInput.length === 9 
+              ? 'btn-primary glow-accent animate-pulse-ring' 
+              : pinInput.length > 0 
+                ? 'btn-primary' 
+                : 'btn-ghost'
+          }`}
+          style={{ transition: 'all 0.3s ease' }}
           disabled={pinInput.length !== 9}
         >
           Join →

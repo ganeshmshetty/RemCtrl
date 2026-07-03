@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { app, safeStorage } from 'electron';
-import { LocalWorkflow, ApiProvider, BrowserMode } from '../shared/types.js';
+import { LocalWorkflow, ApiProvider, BrowserMode, AppTheme } from '../shared/types.js';
 import { PersistedSettingsSchema, PersistedSettings, LocalWorkflowSchema } from '../shared/schemas.js';
 
 import { fileURLToPath } from 'url';
@@ -126,6 +126,15 @@ export function setCustomBaseUrl(provider: ApiProvider, url: string | undefined)
     delete nextUrls[provider];
   }
   saveSettings({ ...s, customBaseUrls: nextUrls });
+}
+
+export function getTheme(): AppTheme {
+  return loadSettings().theme;
+}
+
+export function setTheme(theme: AppTheme) {
+  const s = loadSettings();
+  saveSettings({ ...s, theme });
 }
 
 // ─── Models Storage ─────────────────────────────────────────────────────────

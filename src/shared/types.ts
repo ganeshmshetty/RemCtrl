@@ -44,6 +44,7 @@ export interface SharedWorkflowRecord {
 
 export type ApiProvider = 'openai' | 'anthropic' | 'gemini' | 'groq' | 'deepseek' | 'nebius' | 'openrouter';
 export type BrowserMode = 'internal' | 'local_chrome';
+export type AppTheme = 'light' | 'dark' | 'system';
 
 export interface AppSettings {
   signalingUrl: string;
@@ -51,6 +52,7 @@ export interface AppSettings {
   preferredModel?: string;
   customBaseUrls?: Record<string, string>;
   browserMode: BrowserMode;
+  theme: AppTheme;
   // API keys are NOT stored in renderer — Main process holds them
 }
 
@@ -297,8 +299,12 @@ export interface RemoteCtrlAPI {
     setBrowserMode: (mode: BrowserMode) => Promise<void>;
     getHeadlessMode: () => Promise<boolean>;
     setHeadlessMode: (headless: boolean) => Promise<void>;
+    getUseVisionCUA: () => Promise<boolean>;
+    setUseVisionCUA: (useCua: boolean) => Promise<void>;
     getCustomBaseUrl: (provider: ApiProvider) => Promise<string | undefined>;
     setCustomBaseUrl: (provider: ApiProvider, url?: string) => Promise<void>;
+    getTheme: () => Promise<AppTheme>;
+    setTheme: (theme: AppTheme) => Promise<void>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;

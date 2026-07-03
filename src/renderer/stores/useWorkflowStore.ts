@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { LocalWorkflow, ApiProvider } from '../../shared/types';
+import type { LocalWorkflow, ApiProvider, AppTheme } from '../../shared/types';
 
 interface WorkflowState {
   workflows: LocalWorkflow[];
@@ -73,6 +73,7 @@ interface SettingsState {
   hasNebiusKey: boolean;
   hasOpenRouterKey: boolean;
   headlessMode: boolean;
+  theme: AppTheme;
   isLoading: boolean;
 
   // Actions
@@ -82,6 +83,7 @@ interface SettingsState {
   setPreferredModel: (model: string) => Promise<void>;
   setApiKey: (provider: ApiProvider, value: string) => Promise<void>;
   setHeadlessMode: (headless: boolean) => Promise<void>;
+  setTheme: (theme: AppTheme) => Promise<void>;
   useVisionCUA: boolean;
   setUseVisionCUA: (useCua: boolean) => Promise<void>;
   isSettingsOpen: boolean;
@@ -100,6 +102,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hasNebiusKey: false,
   hasOpenRouterKey: false,
   headlessMode: true,
+  theme: 'system',
   useVisionCUA: true,
   isLoading: false,
   isSettingsOpen: false,
@@ -107,7 +110,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA] =
+      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA, theme] =
         await Promise.all([
           window.RemoteCtrlAPI.settings.getSignalingUrl(),
           window.RemoteCtrlAPI.settings.getPreferredProvider(),
@@ -121,8 +124,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           window.RemoteCtrlAPI.settings.hasApiKey('openrouter'),
           window.RemoteCtrlAPI.settings.getHeadlessMode(),
           window.RemoteCtrlAPI.settings.getUseVisionCUA(),
+          window.RemoteCtrlAPI.settings.getTheme(),
         ]);
-      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA, isLoading: false });
+      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA, theme, isLoading: false });
     } catch {
       set({ isLoading: false });
     }
@@ -161,6 +165,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setHeadlessMode: async (headless) => {
     await window.RemoteCtrlAPI.settings.setHeadlessMode(headless);
     set({ headlessMode: headless });
+  },
+
+  setTheme: async (theme) => {
+    await window.RemoteCtrlAPI.settings.setTheme(theme);
+    set({ theme });
   },
 
   setUseVisionCUA: async (useCua) => {

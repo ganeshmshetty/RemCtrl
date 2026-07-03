@@ -37,6 +37,8 @@ export const LocalWorkflowSchema = z.object({
 
 // ─── Settings Schemas ─────────────────────────────────────────────────────────
 
+export const AppThemeSchema = z.enum(['light', 'dark', 'system']);
+
 export const ApiProviderSchema = z.enum(['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'nebius', 'openrouter']);
 
 export const SetApiKeySchema = z.object({
@@ -59,6 +61,10 @@ export const SetPreferredModelSchema = z.object({
 export const SetCustomBaseUrlSchema = z.object({
   provider: ApiProviderSchema,
   url: z.string().url().optional(),
+});
+
+export const SetThemeSchema = z.object({
+  theme: AppThemeSchema,
 });
 
 // ─── Host IPC Schemas ─────────────────────────────────────────────────────────
@@ -142,6 +148,7 @@ export const PersistedSettingsSchema = z.object({
   browserMode: BrowserModeSchema.default('internal'),
   headlessMode: z.boolean().default(true),
   useVisionCUA: z.boolean().default(true),
+  theme: AppThemeSchema.default('system'),
   // API keys are stored in a separate secure store — not in this file
 });
 

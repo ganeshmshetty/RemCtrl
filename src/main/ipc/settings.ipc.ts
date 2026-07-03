@@ -5,6 +5,7 @@ import {
   SetPreferredProviderSchema,
   BrowserModeSchema,
   SetCustomBaseUrlSchema,
+  SetThemeSchema,
 } from '../../shared/schemas.js';
 import {
   hasApiKey,
@@ -26,6 +27,8 @@ import {
   setCustomBaseUrl,
   getUseVisionCUA,
   setUseVisionCUA,
+  getTheme,
+  setTheme,
 } from '../storage.js';
 
 export function registerSettingsIpc() {
@@ -159,6 +162,13 @@ export function registerSettingsIpc() {
   ipcMain.handle('settings:setCustomBaseUrl', async (_e, provider: unknown, url: unknown) => {
     const parsed = SetCustomBaseUrlSchema.parse({ provider, url });
     setCustomBaseUrl(parsed.provider, parsed.url);
+  });
+
+  ipcMain.handle('settings:getTheme', async () => getTheme());
+
+  ipcMain.handle('settings:setTheme', async (_e, theme: unknown) => {
+    const parsed = SetThemeSchema.parse({ theme });
+    setTheme(parsed.theme);
   });
 
   ipcMain.handle('app:getDiagnostics', async () => {

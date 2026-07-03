@@ -2,17 +2,17 @@
 
 /* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --bg-base: #0a0a0f;
-  --bg-surface: #111118;
-  --bg-elevated: #18181f;
-  --bg-overlay: #1e1e28;
+  --bg-base: #121216;
+  --bg-surface: #18181e;
+  --bg-elevated: #202028;
+  --bg-overlay: #282832;
 
-  --border: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(255, 255, 255, 0.15);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(255, 255, 255, 0.16);
 
-  --text-primary: #f0f0fa;
-  --text-secondary: #8888a8;
-  --text-muted: #4a4a65;
+  --text-primary: #e6e6ef;
+  --text-secondary: #9494a8;
+  --text-muted: #646478;
 
   --accent: #7c6af7;
   --accent-glow: rgba(124, 106, 247, 0.25);
@@ -32,6 +32,20 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root.light-theme {
+  --bg-base: #f9f9fb;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f0f0f5;
+  --bg-overlay: #e5e5ec;
+
+  --border: rgba(0, 0, 0, 0.1);
+  --border-active: rgba(0, 0, 0, 0.2);
+
+  --text-primary: #111118;
+  --text-secondary: #4a4a65;
+  --text-muted: #8888a8;
 }
 
 /* ─── Base Reset ────────────────────────────────────────────────────────────── */

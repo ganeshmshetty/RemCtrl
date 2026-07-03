@@ -3,10 +3,9 @@ import {
   BrowserWindow,
   shell,
   nativeTheme,
-  dialog,
   Menu,
 } from 'electron';
-import { autoUpdater } from 'electron-updater';
+// import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { setMainWindow } from './ipc-handlers.js';
 import { closeBrowser } from './browser-manager.js';
@@ -188,7 +187,8 @@ app.whenReady().then(() => {
     }
   });
 
-  // ── Auto Updater configuration ──
+  // ── Auto Updater configuration (Commented out until Code Signing is setup) ──
+  /*
   autoUpdater.autoDownload = false; // Prompt user before downloading
   autoUpdater.allowPrerelease = true; // Allow downloading pre-releases
 
@@ -232,6 +232,7 @@ app.whenReady().then(() => {
   if (!isDev) {
     autoUpdater.checkForUpdates();
   }
+  */
 });
 
 app.on('window-all-closed', () => {

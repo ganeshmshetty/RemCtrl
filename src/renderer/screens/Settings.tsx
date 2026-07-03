@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 
-import { X, Server, Cpu, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { X, Server, Cpu, RefreshCw, Eye, EyeOff, Palette, Globe, Sparkles } from 'lucide-react';
 import { useSettingsStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import type { ApiProvider, BrowserMode } from '../../shared/types';
-
 
 export function Settings() {
   const {
@@ -26,8 +25,11 @@ export function Settings() {
     setHeadlessMode,
     useVisionCUA,
     setUseVisionCUA,
+    theme,
+    setTheme,
   } = useSettingsStore();
 
+  const [activeTab, setActiveTab] = useState<'ai' | 'browser' | 'appearance'>('ai');
   const [apiInput, setApiInput] = useState('');
   const [signalingInput, setSignalingInput] = useState('');
   const [browserMode, setBrowserMode] = useState('internal');
@@ -96,13 +98,11 @@ export function Settings() {
     }
   }
 
-  // 1. Initial Load: Get locally cached/default models from main process
   useEffect(() => {
     async function loadModels() {
       const ms = await window.RemoteCtrlAPI?.settings.getAvailableModels(preferredProvider);
       if (ms && ms.length > 0) {
         setCachedModels(prev => ({ ...prev, [preferredProvider]: ms }));
-        // Ensure a preferred model is selected if missing
         const currentModel = useSettingsStore.getState().preferredModel;
         if (!currentModel) {
           await setPreferredModel(ms[0]);
@@ -112,7 +112,6 @@ export function Settings() {
     loadModels();
   }, [preferredProvider]);
 
-  // 2. Auto-fetch fresh models from API in the background if eligible
   useEffect(() => {
     if (['openai', 'groq', 'deepseek', 'nebius', 'openrouter'].includes(preferredProvider)) {
       const hasKey = hasKeyForProvider(preferredProvider);
@@ -165,179 +164,220 @@ export function Settings() {
   return (
     <div className="settings-overlay" onClick={() => useUIStore.getState().closeSettings()}>
       <div className="settings-root" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-header no-drag">
-          <h1 className="settings-title">Settings</h1>
-          {savedMsg && <span className="settings-saved-toast animate-fade-in">{savedMsg}</span>}
-          <button className="icon-btn" onClick={() => useUIStore.getState().closeSettings()}>
-            <X size={16} />
-          </button>
-        </div>
-
-      <div className="settings-body">
-
-        {/* Active AI Setup */}
-        <Section icon={<Cpu size={15} />} title="Active AI Setup">
-          <p className="settings-hint">
-            Select your preferred AI provider and model. The API key you enter will be associated with the selected provider. Keys are stored locally.
-          </p>
-          
-          <div className="settings-row" style={{ display: 'flex', gap: '16px' }}>
-            <SettingField label="Provider" status="" style={{ flex: 1 }}>
-              <select className="settings-select" value={preferredProvider} onChange={handleProviderChange}>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="groq">Groq</option>
-                <option value="deepseek">DeepSeek</option>
-                <option value="nebius">Nebius</option>
-                <option value="openrouter">OpenRouter</option>
-              </select>
-            </SettingField>
-
-            <SettingField label="Model" status="" style={{ flex: 1 }}>
-              {isCustomModel ? (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input
-                    type="text"
-                    className="settings-input"
-                    value={customModelInput}
-                    onChange={e => setCustomModelInput(e.target.value)}
-                    placeholder="e.g. custom-model-name"
-                    autoFocus
-                  />
-                  <button className="btn btn-primary" onClick={handleSaveCustomModel} disabled={!customModelInput.trim()}>
-                    Save
-                  </button>
-                  <button className="btn btn-secondary" onClick={() => setIsCustomModel(false)}>
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select className="settings-select" value={preferredModel || ''} onChange={handleModelChange} style={{ flex: 1 }}>
-                    {models.map(m => <option key={m} value={m}>{m}</option>)}
-                    {!models.includes(preferredModel as string) && preferredModel && (
-                       <option value={preferredModel}>{preferredModel} (Custom)</option>
-                    )}
-                    <option value="__custom__">Custom Model...</option>
-                  </select>
-                </div>
-              )}
-            </SettingField>
+        
+        {/* Sidebar Tabs */}
+        <div className="settings-sidebar">
+          <div className="settings-sidebar-header">
+            Settings
           </div>
-
-          <SettingField label={`${preferredProvider.charAt(0).toUpperCase() + preferredProvider.slice(1)} API Key`} status={hasCurrentKey ? 'Configured' : 'Not set'} hasKey={hasCurrentKey}>
-            <div className="settings-input-row">
-              <div className="settings-input-wrap">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  className="settings-input"
-                  placeholder={hasCurrentKey ? '••••••••••••••••' : 'Enter API Key...'}
-                  value={apiInput}
-                  onChange={(e) => setApiInput(e.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <button className="settings-eye-btn" onClick={() => setShowKey(!showKey)}>
-                  {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              </div>
-              <button
-                className="btn btn-primary"
-                disabled={!apiInput.trim()}
-                onClick={handleSaveApiKey}
-              >
-                Save Key
-              </button>
-            </div>
-          </SettingField>
-        </Section>
-
-        {/* Browser Mode */}
-        <Section icon={<RefreshCw size={15} />} title="Browser Connection">
-          <p className="settings-hint">
-            <strong>Internal:</strong> Launches a fresh, isolated, headless browser.<br/>
-            <strong>Local Chrome:</strong> Connects to your existing browser. You must launch Chrome with <code>--remote-debugging-port=9222</code>.
-          </p>
-          <SettingField label="Connection Mode" status="">
-            <div className="settings-radio-group">
-              {(['internal', 'local_chrome'] as BrowserMode[]).map((m) => (
-                <label key={m} className="settings-radio">
-                  <input
-                    type="radio"
-                    name="browserMode"
-                    value={m}
-                    checked={browserMode === m}
-                    onChange={() => handleSaveBrowserMode(m)}
-                  />
-                  <span className="settings-radio-label">
-                    {m === 'internal' ? 'Internal Isolated' : 'Local Chrome (Port 9222)'}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </SettingField>
-
-          {browserMode === 'internal' && (
-            <SettingField label="Headless Mode" status="">
-              <label className="settings-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={headlessMode}
-                  onChange={(e) => setHeadlessMode(e.target.checked)}
-                />
-                <span className="settings-radio-label">
-                  Run invisibly in background (prevents stealing OS focus)
-                </span>
-              </label>
-            </SettingField>
-          )}
-
-          {browserMode === 'internal' && (
-            <SettingField label="Computer Use API (Vision)" status="">
-              <label className="settings-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={useVisionCUA}
-                  onChange={(e) => setUseVisionCUA(e.target.checked)}
-                />
-                <span className="settings-radio-label">
-                  Enable Vision/CUA fallback for complex apps. Forces viewport to 1288x711.
-                </span>
-              </label>
-            </SettingField>
-          )}
-        </Section>
-
-        {/* Connection */}
-        <Section icon={<Server size={15} />} title="Advanced Connection">
-          <SettingField label="Signaling Server URL" status="">
-            <div className="settings-input-row">
-              <input
-                type="url"
-                className="settings-input"
-                value={signalingInput}
-                onChange={(e) => setSignalingInput(e.target.value)}
-                placeholder="http://localhost:3001"
-              />
-              <button className="btn btn-primary" onClick={handleSaveSignaling}>
-                Save
-              </button>
-            </div>
-          </SettingField>
-
-          <div style={{ marginTop: 12 }}>
-            <p className="settings-hint">
-              Reset the dedicated Playwright browser profile. This clears all session data, cookies, and cached content.
-            </p>
-            <button className="btn btn-danger-outline settings-reset-btn" onClick={handleResetBrowser}>
-              <RefreshCw size={13} />
-              Reset Browser Profile
+          <div className="settings-sidebar-tabs">
+            <button className={`settings-tab ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => setActiveTab('ai')}>
+              <Sparkles size={16} /> AI Models
+            </button>
+            <button className={`settings-tab ${activeTab === 'browser' ? 'active' : ''}`} onClick={() => setActiveTab('browser')}>
+              <Globe size={16} /> Browser Connection
+            </button>
+            <button className={`settings-tab ${activeTab === 'appearance' ? 'active' : ''}`} onClick={() => setActiveTab('appearance')}>
+              <Palette size={16} /> Appearance
             </button>
           </div>
-        </Section>
+        </div>
 
-        </div>{/* end settings-body */}
+        {/* Content Area */}
+        <div className="settings-content-area">
+          <div className="settings-content-header">
+            <h1 className="settings-content-title">
+              {activeTab === 'ai' && 'AI & Models'}
+              {activeTab === 'browser' && 'Browser Connection'}
+              {activeTab === 'appearance' && 'Appearance'}
+            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {savedMsg && <span className="settings-saved-toast animate-fade-in">{savedMsg}</span>}
+              <button className="icon-btn" onClick={() => useUIStore.getState().closeSettings()}>
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="settings-content-body">
+            
+            {/* AI Models Tab */}
+            {activeTab === 'ai' && (
+              <Section icon={<Cpu size={15} />} title="Active AI Setup">
+                <p className="settings-hint">
+                  Select your preferred AI provider and model. The API key you enter will be associated with the selected provider. Keys are stored locally.
+                </p>
+                
+                <div className="settings-row" style={{ display: 'flex', gap: '16px' }}>
+                  <SettingField label="Provider" status="" style={{ flex: 1 }}>
+                    <select className="settings-select" value={preferredProvider} onChange={handleProviderChange}>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="groq">Groq</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="nebius">Nebius</option>
+                      <option value="openrouter">OpenRouter</option>
+                    </select>
+                  </SettingField>
+
+                  <SettingField label="Model" status="" style={{ flex: 1 }}>
+                    {isCustomModel ? (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          value={customModelInput}
+                          onChange={e => setCustomModelInput(e.target.value)}
+                          placeholder="e.g. custom-model-name"
+                          autoFocus
+                        />
+                        <button className="btn btn-primary" onClick={handleSaveCustomModel} disabled={!customModelInput.trim()}>
+                          Save
+                        </button>
+                        <button className="btn btn-secondary" onClick={() => setIsCustomModel(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <select className="settings-select" value={preferredModel || ''} onChange={handleModelChange} style={{ flex: 1 }}>
+                          {models.map(m => <option key={m} value={m}>{m}</option>)}
+                          {!models.includes(preferredModel as string) && preferredModel && (
+                             <option value={preferredModel}>{preferredModel} (Custom)</option>
+                          )}
+                          <option value="__custom__">Custom Model...</option>
+                        </select>
+                      </div>
+                    )}
+                  </SettingField>
+                </div>
+
+                <SettingField label={`${preferredProvider.charAt(0).toUpperCase() + preferredProvider.slice(1)} API Key`} status={hasCurrentKey ? 'Configured' : 'Not set'} hasKey={hasCurrentKey}>
+                  <div className="settings-input-row">
+                    <div className="settings-input-wrap">
+                      <input
+                        type={showKey ? 'text' : 'password'}
+                        className="settings-input"
+                        placeholder={hasCurrentKey ? '••••••••••••••••' : 'Enter API Key...'}
+                        value={apiInput}
+                        onChange={(e) => setApiInput(e.target.value)}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <button className="settings-eye-btn" onClick={() => setShowKey(!showKey)}>
+                        {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      disabled={!apiInput.trim()}
+                      onClick={handleSaveApiKey}
+                    >
+                      Save Key
+                    </button>
+                  </div>
+                </SettingField>
+              </Section>
+            )}
+
+            {/* Browser Tab */}
+            {activeTab === 'browser' && (
+              <>
+                <Section icon={<RefreshCw size={15} />} title="Browser Mode">
+                  <p className="settings-hint">
+                    <strong>Internal:</strong> Launches a fresh, isolated, headless browser.<br/>
+                    <strong>Local Chrome:</strong> Connects to your existing browser. You must launch Chrome with <code>--remote-debugging-port=9222</code>.
+                  </p>
+                  <SettingField label="Connection Mode" status="">
+                    <div className="settings-radio-group">
+                      {(['internal', 'local_chrome'] as BrowserMode[]).map((m) => (
+                        <label key={m} className="settings-radio">
+                          <input
+                            type="radio"
+                            name="browserMode"
+                            value={m}
+                            checked={browserMode === m}
+                            onChange={() => handleSaveBrowserMode(m)}
+                          />
+                          <span className="settings-radio-label">
+                            {m === 'internal' ? 'Internal Isolated' : 'Local Chrome (Port 9222)'}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </SettingField>
+
+                  {browserMode === 'internal' && (
+                    <SettingField label="Headless Mode" status="">
+                      <ToggleSwitch 
+                        checked={headlessMode} 
+                        onChange={(val) => setHeadlessMode(val)} 
+                        label="Run invisibly in background (prevents stealing OS focus)" 
+                      />
+                    </SettingField>
+                  )}
+
+                  {browserMode === 'internal' && (
+                    <SettingField label="Computer Use API (Vision)" status="">
+                      <ToggleSwitch 
+                        checked={useVisionCUA} 
+                        onChange={(val) => setUseVisionCUA(val)} 
+                        label="Enable Vision/CUA fallback for complex apps. Forces viewport to 1288x711." 
+                      />
+                    </SettingField>
+                  )}
+                </Section>
+
+                <Section icon={<Server size={15} />} title="Advanced Connection">
+                  <SettingField label="Signaling Server URL" status="">
+                    <div className="settings-input-row">
+                      <input
+                        type="url"
+                        className="settings-input"
+                        value={signalingInput}
+                        onChange={(e) => setSignalingInput(e.target.value)}
+                        placeholder="http://localhost:3001"
+                      />
+                      <button className="btn btn-primary" onClick={handleSaveSignaling}>
+                        Save
+                      </button>
+                    </div>
+                  </SettingField>
+
+                  <div style={{ marginTop: 12 }}>
+                    <p className="settings-hint">
+                      Reset the dedicated Playwright browser profile. This clears all session data, cookies, and cached content.
+                    </p>
+                    <button className="btn btn-danger-outline settings-reset-btn" onClick={handleResetBrowser}>
+                      <RefreshCw size={13} />
+                      Reset Browser Profile
+                    </button>
+                  </div>
+                </Section>
+              </>
+            )}
+
+            {/* Appearance Tab */}
+            {activeTab === 'appearance' && (
+              <Section icon={<Palette size={15} />} title="Appearance">
+                <SettingField label="Theme" status="">
+                  <select
+                    className="settings-select"
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}
+                    style={{ width: '100%', maxWidth: '240px' }}
+                  >
+                    <option value="system">System Settings</option>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                  </select>
+                </SettingField>
+              </Section>
+            )}
+
+          </div>
+        </div>
 
         <style>{`
           .settings-overlay {
@@ -352,13 +392,14 @@ export function Settings() {
             backdrop-filter: blur(2px);
           }
           .settings-root {
-            width: 600px;
+            width: 780px;
+            height: 550px;
             max-height: 85vh;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             background: var(--bg-base);
-            border-radius: 8px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            border-radius: var(--radius);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
             border: 1px solid var(--border);
             overflow: hidden;
           }
@@ -366,148 +407,261 @@ export function Settings() {
             from { opacity: 0; transform: scale(0.98); }
             to { opacity: 1; transform: scale(1); }
           }
-          .settings-titlebar { height: 28px; }
-            .settings-header {
-              display: flex;
-              align-items: center;
-              gap: 12px;
-              padding: 16px 20px;
-              border-bottom: 1px solid var(--border);
-              background: var(--bg-surface);
-              flex-shrink: 0;
-            }
-            .settings-title {
-              font-size: 15px;
-              font-weight: 600;
-              color: var(--text-primary);
-              flex: 1;
-            }
-            .settings-saved-toast {
-              font-size: 12px;
-              color: var(--success);
-              font-weight: 500;
-            }
-            .settings-body {
-              flex: 1;
-              overflow-y: auto;
-              padding: 24px 20px;
-              display: flex;
-              flex-direction: column;
-              gap: 24px;
-            }
-            .settings-section {
-              display: flex;
-              flex-direction: column;
-              gap: 16px;
-            }
-            .settings-section-header {
-              display: flex;
-              align-items: center;
-              gap: 8px;
-              font-size: 12px;
-              font-weight: 600;
-              text-transform: uppercase;
-              letter-spacing: 0.06em;
-              color: var(--text-muted);
-              border-bottom: 1px solid var(--border);
-              padding-bottom: 10px;
-            }
-            .settings-field {
-              display: flex;
-              flex-direction: column;
-              gap: 8px;
-            }
-            .settings-field-label-row {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-            }
-            .settings-field-label {
-              font-size: 13px;
-              font-weight: 500;
-              color: var(--text-primary);
-            }
-            .settings-field-status {
-              font-size: 11px;
-              padding: 2px 8px;
-              border-radius: 99px;
-              font-weight: 600;
-            }
-            .status-ok  { background: rgba(34,197,94,0.1); color: var(--success); }
-            .status-off { background: var(--bg-overlay); color: var(--text-muted); }
-            .settings-hint {
-              font-size: 12px;
-              color: var(--text-muted);
-              line-height: 1.6;
-            }
-            .settings-input-row {
-              display: flex;
-              gap: 8px;
-              align-items: center;
-            }
-            .settings-input-wrap {
-              position: relative;
-              flex: 1;
-            }
-            .settings-input, .settings-select {
-              width: 100%;
-              height: 36px;
-              padding: 0 12px;
-              background: var(--bg-surface);
-              border: 1px solid var(--border);
-              border-radius: var(--radius-sm);
-              color: var(--text-primary);
-              font-size: 13px;
-              outline: none;
-              transition: border-color var(--transition);
-            }
-            .settings-input { padding-right: 36px; font-family: var(--font-mono); }
-            .settings-input:focus, .settings-select:focus { border-color: var(--accent); }
-            .settings-eye-btn {
-              position: absolute;
-              right: 8px;
-              top: 50%;
-              transform: translateY(-50%);
-              background: none;
-              border: none;
-              color: var(--text-muted);
-              cursor: pointer;
-              padding: 2px;
-            }
-            .settings-eye-btn:hover { color: var(--text-secondary); }
-            .settings-radio-group {
-              display: flex;
-              gap: 12px;
-            }
-            .settings-radio {
-              display: flex;
-              align-items: center;
-              gap: 6px;
-              cursor: pointer;
-            }
-            .settings-radio-label { font-size: 13px; color: var(--text-secondary); }
-            .settings-reset-btn { margin-top: 4px; }
-            .icon-btn {
-              display: flex; align-items: center; justify-content: center;
-              width: 32px; height: 32px; border-radius: var(--radius-sm);
-              border: none; background: transparent; color: var(--text-muted);
-              cursor: pointer; transition: color var(--transition), background var(--transition);
-            }
-            .icon-btn:hover { color: var(--text-primary); background: var(--bg-elevated); }
-            .btn {
-              display: inline-flex; align-items: center; justify-content: center;
-              gap: 6px; height: 36px; padding: 0 16px; border-radius: var(--radius-sm);
-              font-size: 13px; font-weight: 600; cursor: pointer; border: none;
-              transition: background var(--transition), opacity var(--transition), transform var(--transition);
-              white-space: nowrap;
-            }
-            .btn:active { transform: scale(0.97); }
-            .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-            .btn-primary { background: var(--accent); color: white; }
-            .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
-            .btn-danger-outline { background: transparent; color: var(--danger); border: 1px solid rgba(239,68,68,0.4); }
-            .btn-danger-outline:hover { background: rgba(239,68,68,0.1); }
-          `}</style>
+          
+          /* Sidebar */
+          .settings-sidebar {
+            width: 220px;
+            background: var(--bg-surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            -webkit-app-region: drag;
+          }
+          .settings-sidebar-header {
+            height: 54px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-primary);
+            border-bottom: 1px solid transparent;
+          }
+          .settings-sidebar-tabs {
+            padding: 12px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            -webkit-app-region: no-drag;
+          }
+          .settings-tab {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            transition: all var(--transition);
+            text-align: left;
+          }
+          .settings-tab:hover {
+            background: var(--bg-overlay);
+            color: var(--text-primary);
+          }
+          .settings-tab.active {
+            background: var(--accent);
+            color: white;
+          }
+
+          /* Content */
+          .settings-content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-base);
+            position: relative;
+          }
+          .settings-content-header {
+            height: 54px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--border);
+            -webkit-app-region: drag;
+          }
+          .settings-content-title {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--text-primary);
+            margin: 0;
+          }
+          .settings-content-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+            -webkit-app-region: no-drag;
+          }
+
+          .settings-saved-toast {
+            font-size: 12px;
+            color: var(--success);
+            font-weight: 500;
+          }
+          
+          .settings-section {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+          .settings-section-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+          }
+          .settings-field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }
+          .settings-field-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          }
+          .settings-field-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+          }
+          .settings-field-status {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 99px;
+            font-weight: 600;
+          }
+          .status-ok  { background: rgba(34,197,94,0.1); color: var(--success); }
+          .status-off { background: var(--bg-overlay); color: var(--text-muted); }
+          .settings-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.6;
+          }
+          .settings-input-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+          .settings-input-wrap {
+            position: relative;
+            flex: 1;
+          }
+          .settings-input, .settings-select {
+            width: 100%;
+            height: 36px;
+            padding: 0 12px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 13px;
+            outline: none;
+            transition: border-color var(--transition);
+          }
+          .settings-input { padding-right: 36px; font-family: var(--font-mono); }
+          .settings-input:focus, .settings-select:focus { border-color: var(--accent); }
+          .settings-eye-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px;
+          }
+          .settings-eye-btn:hover { color: var(--text-secondary); }
+          .settings-radio-group {
+            display: flex;
+            gap: 12px;
+          }
+          .settings-radio {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+          }
+          .settings-radio-label { font-size: 13px; color: var(--text-secondary); }
+          .settings-reset-btn { margin-top: 4px; }
+          
+          /* Buttons */
+          .icon-btn {
+            display: flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: var(--radius-sm);
+            border: none; background: transparent; color: var(--text-muted);
+            cursor: pointer; transition: color var(--transition), background var(--transition);
+            -webkit-app-region: no-drag;
+          }
+          .icon-btn:hover { color: var(--text-primary); background: var(--bg-elevated); }
+          .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            gap: 6px; height: 36px; padding: 0 16px; border-radius: var(--radius-sm);
+            font-size: 13px; font-weight: 600; cursor: pointer; border: none;
+            transition: background var(--transition), opacity var(--transition), transform var(--transition);
+            white-space: nowrap;
+          }
+          .btn:active { transform: scale(0.97); }
+          .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+          .btn-primary { background: var(--accent); color: white; }
+          .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+          .btn-secondary { background: var(--bg-overlay); color: var(--text-primary); border: 1px solid var(--border); }
+          .btn-secondary:hover { background: var(--bg-elevated); }
+          .btn-danger-outline { background: transparent; color: var(--danger); border: 1px solid rgba(239,68,68,0.4); }
+          .btn-danger-outline:hover { background: rgba(239,68,68,0.1); }
+
+          /* Toggle Switch */
+          .toggle-switch-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            user-select: none;
+          }
+          .toggle-switch {
+            width: 36px;
+            height: 20px;
+            border-radius: 20px;
+            background: var(--bg-overlay);
+            border: 1px solid var(--border);
+            position: relative;
+            transition: background 0.2s, border-color 0.2s;
+            flex-shrink: 0;
+          }
+          .toggle-switch.checked {
+            background: var(--success);
+            border-color: var(--success);
+          }
+          .toggle-switch-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: white;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          }
+          .toggle-switch.checked .toggle-switch-thumb {
+            transform: translateX(16px);
+          }
+          .toggle-switch-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            flex: 1;
+          }
+          .toggle-switch-wrapper:hover .toggle-switch-label {
+            color: var(--text-primary);
+          }
+        `}</style>
       </div>
     </div>
   );
@@ -550,5 +704,22 @@ function SettingField({
       </div>
       {children}
     </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange, label }: { checked: boolean, onChange: (v: boolean) => void, label?: string }) {
+  return (
+    <label className="toggle-switch-wrapper">
+      <div className={`toggle-switch ${checked ? 'checked' : ''}`}>
+        <div className="toggle-switch-thumb" />
+      </div>
+      {label && <span className="toggle-switch-label">{label}</span>}
+      <input 
+        type="checkbox" 
+        style={{ display: 'none' }} 
+        checked={checked} 
+        onChange={(e) => onChange(e.target.checked)} 
+      />
+    </label>
   );
 }

@@ -80,6 +80,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     setUseVisionCUA: (useCua) => ipcRenderer.invoke('settings:setUseVisionCUA', useCua),
     getCustomBaseUrl: (provider) => ipcRenderer.invoke('settings:getCustomBaseUrl', provider),
     setCustomBaseUrl: (provider, url) => ipcRenderer.invoke('settings:setCustomBaseUrl', provider, url),
+    getTheme: () => ipcRenderer.invoke('settings:getTheme'),
+    setTheme: (theme) => ipcRenderer.invoke('settings:setTheme', theme),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────

@@ -6,12 +6,46 @@ import { TopNav } from './screens/TopNav';
 import { ControllerSession } from './screens/ControllerSession';
 import { LocalSession } from './screens/LocalSession';
 import { Settings } from './screens/Settings';
+import { useSettingsStore } from './stores/useWorkflowStore';
 
 export default function App() {
   const { role, setHostState, setControllerState, setPendingControllerId, setPin, setError } =
     useConnectionStore();
   const { handleAgentStatus, handleAgentLog, handleWorkflowRunStatus, handleWorkflowStepStatus, handleAgentCheckpoint } = useAgentStore();
   const { isSettingsOpen, openSettings } = useUIStore();
+  const { theme, loadSettings } = useSettingsStore();
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  // Theme observer
+  useEffect(() => {
+    const root = document.documentElement;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+
+    const applyTheme = () => {
+      let activeTheme = theme;
+      if (theme === 'system') {
+        activeTheme = mediaQuery.matches ? 'light' : 'dark';
+      }
+      
+      if (activeTheme === 'light') {
+        root.classList.add('light-theme');
+      } else {
+        root.classList.remove('light-theme');
+      }
+    };
+
+    applyTheme();
+
+    const listener = () => {
+      if (theme === 'system') applyTheme();
+    };
+    mediaQuery.addEventListener('change', listener);
+    return () => mediaQuery.removeEventListener('change', listener);
+  }, [theme]);
+
   // Wire Main -> Renderer push events
   useEffect(() => {
     if (!window.RemoteCtrlAPI) return; // Running in browser dev mode without Electron
