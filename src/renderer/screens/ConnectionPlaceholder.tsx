@@ -11,6 +11,11 @@ export function ConnectionPlaceholder() {
     window.RemoteCtrlAPI?.host.start();
   }
 
+  function handleLocal() {
+    setRole('local');
+    window.RemoteCtrlAPI?.browser.launch();
+  }
+
   function handleJoin(e: React.FormEvent) {
     e.preventDefault();
     const cleaned = pinInput.replace(/\D/g, '');
@@ -34,6 +39,14 @@ export function ConnectionPlaceholder() {
         onClick={handleHost}
       >
         Host your browser
+      </button>
+
+      <button 
+        className="btn btn-outline"
+        style={{ width: '100%', marginTop: '8px' }}
+        onClick={handleLocal}
+      >
+        Start Local Session
       </button>
 
       <div className="cp-divider">

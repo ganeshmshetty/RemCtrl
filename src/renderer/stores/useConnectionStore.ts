@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { HostSessionState, ControllerSessionState } from '../../shared/types';
 
-type SessionRole = 'idle' | 'host' | 'controller';
+type SessionRole = 'idle' | 'host' | 'controller' | 'local';
 
 interface ConnectionState {
   role: SessionRole;

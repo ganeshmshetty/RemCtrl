@@ -4,10 +4,11 @@ import { useAgentStore } from './stores/useAgentStore';
 import { useUIStore } from './stores/useUIStore';
 import { TopNav } from './screens/TopNav';
 import { ControllerSession } from './screens/ControllerSession';
+import { LocalSession } from './screens/LocalSession';
 import { Settings } from './screens/Settings';
 
 export default function App() {
-  const { setHostState, setControllerState, setPendingControllerId, setPin, setError } =
+  const { role, setHostState, setControllerState, setPendingControllerId, setPin, setError } =
     useConnectionStore();
   const { handleAgentStatus, handleAgentLog, handleWorkflowRunStatus, handleWorkflowStepStatus, handleAgentCheckpoint } = useAgentStore();
   const { isSettingsOpen, openSettings } = useUIStore();
@@ -36,7 +37,7 @@ export default function App() {
     <div className="app-shell">
       <TopNav />
       <div className="main-content">
-        <ControllerSession />
+        {role === 'local' ? <LocalSession /> : <ControllerSession />}
       </div>
       {isSettingsOpen && <Settings />}
     </div>
