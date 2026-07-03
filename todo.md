@@ -1,15 +1,19 @@
 # RemoteCtrl TODO List
 
-## 🔴 High Priority
+## High Priority
+- [ ] **Browser Resolution Strategy**: Implement dynamic browser targeting for production:
+  - Default to using the user's natively installed Chrome/Edge in a temporary, isolated profile.
+  - Add an "Advanced Setting" allowing users to use their Default Profile (with a warning that they must close their browser first).
+  - **Fallback**: If no compatible local browser is found, dynamically ask the user to download the Playwright Chromium binary into a manageable directory (e.g. `app.getPath('userData')/browsers`) so it can be cleanly updated, deleted, or uninstalled with the app.
 
-## 🟡 Medium Priority (UX / Performance)
+## Medium Priority (UX / Performance)
 
-## 🟢 Low Priority / Enhancements
+## Low Priority / Enhancements
 - [ ] **Stall Nudge UI**: Stall nudge messages from `stall-detector.ts` are currently only logged to the console. Surface these actionable hints in the UI for the Controller.
 
 ---
 
-## ✅ Recently Completed
+## Recently Completed
 - [x] **Signaling Server Optimization**: Eliminated all O(n) room iterations in the socket.io signaling server by introducing a `socketToPin` O(1) reverse lookup map.
 - [x] **Workflow Editor UX**: Implemented drag-and-drop workflow step reordering using `@dnd-kit` for a much smoother editing experience.
 - [x] **API Key Security**: Implemented Electron `safeStorage` to encrypt API keys before storing them in JSON, utilizing OS-level keychain encryption.
