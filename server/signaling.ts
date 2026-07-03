@@ -17,6 +17,7 @@ interface Room {
 }
 
 const rooms = new Map<string, Room>();
+const socketToPin = new Map<string, string>();
 
 // ─── Server Setup ─────────────────────────────────────────────────────────────
 
@@ -44,7 +45,9 @@ function deleteRoom(pin: string, reason = 'Session expired') {
   clearTimeout(room.ttlTimer);
   if (room.controllerSocketId) {
     io.to(room.controllerSocketId).emit('room:error', { message: reason });
+    socketToPin.delete(room.controllerSocketId);
   }
+  socketToPin.delete(room.hostSocketId);
   io.in(pin).socketsLeave(pin);
   rooms.delete(pin);
   console.log(`[server] Room ${pin} deleted — ${reason}`);
@@ -73,6 +76,7 @@ io.on('connection', (socket: Socket) => {
       createdAt: Date.now(),
       ttlTimer,
     });
+    socketToPin.set(socket.id, pin);
 
     socket.join(pin);
     console.log(`[server] Host ${socket.id} registered PIN ${pin}`);
@@ -88,6 +92,7 @@ io.on('connection', (socket: Socket) => {
     if (room.controllerSocketId) return ack({ success: false, error: 'Session already has a controller' });
 
     room.controllerSocketId = socket.id;
+    socketToPin.set(socket.id, pin);
     socket.join(pin);
 
     // Notify host
@@ -107,50 +112,59 @@ io.on('connection', (socket: Socket) => {
   socket.on('host:reject', (payload: { controllerId: string }) => {
     const { controllerId } = payload ?? {};
     io.to(controllerId).emit('host:rejected');
-    // Remove controller from room so another can join
-    for (const room of rooms.values()) {
-      if (room.controllerSocketId === controllerId) {
+    
+    // O(1) removal using socketToPin
+    const pin = socketToPin.get(controllerId);
+    if (pin) {
+      const room = rooms.get(pin);
+      if (room && room.controllerSocketId === controllerId) {
         room.controllerSocketId = null;
+        socketToPin.delete(controllerId);
       }
     }
+    
     console.log(`[server] Host rejected ${controllerId}`);
   });
 
   // ── WebRTC signal relay ─────────────────────────────────────────────────
   socket.on('webrtc:signal', (payload: { sender: string; signal: unknown }) => {
-    // Find the room this socket is in and relay to the other peer
-    for (const room of rooms.values()) {
-      if (room.hostSocketId === socket.id && room.controllerSocketId) {
-        io.to(room.controllerSocketId).emit('webrtc:signal', payload);
-        return;
-      }
-      if (room.controllerSocketId === socket.id) {
-        io.to(room.hostSocketId).emit('webrtc:signal', payload);
-        return;
-      }
+    const pin = socketToPin.get(socket.id);
+    if (!pin) return;
+    
+    const room = rooms.get(pin);
+    if (!room) return;
+
+    if (room.hostSocketId === socket.id && room.controllerSocketId) {
+      io.to(room.controllerSocketId).emit('webrtc:signal', payload);
+    } else if (room.controllerSocketId === socket.id) {
+      io.to(room.hostSocketId).emit('webrtc:signal', payload);
     }
   });
 
   // ── Disconnect cleanup ──────────────────────────────────────────────────
   socket.on('disconnect', () => {
     console.log(`[server] Disconnected: ${socket.id}`);
+    
+    const pin = socketToPin.get(socket.id);
+    if (!pin) return;
+    
+    const room = rooms.get(pin);
+    if (!room) return;
 
-    for (const [pin, room] of rooms.entries()) {
-      if (room.hostSocketId === socket.id) {
-        // Host left — kill the room, notify controller
-        if (room.controllerSocketId) {
-          io.to(room.controllerSocketId).emit('peer:disconnected');
-        }
-        deleteRoom(pin, 'Host disconnected');
-        return;
+    if (room.hostSocketId === socket.id) {
+      // Host left — kill the room, notify controller
+      if (room.controllerSocketId) {
+        io.to(room.controllerSocketId).emit('peer:disconnected');
+        socketToPin.delete(room.controllerSocketId);
       }
-      if (room.controllerSocketId === socket.id) {
-        // Controller left — notify host, keep room alive
-        room.controllerSocketId = null;
-        io.to(room.hostSocketId).emit('peer:disconnected');
-        console.log(`[server] Controller left room ${pin}`);
-        return;
-      }
+      socketToPin.delete(socket.id);
+      deleteRoom(pin, 'Host disconnected');
+    } else if (room.controllerSocketId === socket.id) {
+      // Controller left — notify host, keep room alive
+      room.controllerSocketId = null;
+      socketToPin.delete(socket.id);
+      io.to(room.hostSocketId).emit('peer:disconnected');
+      console.log(`[server] Controller left room ${pin}`);
     }
   });
 });

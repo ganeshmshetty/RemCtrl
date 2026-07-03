@@ -3,7 +3,6 @@
 ## 🔴 High Priority
 
 ## 🟡 Medium Priority (UX / Performance)
-- [ ] **Signaling Server Optimization**: `server/signaling.ts` has an O(n) room lookup on every signal. Needs refactoring to use a Map for O(1) lookups to scale properly.
 
 ## 🟢 Low Priority / Enhancements
 - [ ] **Stall Nudge UI**: Stall nudge messages from `stall-detector.ts` are currently only logged to the console. Surface these actionable hints in the UI for the Controller.
@@ -11,6 +10,7 @@
 ---
 
 ## ✅ Recently Completed
+- [x] **Signaling Server Optimization**: Eliminated all O(n) room iterations in the socket.io signaling server by introducing a `socketToPin` O(1) reverse lookup map.
 - [x] **Workflow Editor UX**: Implemented drag-and-drop workflow step reordering using `@dnd-kit` for a much smoother editing experience.
 - [x] **API Key Security**: Implemented Electron `safeStorage` to encrypt API keys before storing them in JSON, utilizing OS-level keychain encryption.
 - [x] **Local / Solo Mode**: Added ability to launch the browser and use Agent/Workflow panels without spinning up WebRTC or hosting.
