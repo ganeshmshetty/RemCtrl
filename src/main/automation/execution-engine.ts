@@ -192,7 +192,7 @@ export async function runAgent(
           pageState,
         );
 
-        if (nextStep.is_goal_achieved) {
+        if (nextStep.action === 'done') {
           log(onLog, 'info', `[Step ${stepCount}] Planner: goal achieved. ${nextStep.thought}`);
           goalAchieved = true;
           break;
@@ -200,6 +200,8 @@ export async function runAgent(
 
         log(onLog, 'info', `[Step ${stepCount}] Thought: ${nextStep.thought}`);
         log(onLog, 'info', `[Step ${stepCount}] Action: ${nextStep.action} "${nextStep.instruction}"`);
+
+        const isFinalAction = nextStep.is_goal_achieved;
 
         // Honour the IPC-level `action` on step 1 if the planner agrees;
         // otherwise defer to the planner's judgement for all subsequent steps.
@@ -222,7 +224,10 @@ export async function runAgent(
 
             if (parsed.openNewTab) {
               log(onLog, 'info', 'Opening a new tab...');
-              activePage = await localStagehand!.context.newPage();
+              const pagePromise = page.context().waitForEvent('page');
+              await activePage.evaluate("window.open('about:blank', '_blank'); null;");
+              await pagePromise;
+              activePage = (await localStagehand!.context.activePage())!;
               
               if (!parsed.navigationUrl && !parsed.remainingAction) {
                 subtaskResult = { success: true, newTab: true };
@@ -277,7 +282,10 @@ export async function runAgent(
                   return await invocation.result;
                 } else if (stepAction === 'new_tab') {
                   if (!parsed.openNewTab) {
-                    activePage = await localStagehand!.context.newPage();
+                    const pagePromise = page.context().waitForEvent('page');
+                    await currentActivePage.evaluate("window.open('about:blank', '_blank'); null;");
+                    await pagePromise;
+                    activePage = (await localStagehand!.context.activePage())!;
                   }
                   return { success: true };
                 } else if (stepAction === 'playwright_action') {
@@ -401,6 +409,12 @@ export async function runAgent(
           state: 'running',
           result: { step: stepCount, latestAction: nextStep.instruction },
         });
+
+        if (isFinalAction) {
+          log(onLog, 'info', `[Step ${stepCount}] Planner: goal achieved after executing final action.`);
+          goalAchieved = true;
+          break;
+        }
       } // end ReAct loop
 
       if (!goalAchieved && stepCount >= MAX_STEPS) {

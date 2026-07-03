@@ -89,7 +89,7 @@ export async function newTab(): Promise<void> {
     try {
       if (activePageEntry) {
         const pagePromise = context.waitForEvent('page');
-        await activePageEntry.page.evaluate("window.open('about:blank', '_blank')");
+        await activePageEntry.page.evaluate("window.open('about:blank', '_blank'); null;");
         await pagePromise;
       } else {
         const page = await context.newPage();
