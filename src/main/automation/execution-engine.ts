@@ -115,7 +115,7 @@ export async function runAgent(
 
   let localStagehand: Stagehand | null = null;
   let timeoutId: NodeJS.Timeout | undefined;
-  let cancelIntervalId: NodeJS.Timeout | undefined;
+
 
   try {
     // Start clock BEFORE init so slow cold-starts or connection hangs don't wedge us.
@@ -138,9 +138,8 @@ export async function runAgent(
     // dynamically inside the loop so new tabs are automatically tracked.
 
     const cancelPromise = new Promise<never>((_, reject) => {
-      cancelIntervalId = setInterval(() => {
-        if (session.isCancelled) reject(new Error('Cancelled by user'));
-      }, 200);
+      if (session.abortSignal.aborted) reject(session.abortSignal.reason);
+      session.abortSignal.addEventListener('abort', () => reject(session.abortSignal.reason));
     });
 
     // ── ReAct loop ────────────────────────────────────────────────────────────
@@ -455,9 +454,9 @@ export async function runAgent(
       log(onLog, 'error', `Pipeline failed: ${errInfo.message}`);
       onStatus({ commandId, state: 'failed', error: errInfo.message });
     }
+
   } finally {
     clearTimeout(timeoutId);
-    clearInterval(cancelIntervalId);
     activeSession = null;
     localStagehand = null;
   }

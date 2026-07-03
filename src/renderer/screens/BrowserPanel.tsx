@@ -7,7 +7,7 @@ import { ConnectionPlaceholder } from './ConnectionPlaceholder';
 import type { TabInfo, AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, AgentCheckpointPayload } from '../../shared/types';
 
 export function BrowserPanel() {
-  const { controllerState, hostState, error, pin } = useConnectionStore();
+  const { controllerState, hostState, error, pin, pendingControllerId } = useConnectionStore();
   const { isTakeoverActive } = useAgentStore();
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [urlInput, setUrlInput] = useState('');
@@ -217,14 +217,14 @@ export function BrowserPanel() {
   }
 
   function handleApprove() {
-    if (useConnectionStore.getState().pendingControllerId) {
-      window.RemoteCtrlAPI?.host.approveController(useConnectionStore.getState().pendingControllerId!);
+    if (pendingControllerId) {
+      window.RemoteCtrlAPI?.host.approveController(pendingControllerId);
     }
   }
 
   function handleReject() {
-    if (useConnectionStore.getState().pendingControllerId) {
-      window.RemoteCtrlAPI?.host.rejectController(useConnectionStore.getState().pendingControllerId!);
+    if (pendingControllerId) {
+      window.RemoteCtrlAPI?.host.rejectController(pendingControllerId);
     }
   }
 
@@ -320,7 +320,7 @@ export function BrowserPanel() {
               }}>
                 <div style={{ fontSize: '16px', fontWeight: 600 }}>Controller wants to connect</div>
                 <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                  {useConnectionStore.getState().pendingControllerId}
+                  {pendingControllerId}
                 </div>
                 <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
                   <button className="btn btn-danger" onClick={handleReject}>Reject</button>
@@ -359,8 +359,17 @@ export function BrowserPanel() {
             )}
           </>
         ) : (
-          <div className="browser-loading">
-            {error ?? 'Disconnected'}
+          <div className="browser-loading" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
+            <div>{error ?? 'Disconnected'}</div>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => {
+                useConnectionStore.getState().reset();
+                window.RemoteCtrlAPI?.host.stop();
+              }}
+            >
+              Return to Home
+            </button>
           </div>
         )}
       </div>

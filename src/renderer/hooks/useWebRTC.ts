@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { DataChannelMessage } from '../../shared/types';
 
-const ICE_SERVERS: RTCIceServer[] = []; // Empty array forces local host candidates only, bypassing DNS errors in local dev
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
 
 export type WebRTCStatus = 'idle' | 'launching' | 'capturing' | 'connecting' | 'streaming' | 'error';
 

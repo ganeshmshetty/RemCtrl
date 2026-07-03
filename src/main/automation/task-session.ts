@@ -14,6 +14,14 @@ export type TaskStatus = 'idle' | 'running' | 'paused' | 'cancelled';
 
 export class TaskSession {
   private _status: TaskStatus = 'idle';
+  private _abortController = new AbortController();
+  public initialGoal?: string;
+  public variables?: Record<string, string>;
+
+  constructor(options?: { initialGoal?: string; variables?: Record<string, string> }) {
+    this.initialGoal = options?.initialGoal;
+    this.variables = options?.variables;
+  }
 
   // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -21,11 +29,15 @@ export class TaskSession {
   get isPaused():    boolean { return this._status === 'paused'; }
   get isActive():    boolean { return this._status === 'running' || this._status === 'paused'; }
   get status():      TaskStatus { return this._status; }
+  get abortSignal(): AbortSignal { return this._abortController.signal; }
 
   // ─── Transitions ──────────────────────────────────────────────────────────
 
   start():  void { this._status = 'running'; }
-  cancel(): void { this._status = 'cancelled'; }
+  cancel(): void { 
+    this._status = 'cancelled';
+    this._abortController.abort(new Error('Cancelled by user'));
+  }
 
   pause(): void {
     if (this._status === 'running') this._status = 'paused';
