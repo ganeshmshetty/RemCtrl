@@ -223,6 +223,11 @@ export async function runAgent(
             if (parsed.openNewTab) {
               log(onLog, 'info', 'Opening a new tab...');
               activePage = await localStagehand!.context.newPage();
+              
+              if (!parsed.navigationUrl && !parsed.remainingAction) {
+                subtaskResult = { success: true, newTab: true };
+                break;
+              }
             }
 
             // ── 3. Navigate if a URL was detected ─────────────────────────────
@@ -270,6 +275,11 @@ export async function runAgent(
                 } else if (stepAction === 'invoke_mcp') {
                   const invocation = await (currentActivePage as any).invokeWebMCPTool(actionInstruction, {});
                   return await invocation.result;
+                } else if (stepAction === 'new_tab') {
+                  if (!parsed.openNewTab) {
+                    activePage = await localStagehand!.context.newPage();
+                  }
+                  return { success: true };
                 } else if (stepAction === 'playwright_action') {
                   if (typeof (currentActivePage as any).deepLocator === 'function') {
                     await (currentActivePage as any).deepLocator(actionInstruction).click();

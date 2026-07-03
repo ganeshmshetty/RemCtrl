@@ -85,11 +85,26 @@ Instead, you look at the Global Goal, your past actions (Scratchpad), and the Cu
 Then, you decide ONLY the very next logical step to take.
 
 Available actions:
-- act: Interact with the page (click, type, etc) or navigate to a URL.
-- observe: Look at the page elements without interacting.
-- extract: Extract structured data from the page.
+- act: Interact with the page. Use clear, single-step instructions with supported verbs: click (e.g., "click the login button"), fill (e.g., "fill the field with john"), type (e.g., "type test into search"), press (e.g., "press Enter in the search field"), scroll (e.g., "scroll to bottom"), or select (e.g., "select US from dropdown"). 
+- observe: Look at the page elements without interacting. Returns actionable structural data.
+- extract: Extract structured data from the page using Zod schemas.
+- clipboard_read: Read text from the system clipboard.
+- clipboard_write: Write text to the system clipboard (pass text as instruction).
+- invoke_mcp: Invoke an exposed WebMCP tool (pass tool name as instruction).
+- playwright_action: Use deepLocator for nested iframes/shadow DOMs (pass locator as instruction, e.g. "iframe#outer >> button").
+- new_tab: Open a new blank tab and make it active (no instruction needed).
 
-If the Global Goal is fully achieved, set is_goal_achieved to true. Otherwise, set it to false and provide the next step.
+CRITICAL PROMPTING RULES:
+1. OBSERVE BEFORE ACTING: When unsure of the exact layout, use 'observe' first to find the element (e.g. "find the primary call-to-action"). Once observed, feed the exact returned action structure into 'act'.
+2. SINGLE-STEP ACT(): NEVER chain multiple actions in a single act() command (No "type X and click Y"). Each act() must be a single discrete step. Identify elements by semantic meaning (e.g., "the checkout button"), not visual color.
+3. TARGETED EXTRACTION: If you need to extract links, you MUST specify that the field is a URL in your schema. Pass the targeted selector (found via observe) to extract() when possible to reduce token usage.
+4. SECURE VARIABLES: If the user provides sensitive data (passwords, API keys) in the state, DO NOT hardcode them into 'act'. Use variable placeholders like %password%.
+
+IMPORTANT RULES FOR GOAL COMPLETION:
+- ONLY set is_goal_achieved to true if the Global Goal is ALREADY completely satisfied by the past actions and the current page state, AND no further action is needed.
+- If you are providing an instruction to be executed right now (even if it is the final step), you MUST set is_goal_achieved to false.
+- When is_goal_achieved is true, the process stops immediately and your instruction is ignored.
+
 Respond with a JSON object.`;
 
 // ─── Task Planner Class (Static) ────────────────────────────────────────────
@@ -246,7 +261,7 @@ export function generatePlanId(): string {
 
 export interface DynamicStep {
   thought: string;
-  action: 'act' | 'observe' | 'extract';
+  action: 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action' | 'new_tab';
   instruction: string;
   is_goal_achieved: boolean;
 }
@@ -260,7 +275,7 @@ export class DynamicPlanner {
   async getNextStep(
     globalGoal: string,
     scratchpad: string[],
-    currentPageState: { url: string; title: string; elementCount: number }
+    currentPageState: { url: string; title: string; elementCount: number; webMCPTools?: any[] }
   ): Promise<DynamicStep> {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
@@ -269,7 +284,7 @@ export class DynamicPlanner {
 
     const StepSchema = z.object({
       thought: z.string().describe('Your reasoning for what to do next based on the goal, history, and current page.'),
-      action: z.enum(['act', 'observe', 'extract']),
+      action: z.enum(['act', 'observe', 'extract', 'clipboard_read', 'clipboard_write', 'invoke_mcp', 'playwright_action', 'new_tab']),
       instruction: z.string().describe('The plain English instruction for the action (e.g. "click the login button"). Leave empty if goal is achieved.'),
       is_goal_achieved: z.boolean().describe('True if the global goal has been fully satisfied.'),
     });
@@ -284,6 +299,7 @@ Current Page State:
 URL: ${currentPageState.url}
 Title: ${currentPageState.title}
 Elements: ${currentPageState.elementCount}
+WebMCP Tools Available: ${currentPageState.webMCPTools?.length ? JSON.stringify(currentPageState.webMCPTools) : 'None'}
 
 What is the very next logical step?`;
 
