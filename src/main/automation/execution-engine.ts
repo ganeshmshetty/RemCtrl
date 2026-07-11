@@ -120,6 +120,11 @@ export async function runAgent(
       session.abortSignal.addEventListener('abort', () => reject(session.abortSignal.reason));
     });
 
+    const guardedStatus = (payload: AgentStatusPayload) => {
+      if (session.isCancelled && payload.state === 'running') return;
+      onStatus(payload);
+    };
+
     const runLoop = async () => {
       return await runToolLoop({
         commandId,
@@ -129,7 +134,7 @@ export async function runAgent(
         session,
         model: resolveModel(provider, apiKey),
         maxSteps: MAX_STEPS,
-        onStatus,
+        onStatus: guardedStatus,
         onLog,
       });
     };

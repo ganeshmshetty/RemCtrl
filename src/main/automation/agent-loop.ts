@@ -82,9 +82,14 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     onLog,
   } = opts;
 
-  const tools = createBrowserTools(page);
-  const stallDetector = new StallDetector();
   const actions: string[] = [];
+  const tools = createBrowserTools(page, () => ({
+    taskId: commandId,
+    step: actions.length + 1,
+    taskProgress: `Step ${actions.length + 1} of agent run`,
+    abortSignal: session.abortSignal,
+  }));
+  const stallDetector = new StallDetector();
   let goalAchieved = false;
   let finalMessage: string | undefined;
 
@@ -100,10 +105,11 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     prompt: instruction,
     tools,
     toolChoice: 'auto',
-    stopWhen: stepCountIs(maxSteps),
+    stopWhen: ({ stepCount }) => session.isCancelled || stepCount >= maxSteps,
     abortSignal: session.abortSignal,
 
     onStepFinish: async (event) => {
+      if (session.isCancelled) return;
       const stepNum = actions.length + 1;
       const hasDone = event.toolCalls?.some((tc: any) => tc.toolName === 'done');
 
@@ -120,6 +126,8 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
         onLog({ level: 'info', message: cleanSummary });
         actions.push(cleanSummary);
 
+        stallDetector.recordAction(tc.toolName, JSON.stringify(input));
+
         if (tc.toolName === 'done' && input.taskComplete) {
           goalAchieved = true;
           finalMessage = input.message;
@@ -131,6 +139,12 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
           stallDetector.recordFingerprint(await createPageFingerprint(page as any));
         } catch {
           // page may have navigated
+        }
+
+        const stall = stallDetector.isStuck();
+        if (stall.stuck) {
+          const nudge = stallDetector.getLoopNudgeMessage();
+          onLog({ level: 'warning', message: nudge });
         }
       }
 

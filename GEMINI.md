@@ -78,7 +78,9 @@ npm run build
 
 - Renderer never accesses Node APIs directly — only through `window.RemoteCtrlAPI`
 - All IPC payloads validated with Zod in main process before use
-- API keys stored in `~/.config/RemoteCtrl/api-keys.json` (never in renderer state)
-- Workflows stored in `~/.config/RemoteCtrl/workflows.json`
-- Settings stored in `~/.config/RemoteCtrl/settings.json`
-- Custom Chrome profiles stored under `~/.config/RemoteCtrl/browser-profiles/`
+- Configuration, workflows, and encrypted API keys are stored in the Electron user data directory (`app.getPath('userData')`):
+  - macOS: `~/Library/Application Support/RemoteCtrl/`
+  - Windows: `%APPDATA%\RemoteCtrl\`
+  - Linux: `~/.config/RemoteCtrl/`
+- API keys are securely encrypted on disk using Electron's `safeStorage` API
+- Custom Chrome profiles are stored under `[userData]/browser-profiles/`

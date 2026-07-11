@@ -57,7 +57,7 @@ const ESCALATING_NUDGES = [
       '- Use search to find what you need',
   },
   {
-    threshold: 8,
+    threshold: 9,
     severity: 2,
     message:
       'WARNING: You are stuck in a loop and have been repeating actions. You MUST change your approach:\n' +
@@ -146,7 +146,7 @@ export class StallDetector {
 
       if (actionRepetitions >= this.config.maxRepeatedActions) {
         if (isNewObservation) this.totalRepetitions += actionRepetitions;
-        const severity = this.getSeverity(actionRepetitions);
+        const severity = Math.max(1, this.getSeverity(actionRepetitions));
         return {
           stuck: true,
           reason: `Same action repeated ${actionRepetitions} times`,
@@ -162,7 +162,7 @@ export class StallDetector {
           return {
             stuck: true,
             reason: 'Detected action cycle (alternating between two actions)',
-            severity: this.getSeverity(this.totalRepetitions),
+            severity: Math.max(1, this.getSeverity(this.totalRepetitions)),
           };
         }
       }
@@ -179,7 +179,7 @@ export class StallDetector {
           return {
             stuck: true,
             reason: 'Detected 3-step action cycle',
-            severity: this.getSeverity(this.totalRepetitions),
+            severity: Math.max(1, this.getSeverity(this.totalRepetitions)),
           };
         }
       }
@@ -194,7 +194,7 @@ export class StallDetector {
         return {
           stuck: true,
           reason: `Page state unchanged for ${fpRepetitions} steps`,
-          severity: this.getSeverity(fpRepetitions),
+          severity: Math.max(1, this.getSeverity(fpRepetitions)),
         };
       }
 
@@ -205,7 +205,7 @@ export class StallDetector {
         return {
           stuck: true,
           reason: `Page appears stagnant for ${stagnantCount} consecutive steps (same URL and element structure)`,
-          severity: this.getSeverity(stagnantCount),
+          severity: Math.max(1, this.getSeverity(stagnantCount)),
         };
       }
 
@@ -341,7 +341,7 @@ export class StallDetector {
    */
   private getSeverity(repetitions: number): number {
     if (repetitions >= 12) return 3;
-    if (repetitions >= 8) return 2;
+    if (repetitions >= 9) return 2;
     if (repetitions >= 5) return 1;
     return 0;
   }

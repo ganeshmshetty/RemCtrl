@@ -42,14 +42,14 @@ const CURSOR_INIT_SCRIPT = `(() => {
         el.style.position = 'fixed';
         el.style.left = '40px';
         el.style.top = '40px';
-        el.style.width = '20px';
-        el.style.height = '28px';
+        el.style.width = '24px';
+        el.style.height = '24px';
         el.style.zIndex = '2147483647';
         el.style.pointerEvents = 'none';
         el.style.userSelect = 'none';
         el.style.transition = 'left 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)';
         el.style.willChange = 'left, top';
-        el.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="28" viewBox="0 0 20 28"><path d="M1.5 1.5 L1.5 24 L7.5 16 L17.5 16 Z" fill="#6366f1" stroke="white" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+        el.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4 3 L4 19.5 C4 20.2 4.8 20.6 5.3 20.1 L9.8 15.6 C10.1 15.3 10.5 15.1 10.9 15.1 L18.5 15.1 C19.2 15.1 19.6 14.3 19.1 13.8 L5.4 3.3 C4.9 2.9 4 3.3 4 3 Z" fill="#6366f1" stroke="white" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>';
         root.appendChild(el);
       }
       state.el = el;

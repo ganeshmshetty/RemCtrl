@@ -11,8 +11,12 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { Page } from 'playwright';
 import { ensureCursorOverlay, moveCursorToLocator } from './cursor-overlay.js';
+import { ask } from './human-checkpoint.js';
 
-export function createBrowserTools(page: Page) {
+export function createBrowserTools(
+  page: Page,
+  contextGetter?: () => { taskId: string; step: number; taskProgress: string; abortSignal?: AbortSignal }
+) {
   return {
     goto: tool({
       description: 'Navigate to a URL',
@@ -277,6 +281,38 @@ export function createBrowserTools(page: Page) {
         await new Promise((r) => setTimeout(r, ms));
         return { success: true };
       },
+    }),
+
+    askUser: tool({
+      description:
+        'Pause execution and ask the user for help when you run into a CAPTCHA, a 2FA OTP prompt, need target preferences, or encounter a roadblock you cannot bypass on your own. Describe the situation clearly and offer options for the user to choose from.',
+      inputSchema: z.object({
+        question: z.string().describe('Explain the situation and what you need the user to do (e.g. "I encountered a CAPTCHA, please solve it on screen" or "Please enter the 2FA OTP sent to your phone").'),
+        options: z.array(z.object({
+          id: z.string().describe('Short machine-readable identifier for the option, e.g. "solved" or "option_a"'),
+          label: z.string().describe('Human-readable button label, e.g. "I solved the CAPTCHA!" or "Select Option A"')
+        })).min(1).describe('The list of choices/actions you want to present to the user.')
+      }),
+      execute: async ({ question, options }) => {
+        if (!contextGetter) {
+          throw new Error('Human checkpoint is not available in this context.');
+        }
+        const ctx = contextGetter();
+        const selectedOptionId = await ask(
+          ctx.taskId,
+          ctx.step,
+          question,
+          options,
+          {
+            currentPage: page.url(),
+            taskProgress: ctx.taskProgress,
+            uncertainty: question
+          },
+          10 * 60 * 1000,
+          ctx.abortSignal
+        );
+        return { success: true, selectedOptionId };
+      }
     }),
 
     think: tool({

@@ -49,8 +49,13 @@ export async function ask(
   options: CheckpointOption[],
   context: AgentCheckpointPayload['context'],
   timeoutMs = 10 * 60 * 1000,
+  abortSignal?: AbortSignal,
 ): Promise<string> {
   const checkpointId = generateCheckpointId();
+
+  if (abortSignal?.aborted) {
+    throw new Error(`Checkpoint ${checkpointId} cancelled`);
+  }
 
   const payload: AgentCheckpointPayload = {
     checkpointId,
@@ -66,28 +71,47 @@ export async function ask(
   });
 
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
+    const cleanup = () => {
+      clearTimeout(timeout);
       globalCheckpointCallbacks.delete(checkpointId);
+      if (abortSignal) {
+        abortSignal.removeEventListener('abort', onAbort);
+      }
+    };
+
+    const onAbort = () => {
+      cleanup();
+      reject(abortSignal?.reason || new Error(`Checkpoint ${checkpointId} cancelled`));
+    };
+
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', onAbort);
+    }
+
+    const timeout = setTimeout(() => {
+      cleanup();
       reject(new Error(`Checkpoint ${checkpointId} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     globalCheckpointCallbacks.set(checkpointId, (response: CheckpointResponse) => {
       if (response.selectedOptionId === '__CANCELLED__') {
-        clearTimeout(timeout);
-        globalCheckpointCallbacks.delete(checkpointId);
+        cleanup();
         reject(new Error(`Checkpoint ${checkpointId} cancelled`));
         return;
       }
 
       const validIds = options.map((o) => o.id);
       if (!validIds.includes(response.selectedOptionId)) {
-        throw new Error(
-          `Invalid option ID "${response.selectedOptionId}". Valid: ${validIds.join(', ')}`,
+        cleanup();
+        reject(
+          new Error(
+            `Invalid option ID "${response.selectedOptionId}". Valid: ${validIds.join(', ')}`,
+          ),
         );
+        return;
       }
 
-      clearTimeout(timeout);
-      globalCheckpointCallbacks.delete(checkpointId);
+      cleanup();
       resolve(response.selectedOptionId);
     });
   });
