@@ -14,7 +14,13 @@ import {
 } from '../automation/index.js';
 import type { AgentWorkflowBatchPayload } from '../../shared/types.js';
 
-export function registerAgentIpc(win: BrowserWindow) {
+function broadcast(channel: string, ...args: any[]) {
+  BrowserWindow.getAllWindows().forEach((w) => {
+    if (!w.isDestroyed()) w.webContents.send(channel, ...args);
+  });
+}
+
+export function registerAgentIpc(_win: BrowserWindow) {
   ipcMain.handle('browser:startAgent', async (_e, rawPayload: unknown) => {
     if (isWorkflowRunning()) {
       return { ok: false, error: 'A workflow is already running.' };
@@ -32,7 +38,8 @@ export function registerAgentIpc(win: BrowserWindow) {
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
 
-    if (!apiKey) {
+    // Vertex AI uses Application Default Credentials — no API key required
+    if (!apiKey && provider !== 'vertex') {
       return { ok: false, error: `No API key set for provider: ${provider}` };
     }
 
@@ -43,8 +50,8 @@ export function registerAgentIpc(win: BrowserWindow) {
         payload.instruction,
         apiKey,
         provider,
-        (status) => { if (!win.isDestroyed()) win.webContents.send('agent:status', status); },
-        (log) => { if (!win.isDestroyed()) win.webContents.send('agent:log', log); },
+        (status) => broadcast('agent:status', status),
+        (log) => broadcast('agent:log', log),
         payload.variables,
       );
       return { ok: true };
@@ -92,9 +99,9 @@ export function registerAgentIpc(win: BrowserWindow) {
 
     runWorkflow(
       batch,
-      (status) => { if (!win.isDestroyed()) win.webContents.send('workflow:runStatus', status); },
-      (stepStatus) => { if (!win.isDestroyed()) win.webContents.send('workflow:stepStatus', stepStatus); },
-      (log) => { if (!win.isDestroyed()) win.webContents.send('agent:log', log); },
+      (status) => broadcast('workflow:runStatus', status),
+      (stepStatus) => broadcast('workflow:stepStatus', stepStatus),
+      (log) => broadcast('agent:log', log),
     ).catch((err) => {
       console.error('[workflow] Unexpected error:', err);
     });

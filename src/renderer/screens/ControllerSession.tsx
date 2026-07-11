@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';
 import { WorkflowEditorModal } from './WorkflowEditorModal';
+import { useConnectionStore } from '../stores/useConnectionStore';
 
 export function ControllerSession() {
+  const { role } = useConnectionStore();
   const [rightPanelWidth, setRightPanelWidth] = useState(380);
   const isResizing = useRef(false);
 
   useEffect(() => {
+    if (role === 'idle') return;
     function handlePointerMove(e: PointerEvent) {
       if (!isResizing.current) return;
       const newWidth = document.body.clientWidth - e.clientX;
@@ -26,30 +29,37 @@ export function ControllerSession() {
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      isResizing.current = false;
+      document.body.style.cursor = '';
     };
-  }, []);
+  }, [role]);
 
   return (
     <>
       <BrowserPanel />
 
-      <div 
-        className="drag-handle-vertical"
-        onPointerDown={(e) => {
-          isResizing.current = true;
-          document.body.style.cursor = 'col-resize';
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }}
-        onPointerUp={(e) => {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }}
-      />
+      {role !== 'idle' && (
+        <>
+          <div 
+            className="drag-handle-vertical"
+            onPointerDown={(e) => {
+              isResizing.current = true;
+              document.body.style.cursor = 'col-resize';
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerUp={(e) => {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }}
+          />
 
-      <div style={{ width: rightPanelWidth, height: '100%', flexShrink: 0 }}>
-        <RightPanelLayout />
-      </div>
+          <div style={{ width: rightPanelWidth, height: '100%', flexShrink: 0 }}>
+            <RightPanelLayout />
+          </div>
+        </>
+      )}
 
       <WorkflowEditorModal />
     </>
   );
 }
+

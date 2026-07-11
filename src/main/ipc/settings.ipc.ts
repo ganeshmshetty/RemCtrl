@@ -6,6 +6,7 @@ import {
   BrowserModeSchema,
   SetCustomBaseUrlSchema,
   SetThemeSchema,
+  SetGlobalShortcutSchema,
 } from '../../shared/schemas.js';
 import {
   hasApiKey,
@@ -29,6 +30,8 @@ import {
   setUseVisionCUA,
   getTheme,
   setTheme,
+  getGlobalShortcut,
+  setGlobalShortcut,
 } from '../storage.js';
 
 export function registerSettingsIpc() {
@@ -69,7 +72,8 @@ export function registerSettingsIpc() {
     
     let url = '';
     const key = getApiKey(provider as any);
-    if (!key && provider !== 'openrouter') return []; 
+    // Vertex uses ADC — no API key needed, but let it fall through to the switch
+    if (!key && provider !== 'openrouter' && provider !== 'vertex') return [];
     
     let headers: Record<string, string> = {};
     if (key) {
@@ -94,6 +98,17 @@ export function registerSettingsIpc() {
         headers['HTTP-Referer'] = 'https://github.com/ganeshmshetty/RemCtrl';
         headers['X-Title'] = 'RemoteCtrl';
         break;
+      case 'vertex':
+        // Vertex AI uses ADC — no fetchable list endpoint. Return well-known models.
+        return [
+          'gemini-3.5-flash',
+          'gemini-2.5-pro',
+          'gemini-2.5-flash',
+          'gemini-2.5-flash-lite',
+          'gemini-2.0-flash-001',
+          'gemini-1.5-pro-002',
+          'gemini-1.5-flash-002',
+        ];
       default:
         return [];
     }
@@ -169,6 +184,13 @@ export function registerSettingsIpc() {
   ipcMain.handle('settings:setTheme', async (_e, theme: unknown) => {
     const parsed = SetThemeSchema.parse({ theme });
     setTheme(parsed.theme);
+  });
+
+  ipcMain.handle('settings:getGlobalShortcut', async () => getGlobalShortcut());
+
+  ipcMain.handle('settings:setGlobalShortcut', async (_e, shortcut: unknown) => {
+    const parsed = SetGlobalShortcutSchema.parse({ shortcut });
+    setGlobalShortcut(parsed.shortcut.trim());
   });
 
   ipcMain.handle('app:getDiagnostics', async () => {

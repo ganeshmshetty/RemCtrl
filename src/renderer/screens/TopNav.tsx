@@ -3,7 +3,7 @@ import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 
 export function TopNav() {
-  const { hostState, controllerState, pin, reset } = useConnectionStore();
+  const { role, hostState, controllerState, pin, reset } = useConnectionStore();
   const { openSettings } = useUIStore();
 
   const isConnected = 
@@ -17,6 +17,9 @@ export function TopNav() {
 
   function handleDisconnect() {
     if (window.RemoteCtrlAPI) {
+      if (role === 'local') {
+        window.RemoteCtrlAPI.browser.close();
+      }
       if (hostState !== 'IDLE') {
         window.RemoteCtrlAPI.host.stop();
       }
@@ -36,7 +39,27 @@ export function TopNav() {
       <div className="top-nav-left drag-region">
       </div>
       <div className="top-nav-right no-drag">
-        {isConnected ? (
+        {role === 'local' ? (
+          <div className="connection-pill">
+            <div className="connection-pill-dot connected"></div>
+            <span style={{ fontWeight: 500 }}>Local Session</span>
+            <button
+              className="disconnect-btn"
+              style={{ background: 'var(--accent)', borderColor: 'var(--accent)' }}
+              onClick={() => window.RemoteCtrlAPI?.app.showMiniWindow(true)}
+              title="Switch to Mini Prompt Window"
+            >
+              Mini Window ↗
+            </button>
+            <button 
+              className="disconnect-btn"
+              onClick={handleDisconnect}
+              title="Stop Local Session"
+            >
+              Stop
+            </button>
+          </div>
+        ) : isConnected ? (
           <div className="connection-pill">
             <div className="connection-pill-dot connected"></div>
             <span style={{ fontFamily: 'var(--font-mono)' }}>{pin}</span>
@@ -61,3 +84,4 @@ export function TopNav() {
     </div>
   );
 }
+

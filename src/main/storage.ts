@@ -15,6 +15,7 @@ const WORKFLOWS_FILE = path.join(USER_DATA, 'workflows.json');
 const API_KEYS_FILE = path.join(USER_DATA, 'api-keys.json');
 const MODELS_FILE = path.join(USER_DATA, 'models.json');
 export const STAGEHAND_CACHE_DIR = path.join(USER_DATA, 'stagehand-cache');
+export const BROWSER_PROFILE_DIR = path.join(USER_DATA, 'browser-profile');
 
 function ensureDir(filePath: string) {
   const dir = path.dirname(filePath);
@@ -135,6 +136,24 @@ export function getTheme(): AppTheme {
 export function setTheme(theme: AppTheme) {
   const s = loadSettings();
   saveSettings({ ...s, theme });
+}
+
+export function isProfileInitialized(): boolean {
+  return loadSettings().profileInitialized;
+}
+
+export function markProfileInitialized() {
+  const s = loadSettings();
+  saveSettings({ ...s, profileInitialized: true });
+}
+
+export function getGlobalShortcut(): string {
+  return loadSettings().globalShortcut;
+}
+
+export function setGlobalShortcut(shortcut: string) {
+  const s = loadSettings();
+  saveSettings({ ...s, globalShortcut: shortcut });
 }
 
 // ─── Models Storage ─────────────────────────────────────────────────────────

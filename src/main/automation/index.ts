@@ -2,8 +2,8 @@
  * Automation Orchestrator — Deep module seam for browser automation
  *
  * Encapsulates:
- * - Singleton Stagehand CDP pooling and lifecycle (stagehand-pool)
- * - Unified ReAct agent pipeline via ExecutionEngine (replaces agent-executor + agent-runner)
+ * - Direct Playwright CDP pooling and lifecycle (browser-pool)
+ * - Unified ReAct agent pipeline via ExecutionEngine
  * - Linear and jump-based workflow recipe execution
  * - Human-in-the-loop checkpoint management
  */
@@ -11,7 +11,7 @@
 import { runAgent, cancelAgent, isAgentRunning, setAgentPaused } from './execution-engine.js';
 import { runWorkflow, cancelWorkflow, isWorkflowRunning, setWorkflowPaused } from './workflow-executor.js';
 import { submitCheckpointResponse } from './human-checkpoint.js';
-import { closeStagehand } from './stagehand-pool.js';
+import { closeBrowser } from './browser-pool.js';
 
 export {
   runAgent,
@@ -23,7 +23,8 @@ export {
   isWorkflowRunning,
   setWorkflowPaused,
   submitCheckpointResponse,
-  closeStagehand,
+  closeBrowser as closeStagehand,
+  closeBrowser,
 };
 
 export interface AutomationOrchestrator {
@@ -52,6 +53,6 @@ export const automationOrchestrator: AutomationOrchestrator = {
     if (isWorkflowRunning()) cancelWorkflow();
   },
   async closePool(): Promise<void> {
-    await closeStagehand();
+    await closeBrowser();
   },
 };

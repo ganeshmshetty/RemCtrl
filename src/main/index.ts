@@ -4,12 +4,18 @@ import {
   shell,
   nativeTheme,
   Menu,
+  Tray,
+  nativeImage,
+  globalShortcut,
+  ipcMain,
 } from 'electron';
-// import { autoUpdater } from 'electron-updater';
+// import { autoUpdater } from 'electron-updater';\
 import path from 'path';
 import { setMainWindow } from './ipc-handlers.js';
-import { closeBrowser } from './browser-manager.js';
+import { closeBrowser, launchBrowser, isBrowserRunning } from './browser-manager.js';
 import { automationOrchestrator } from './automation/index.js';
+import { getGlobalShortcut, isProfileInitialized } from './storage.js';
+import { startExtensionBridgeServer, stopExtensionBridgeServer } from './ext-server.js';
 
 // __dirname is available natively in CJS (esbuild target: cjs)
 
@@ -20,6 +26,140 @@ const isDev = process.env.NODE_ENV === 'development';
 let devClientPort = 5173;
 
 let mainWindow: BrowserWindow | null = null;
+let miniWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+// ── Tray ──────────────────────────────────────────────────────────────────────
+function createTray() {
+  // Create a minimal 16x16 monochrome icon in memory using raw PNG data.
+  // In production, replace with a proper .ico / .png asset from your resources dir.
+  const iconPath = isDev
+    ? path.join(__dirname, '../../resources/tray-icon.png')
+    : path.join(process.resourcesPath, 'tray-icon.png');
+
+  let icon: Electron.NativeImage;
+  try {
+    icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) throw new Error('empty');
+  } catch {
+    // Fallback: create a tiny transparent 16x16 icon from a minimal PNG buffer
+    icon = nativeImage.createEmpty();
+  }
+
+  // On macOS, mark as template so it adapts to dark/light menu bar
+  if (process.platform === 'darwin') {
+    icon = icon.resize({ width: 16, height: 16 });
+    icon.setTemplateImage(true);
+  }
+
+  tray = new Tray(icon);
+  tray.setToolTip('RemoteCtrl');
+  updateTrayMenu();
+
+  tray.on('click', () => {
+    showWindow();
+  });
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open RemoteCtrl',
+      click: () => showWindow(),
+    },
+    {
+      label: 'Start Local Session',
+      click: async () => {
+        showWindow();
+        mainWindow?.webContents.send('app:startLocalSession');
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(contextMenu);
+}
+
+function showWindow() {
+  if (!mainWindow) {
+    const win = createWindow();
+    setMainWindow(win);
+  } else if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  } else if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+  mainWindow?.focus();
+}
+
+function getOrCreateMiniWindow() {
+  if (miniWindow && !miniWindow.isDestroyed()) return miniWindow;
+
+  miniWindow = new BrowserWindow({
+    width: 440,
+    height: 320,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    backgroundColor: '#141415',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      webSecurity: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+  });
+
+  if (isDev) {
+    miniWindow.loadURL(`http://localhost:${devClientPort}/?mini=true`);
+  } else {
+    miniWindow.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { 'mini': 'true' } });
+  }
+
+  miniWindow.on('closed', () => {
+    miniWindow = null;
+  });
+
+  return miniWindow;
+}
+
+function toggleMiniWindow() {
+  const win = getOrCreateMiniWindow();
+  if (win.isVisible()) {
+    win.hide();
+  } else {
+    win.show();
+    win.focus();
+    win.webContents.send('app:globalShortcut');
+  }
+}
+
+// ── Global Shortcut ───────────────────────────────────────────────────────────
+function registerGlobalShortcut() {
+  const shortcut = getGlobalShortcut();
+  try {
+    const ok = globalShortcut.register(shortcut, () => {
+      toggleMiniWindow();
+    });
+    if (ok) {
+      console.log(`[shortcut] Registered global shortcut: ${shortcut}`);
+    } else {
+      console.warn(`[shortcut] Failed to register global shortcut: ${shortcut} (may be taken by another app)`);
+    }
+  } catch (err) {
+    console.error('[shortcut] Error registering global shortcut:', err);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -58,6 +198,14 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  // On macOS: hide to tray when window is closed (instead of quitting)
+  mainWindow.on('close', (e) => {
+    if (process.platform === 'darwin' && !isQuitting) {
+      e.preventDefault();
+      mainWindow?.hide();
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -167,24 +315,55 @@ if (isDev) {
   } else {
     app.on('second-instance', () => {
       // Focus existing window if a second production instance tries to launch
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-      }
+      showWindow();
     });
   }
 }
 
-app.whenReady().then(() => {
+
+app.whenReady().then(async () => {
   createMenu();
   const win = createWindow();
   setMainWindow(win);
 
+  // Set up tray icon
+  createTray();
+
+  // Register global keyboard shortcut (Cmd+Shift+Space by default)
+  registerGlobalShortcut();
+
+  // Start WebSocket bridge server for Phase E Chrome Extension
+  startExtensionBridgeServer(45456);
+
+  // Pre-warm browser in background if profile is already initialized (skips first-launch onboarding)
+  if (!isDev && isProfileInitialized() && !isBrowserRunning()) {
+    launchBrowser('about:blank').catch((err) => {
+      console.warn('[preload] Browser pre-warm failed (non-fatal):', err);
+    });
+  }
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      const newWin = createWindow();
-      setMainWindow(newWin);
+    // macOS: re-show window when dock icon is clicked
+    showWindow();
+  });
+
+  ipcMain.handle('app:showMainWindow', () => {
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.hide();
+    showWindow();
+  });
+
+  ipcMain.handle('app:hideMiniWindow', () => {
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.hide();
+  });
+
+  ipcMain.handle('app:showMiniWindow', (_e, hideMain?: boolean) => {
+    if (hideMain && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide();
     }
+    const win = getOrCreateMiniWindow();
+    win.show();
+    win.focus();
+    win.webContents.send('app:globalShortcut');
   });
 
   // ── Auto Updater configuration (Commented out until Code Signing is setup) ──
@@ -236,14 +415,19 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // On macOS: keep app alive in tray even with no windows open
   if (process.platform !== 'darwin') {
     app.quit();
   }
+  // On macOS: do nothing — tray keeps us alive
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Cancel any running agent/workflow and close the Playwright browser before quitting.
 app.on('before-quit', async () => {
+  isQuitting = true;
+  stopExtensionBridgeServer();
+  globalShortcut.unregisterAll();
   automationOrchestrator.cancelActiveTask();
   await automationOrchestrator.closePool().catch(() => { });
   await closeBrowser().catch(() => { });
@@ -258,5 +442,3 @@ app.on('web-contents-created', (_event, contents) => {
     }
   });
 });
-
-// mainWindow exported for use in other modules if needed

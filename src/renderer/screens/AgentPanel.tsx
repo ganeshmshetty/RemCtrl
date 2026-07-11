@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2 } from 'lucide-react';
+import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2 } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
@@ -13,11 +13,12 @@ export function AgentPanel() {
     agentStatus, currentAction
   } = useAgentStore();
   
-  const { controllerState, hostState, sendData } = useConnectionStore();
+  const { role, controllerState, hostState, sendData } = useConnectionStore();
   const [prompt, setPrompt] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   
   const isConnected = 
+    role === 'local' ||
     hostState === 'SESSION_ACTIVE' || 
     hostState === 'AGENT_EXECUTING' || 
     hostState === 'HUMAN_TAKEOVER' ||
@@ -52,7 +53,7 @@ export function AgentPanel() {
         id: commandId,
         payload,
       }, true);
-    } else if (hostState !== 'IDLE') {
+    } else if (hostState !== 'IDLE' || role === 'local') {
       window.RemoteCtrlAPI?.browser.startAgent(payload);
     }
 
@@ -62,7 +63,7 @@ export function AgentPanel() {
   function handleCancelAgent() {
     if (controllerState !== 'IDLE' && sendData) {
       sendData({ type: 'AGENT_PROMPT', version: '1.0', timestamp: Date.now(), payload: { commandId: '__cancel__', action: 'act', instruction: '' } }, true);
-    } else if (hostState !== 'IDLE') {
+    } else if (hostState !== 'IDLE' || role === 'local') {
       window.RemoteCtrlAPI?.browser.cancelAgent();
     }
   }
@@ -75,7 +76,7 @@ export function AgentPanel() {
         timestamp: Date.now(),
         payload: { checkpointId, response: { selectedOptionId } },
       }, true);
-    } else if (hostState !== 'IDLE') {
+    } else if (hostState !== 'IDLE' || role === 'local') {
       window.RemoteCtrlAPI?.browser.submitCheckpoint(checkpointId, { selectedOptionId });
     }
   }
@@ -123,8 +124,23 @@ export function AgentPanel() {
         ))}
         
         {agentStatus === 'running' && (
-          <div className="agent-executing-status">
-            <Loader2 className="animate-spin" size={14} />
+          <div
+            className="agent-executing-status"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              background: 'var(--accent-glow)',
+              border: '1px solid var(--accent)',
+              borderRadius: 'var(--radius)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 500,
+              margin: '8px 0',
+            }}
+          >
+            <Loader2 className="animate-spin" size={14} style={{ color: 'var(--accent)' }} />
             <span>{currentAction || 'Executing task...'}</span>
           </div>
         )}
@@ -255,13 +271,48 @@ function ChatBubble({
     );
   }
 
-  // Log message (subtle, monospace)
+  // Log message (clean step pill)
   if (msg.type === 'log') {
+    const isNav = msg.text.startsWith('Navigating');
+    const isAct = msg.text.startsWith('Action:');
+    const isObs = msg.text.startsWith('Observing');
+    const isExt = msg.text.startsWith('Extracting');
+    const isDone = msg.text.startsWith('Completing');
+
+    const icon = isNav ? (
+      <Globe size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+    ) : isAct ? (
+      <MousePointer size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+    ) : isObs ? (
+      <Eye size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+    ) : isExt ? (
+      <FileText size={13} style={{ color: '#a855f7', flexShrink: 0 }} />
+    ) : isDone ? (
+      <CheckCircle2 size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+    ) : (
+      <Bot size={13} style={{ opacity: 0.6, flexShrink: 0 }} />
+    );
+
     return (
       <div className="agent-msg">
-        <div className="agent-msg-log">
-          <Bot size={12} style={{ flexShrink: 0, opacity: 0.5 }} />
-          <span>{msg.text}</span>
+        <div
+          className="agent-msg-step-pill"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 12px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 12,
+            color: 'var(--text-primary)',
+          }}
+        >
+          {icon}
+          <span style={{ fontFamily: 'var(--font-sans)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {msg.text}
+          </span>
         </div>
       </div>
     );

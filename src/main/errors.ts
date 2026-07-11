@@ -51,6 +51,13 @@ export class StagehandConnectionError extends AgentExecutionError {
   }
 }
 
+export class BrowserConnectionError extends AgentExecutionError {
+  constructor(message: string) {
+    super('BROWSER_CONNECTION', `Failed to connect to browser CDP: ${message}`, true);
+    this.name = 'BrowserConnectionError';
+  }
+}
+
 export class BrowserNotReadyError extends AgentExecutionError {
   constructor(message = 'Browser is not ready') {
     super('BROWSER_NOT_READY', message, false);

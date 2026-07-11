@@ -3,17 +3,59 @@ import { ChevronLeft, ChevronRight, RotateCw, X, Plus, Loader2, Copy, Check } fr
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useControllerWebRTC, useHostWebRTC } from '../hooks/useWebRTC';
-import { ConnectionPlaceholder } from './ConnectionPlaceholder';
 import type { TabInfo, AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, AgentCheckpointPayload } from '../../shared/types';
 
+function useLocalScreencast(isLocal: boolean) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!isLocal || !window.RemoteCtrlAPI) return;
+
+    let seq = 0;
+    let latestDrawnSeq = 0;
+
+    const cleanup = window.RemoteCtrlAPI.on.screencastFrame((frameData: Uint8Array) => {
+      const frameSeq = ++seq;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const blob = new Blob([frameData as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' });
+      createImageBitmap(blob)
+        .then((bitmap) => {
+          if (frameSeq < latestDrawnSeq) {
+            bitmap.close();
+            return;
+          }
+          latestDrawnSeq = frameSeq;
+          if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+          }
+          ctx.drawImage(bitmap, 0, 0);
+          bitmap.close();
+        })
+        .catch(() => {});
+    });
+
+    return () => cleanup();
+  }, [isLocal]);
+
+  return canvasRef;
+}
+
 export function BrowserPanel() {
-  const { controllerState, hostState, error, pin, pendingControllerId } = useConnectionStore();
+  const { role, controllerState, hostState, error, pin, pendingControllerId } = useConnectionStore();
   const { isTakeoverActive } = useAgentStore();
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [urlInput, setUrlInput] = useState('');
   const [hasCopiedPin, setCopiedPin] = useState(false);
-  
+
+  const isLocal = role === 'local';
+
   const isConnected = 
+    isLocal ||
     hostState === 'SESSION_ACTIVE' || 
     hostState === 'AGENT_EXECUTING' || 
     hostState === 'HUMAN_TAKEOVER' ||
@@ -30,6 +72,7 @@ export function BrowserPanel() {
 
   const hostRTC = useHostWebRTC(isConnected && isHost);
   const ctrlRTC = useControllerWebRTC(isConnected && isController);
+  const localCanvasRef = useLocalScreencast(isConnected && isLocal);
 
   const videoRef = isHost ? hostRTC.videoRef : ctrlRTC.videoRef;
   const hostSendData = useCallback((msg: any) => {
@@ -57,7 +100,7 @@ export function BrowserPanel() {
       window.RemoteCtrlAPI?.browser.startWorkflow(msg.payload);
     }
   }, []);
-  const sendData = isHost ? hostSendData : ctrlRTC.sendData;
+  const sendData = (isHost || isLocal) ? hostSendData : ctrlRTC.sendData;
   const rtcStatus = isHost ? hostRTC.status : ctrlRTC.status;
 
   const lastMoveTimeRef = useRef<number>(0);
@@ -74,16 +117,17 @@ export function BrowserPanel() {
   }, [tabs]);
 
   useEffect(() => {
-    if (isHost) {
+    if (isHost || isLocal) {
+      window.RemoteCtrlAPI?.browser.getTabs().then((t) => setTabs(t || []));
       const cleanup = window.RemoteCtrlAPI?.on.tabsChange((newTabs) => {
         setTabs(newTabs);
       });
       return () => cleanup?.();
     }
-  }, [isHost]);
+  }, [isHost, isLocal]);
 
   useEffect(() => {
-    if (isHost) {
+    if (isHost || isLocal) {
       ctrlRTC.onMessage(() => {});
       return;
     }
@@ -108,7 +152,7 @@ export function BrowserPanel() {
     return () => {
       ctrlRTC.onMessage(() => {});
     };
-  }, [isHost, ctrlRTC.onMessage]);
+  }, [isHost, isLocal, ctrlRTC.onMessage]);
 
   function handleBrowserAction(action: 'goBack' | 'goForward' | 'reload' | 'navigate' | 'closeTab' | 'newTab', tabId?: string) {
     sendData({
@@ -129,11 +173,16 @@ export function BrowserPanel() {
   }
 
   const getCoords = (clientX: number, clientY: number) => {
-    const el = videoRef.current;
+    const el = isLocal ? localCanvasRef.current : videoRef.current;
     if (!el) return { xPercent: 0, yPercent: 0 };
     const rect = el.getBoundingClientRect();
-    const nativeW = el.videoWidth || 1280;
-    const nativeH = el.videoHeight || 800;
+    const isUninitCanvas = isLocal && (el as HTMLCanvasElement).width === 300 && (el as HTMLCanvasElement).height === 150;
+    const nativeW = isLocal
+      ? (isUninitCanvas ? 1280 : (el as HTMLCanvasElement).width || 1280)
+      : (el as HTMLVideoElement).videoWidth || 1280;
+    const nativeH = isLocal
+      ? (isUninitCanvas ? 800 : (el as HTMLCanvasElement).height || 800)
+      : (el as HTMLVideoElement).videoHeight || 800;
     const scale = Math.min(rect.width / nativeW, rect.height / nativeH);
     const renderedW = nativeW * scale;
     const renderedH = nativeH * scale;
@@ -208,13 +257,6 @@ export function BrowserPanel() {
     }, true);
   };
 
-  if (!isConnected && !isConnecting && !isHostWaiting) {
-    return (
-      <div className="browser-panel">
-        <ConnectionPlaceholder />
-      </div>
-    );
-  }
 
   function handleApprove() {
     if (pendingControllerId) {
@@ -229,7 +271,11 @@ export function BrowserPanel() {
   }
 
   function handleStopHosting() {
-    window.RemoteCtrlAPI?.host.stop();
+    if (isLocal) {
+      window.RemoteCtrlAPI?.browser.close();
+    } else {
+      window.RemoteCtrlAPI?.host.stop();
+    }
     useConnectionStore.getState().reset();
   }
 
@@ -266,7 +312,7 @@ export function BrowserPanel() {
         </div>
       )}
 
-      {/* Video Stream Container */}
+      {/* Video / Canvas Container */}
       <div className="browser-video-container">
         {isHostWaiting ? (
           <div className="browser-loading" style={{ gap: 20 }}>
@@ -336,8 +382,12 @@ export function BrowserPanel() {
           </div>
         ) : isConnected ? (
           <>
-            <video ref={videoRef} className="browser-video" autoPlay muted playsInline />
-            {rtcStatus !== 'streaming' && (
+            {isLocal ? (
+              <canvas ref={localCanvasRef} className="browser-video" />
+            ) : (
+              <video ref={videoRef} className="browser-video" autoPlay muted playsInline />
+            )}
+            {!isLocal && rtcStatus !== 'streaming' && (
               <div className="browser-loading">
                 <Loader2 size={24} className="animate-spin" style={{ marginBottom: 8 }} />
                 <div>Waiting for stream...</div>
@@ -365,6 +415,7 @@ export function BrowserPanel() {
               className="btn btn-primary" 
               onClick={() => {
                 useConnectionStore.getState().reset();
+                window.RemoteCtrlAPI?.browser.close();
                 window.RemoteCtrlAPI?.host.stop();
               }}
             >
@@ -376,3 +427,4 @@ export function BrowserPanel() {
     </div>
   );
 }
+

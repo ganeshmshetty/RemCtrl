@@ -113,27 +113,51 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handleAgentLog: (payload) => {
     set((state) => {
-      const isActionable = payload.level === 'info' && !payload.message.includes('browser-use') && !payload.message.includes('playwright');
+      const msgTrim = payload.message?.trim() || '';
+      const isJsonOutput = msgTrim.startsWith('{') || msgTrim.startsWith('["') || msgTrim.startsWith('```json');
+      const isEngineNoise =
+        msgTrim.includes('[StagehandPool]') ||
+        msgTrim.includes('Stagehand') ||
+        msgTrim.includes('Connecting to local browser') ||
+        msgTrim.includes('Starting — model=') ||
+        msgTrim.includes('Pipeline complete') ||
+        msgTrim.includes('CDP:') ||
+        payload.message.includes('browser-use') ||
+        payload.message.includes('playwright');
 
-      // Surface stall warnings + recovery suggestions visibly in the chat
+      const isActionable = payload.level === 'info' && !isJsonOutput && !isEngineNoise;
+
+      // Surface stall warnings visibly without duplicating identical warnings
       const isStallWarning =
         payload.level === 'warn' &&
         (payload.message.toLowerCase().includes('stall') ||
           payload.message.toLowerCase().includes('stuck') ||
           payload.message.toLowerCase().includes('recovery'));
 
-      const newHistory = isStallWarning
-        ? [
-            ...state.chatHistory,
-            {
-              id: `warn-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-              sender: 'agent' as const,
-              type: 'warn' as const,
-              text: payload.message,
-              timestamp: Date.now(),
-            },
-          ]
-        : state.chatHistory;
+      let newHistory = state.chatHistory;
+      if (isStallWarning && !state.chatHistory.some((m) => m.text === payload.message)) {
+        newHistory = [
+          ...newHistory,
+          {
+            id: `warn-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            sender: 'agent' as const,
+            type: 'warn' as const,
+            text: payload.message,
+            timestamp: Date.now(),
+          },
+        ];
+      } else if (isActionable && !state.chatHistory.some((m) => m.text === payload.message)) {
+        newHistory = [
+          ...newHistory,
+          {
+            id: `log-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            sender: 'agent' as const,
+            type: 'log' as const,
+            text: payload.message,
+            timestamp: Date.now(),
+          },
+        ];
+      }
 
       return {
         executionLogs: [...(state.executionLogs || []), payload],
@@ -201,8 +225,14 @@ function formatAgentResult(result: any): string {
   if (typeof result === 'string') return result;
   
   if (typeof result === 'object') {
-    if (result.success !== undefined && result.message) {
+    if (result.finalMessage) {
+      return result.finalMessage;
+    }
+    if (result.message) {
       return result.message;
+    }
+    if (result.taskId || result.actions || result.status) {
+      return result.finalMessage || result.message || 'Task completed successfully.';
     }
     
     if (Array.isArray(result)) {

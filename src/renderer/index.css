@@ -200,6 +200,38 @@ code, pre, kbd {
   white-space: nowrap;
 }
 
+/* ─── First-Launch Banner ────────────────────────────────────────────────────── */
+.first-launch-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), rgba(99, 102, 241, 0.05));
+  border-bottom: 1px solid rgba(99, 102, 241, 0.25);
+  font-size: 13px;
+  color: var(--text-primary);
+  animation: fadeIn 0.3s ease;
+  flex-shrink: 0;
+}
+.first-launch-banner span {
+  flex: 1;
+}
+.first-launch-banner button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+.first-launch-banner button:hover {
+  color: var(--text-primary);
+  background: var(--bg-overlay);
+}
+
 /* ─── App Shell Layout ──────────────────────────────────────────────────────── */
 .app-shell {
   height: 100vh;
@@ -328,17 +360,25 @@ code, pre, kbd {
   z-index: 5;
 }
 
+/* ─── Home Screen ─────────────────────────────────────────────────────────── */
+.home-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  overflow-y: auto;
+}
+
 /* ─── Connection Placeholder ────────────────────────────────────────────────── */
 .connection-placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100%;
   width: 100%;
+  max-width: 560px;
   text-align: center;
-  padding: 32px;
-  background: var(--bg-base);
+  padding: 40px 24px;
 }
 
 .cp-icon {
@@ -380,7 +420,6 @@ code, pre, kbd {
   align-items: center;
   gap: 16px;
   width: 100%;
-  max-width: 320px;
   margin-bottom: 24px;
 }
 
@@ -401,7 +440,6 @@ code, pre, kbd {
   display: flex;
   gap: 8px;
   width: 100%;
-  max-width: 320px;
 }
 
 .cp-pin-input {
@@ -1355,6 +1393,18 @@ code, pre, kbd {
 }
 .btn-danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.2); }
 
+.btn-outline {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.btn-outline:hover:not(:disabled) {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1567,4 +1617,262 @@ code, pre, kbd {
 
 .animate-fade-in {
   animation: fade-in 0.2s ease-out forwards;
+}
+
+/* ── Mini Window (Spotlight / Floating Bar) ────────────────────────────── */
+.mini-window-root {
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+}
+
+.mini-window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.mini-window-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.mini-logo-icon {
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+}
+
+.mini-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.mini-header-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mini-header-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.mini-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.mini-close-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.mini-input-bar {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  gap: 10px;
+  background: var(--bg-primary);
+}
+
+.mini-prompt-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.mini-prompt-input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.mini-prompt-input::placeholder {
+  color: var(--text-muted);
+}
+
+.mini-run-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mini-run-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.04);
+}
+
+.mini-run-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.mini-run-btn.stop {
+  background: var(--danger);
+}
+
+.mini-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 14px 10px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-active);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.mini-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.mini-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.mini-watch-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mini-watch-btn:hover {
+  text-decoration: underline;
+}
+
+.mini-workflows-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 14px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+.mini-workflows-header {
+  margin-bottom: 8px;
+}
+
+.mini-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mini-workflows-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mini-workflow-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.mini-workflow-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-overlay);
+}
+
+.mini-wf-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mini-wf-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+}
+
+.mini-wf-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.mini-wf-steps {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mini-empty-workflows {
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
 }

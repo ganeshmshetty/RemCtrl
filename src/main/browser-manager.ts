@@ -2,9 +2,12 @@ import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
 import { startScreencast, stopScreencast } from './screencast.js';
-import { getBrowserMode, getHeadlessMode, getUseVisionCUA } from './storage.js';
-import { closeStagehand } from './automation/stagehand-pool.js';
+import { getBrowserMode, getHeadlessMode, getUseVisionCUA, BROWSER_PROFILE_DIR, isProfileInitialized, markProfileInitialized } from './storage.js';
+import { closeBrowser as closeAutomationPool } from './automation/browser-pool.js';
 import type { BrowserWindow } from 'electron';
+import { execFileSync } from 'child_process';
+import fs from 'fs';
+import net from 'net';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
 
@@ -17,6 +20,23 @@ interface PageEntry {
 // CDP port used in internal mode so Stagehand can connect via raw CDP.
 // A port distinct from local Chrome (9222) to avoid conflicts.
 const INTERNAL_CDP_PORT = 9223;
+
+async function getAvailablePort(defaultPort: number): Promise<number> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => {
+      const fallbackServer = net.createServer();
+      fallbackServer.listen(0, '127.0.0.1', () => {
+        const addr = fallbackServer.address();
+        const freePort = typeof addr === 'object' && addr ? addr.port : 0;
+        fallbackServer.close(() => resolve(freePort));
+      });
+    });
+    server.listen(defaultPort, '127.0.0.1', () => {
+      server.close(() => resolve(defaultPort));
+    });
+  });
+}
 
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;
@@ -166,6 +186,61 @@ async function resolveCdpWsUrl(httpBase: string, maxWaitMs = 8000): Promise<stri
   throw new Error(`CDP endpoint ${versionUrl} not ready after ${maxWaitMs}ms. Last error: ${lastErr}`);
 }
 
+/**
+ * Attempt to find the user's installed Chrome/Chromium binary.
+ * Returns a path string, or null if none found.
+ */
+function findSystemChrome(): string | null {
+  const candidates: string[] = [];
+
+  if (process.platform === 'darwin') {
+    candidates.push(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    );
+  } else if (process.platform === 'win32') {
+    const programFiles = process.env['PROGRAMFILES'] || 'C:\\Program Files';
+    const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+    candidates.push(
+      `${programFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${programFilesX86}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${programFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    );
+  } else {
+    // Linux
+    try {
+      const which = execFileSync('which', ['google-chrome', 'chromium-browser', 'chromium', 'microsoft-edge'], { encoding: 'utf-8' });
+      const found = which.split('\n').find(p => p.trim().length > 0);
+      if (found) return found.trim();
+    } catch { /* no which */ }
+    candidates.push(
+      '/usr/bin/google-chrome',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium',
+    );
+  }
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      console.log(`[browser] Found system Chrome at: ${c}`);
+      return c;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns true if this is a brand-new, empty browser profile dir.
+ * We detect by checking if the profile dir doesn't exist or has no Preferences file.
+ */
+function isEmptyProfile(): boolean {
+  if (!fs.existsSync(BROWSER_PROFILE_DIR)) return true;
+  const prefsPath = `${BROWSER_PROFILE_DIR}/Default/Preferences`;
+  return !fs.existsSync(prefsPath);
+}
+
 export async function launchBrowser(startUrl = 'https://www.google.com'): Promise<string> {
   if (browser) {
     console.log('[browser] Playwright already running, reusing');
@@ -190,25 +265,60 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
       throw new Error('Failed to connect to local Chrome on port 9222.');
     }
   } else {
+    // ── Internal mode: persistent profile ───────────────────────────────────
     const headless = getHeadlessMode();
-    console.log(`[browser] Launching internal browser (headless: ${headless}) on CDP port ${INTERNAL_CDP_PORT}...`);
     const useCua = getUseVisionCUA();
     const width = useCua ? 1288 : 1280;
     const height = useCua ? 711 : 800;
 
-    browser = await chromium.launch({
-      headless,
+    // Detect first-launch for onboarding (before creating profile dir)
+    const firstLaunch = isEmptyProfile() && !isProfileInitialized();
+
+    // Try system Chrome first, fall back to bundled Playwright Chromium
+    const systemChrome = findSystemChrome();
+    const executablePath = systemChrome || undefined;
+    if (systemChrome) {
+      console.log(`[browser] Using system Chrome: ${systemChrome}`);
+    } else {
+      console.log('[browser] No system Chrome found, using bundled Playwright Chromium');
+    }
+
+    console.log(`[browser] Launching persistent context (headless: ${headless}) → ${BROWSER_PROFILE_DIR}`);
+
+    // For first launch, force non-headless so the user can log into sites
+    const launchHeadless = firstLaunch ? false : headless;
+
+    const cdpPort = await getAvailablePort(INTERNAL_CDP_PORT);
+
+    // launchPersistentContext gives us cookies/logins that survive across sessions
+    context = await chromium.launchPersistentContext(BROWSER_PROFILE_DIR, {
+      headless: launchHeadless,
+      executablePath,
       args: [
-        `--remote-debugging-port=${INTERNAL_CDP_PORT}`,
+        `--remote-debugging-port=${cdpPort}`,
         `--window-size=${width},${height}`,
         '--window-position=100,100',
+        '--no-first-run',
+        '--no-default-browser-check',
       ],
-    });
-    context = await browser.newContext({
       viewport: { width, height },
     });
+
+    // For persistent context, the "browser" object is the context itself.
+    // We store the underlying browser via the context's browser() method.
+    browser = context.browser() ?? (context as unknown as Browser);
+
     // Resolve the actual ws:// URL from the CDP HTTP endpoint
-    cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${INTERNAL_CDP_PORT}`);
+    cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${cdpPort}`);
+
+    if (firstLaunch) {
+      console.log('[browser] First launch — onboarding mode (visible browser for login)');
+      markProfileInitialized();
+      // Emit an IPC event so the renderer can show the onboarding prompt
+      if (notifyWindow && !notifyWindow.isDestroyed()) {
+        notifyWindow.webContents.send('browser:firstLaunch');
+      }
+    }
   }
 
   // Flag: true while launchBrowser is setting up the first page so that the
@@ -258,9 +368,13 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 export async function closeBrowser(): Promise<void> {
   await stopScreencast();
   try {
-    await closeStagehand().catch(() => {});
+    await closeAutomationPool().catch(() => {});
     await context?.close();
-    await browser?.close();
+    // Only close the browser separately if we have a real Browser reference
+    // (in persistent context mode, closing context is sufficient)
+    if (browser && browser !== (context as unknown as Browser)) {
+      await browser.close();
+    }
   } catch {
     // ignore close errors
   }
@@ -269,7 +383,7 @@ export async function closeBrowser(): Promise<void> {
   cdpWsUrl = null;
   pages = [];
   activePageEntry = null;
-  console.log('[browser] Playwright Chromium closed');
+  console.log('[browser] Playwright browser closed');
 }
 
 export function getPage(): Page | null { return activePageEntry?.page || null; }
@@ -284,15 +398,19 @@ export function getCdpUrl(): string | null {
 }
 
 export async function resetProfile(): Promise<void> {
+  // Clear all browser data in the persistent context
   if (context) {
-    await context.clearCookies();
+    await context.clearCookies().catch(() => {});
+    // Clear storage state on all pages
+    for (const p of context.pages()) {
+      await p.evaluate(() => {
+        try { localStorage.clear(); } catch { }
+        try { sessionStorage.clear(); } catch { }
+      }).catch(() => {});
+    }
   }
-  if (activePageEntry) {
-    await activePageEntry.page.evaluate(() => {
-      localStorage.clear();
-      sessionStorage.clear();
-    }).catch(() => { });
-  }
+  // Keep profile marked as initialized after reset so re-onboarding isn't triggered
+  markProfileInitialized();
 }
 
 export function getCaptureMetadata() {

@@ -1,37 +1,56 @@
+import { useEffect, useRef, useState } from 'react';
+import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';
 import { WorkflowEditorModal } from './WorkflowEditorModal';
-import { useConnectionStore } from '../stores/useConnectionStore';
 
 export function LocalSession() {
-  function handleStop() {
-    useConnectionStore.getState().reset();
-    window.RemoteCtrlAPI?.browser.close();
-  }
+  const [rightPanelWidth, setRightPanelWidth] = useState(380);
+  const isResizing = useRef(false);
+
+  useEffect(() => {
+    function handlePointerMove(e: PointerEvent) {
+      if (!isResizing.current) return;
+      const newWidth = document.body.clientWidth - e.clientX;
+      if (newWidth > 300 && newWidth < 800) {
+        setRightPanelWidth(newWidth);
+      }
+    }
+    function handlePointerUp() {
+      if (isResizing.current) {
+        isResizing.current = false;
+        document.body.style.cursor = '';
+      }
+    }
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
-      <div style={{ 
-        padding: '12px 24px', 
-        borderBottom: '1px solid var(--border)', 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        background: 'var(--bg-secondary)'
-      }}>
-        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-          Local Browser Session Active
-        </div>
-        <button className="btn btn-ghost" onClick={handleStop} style={{ color: 'var(--danger)' }}>
-          Stop Session
-        </button>
-      </div>
-      
-      {/* Container for the panels */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+    <>
+      <BrowserPanel />
+
+      <div 
+        className="drag-handle-vertical"
+        onPointerDown={(e) => {
+          isResizing.current = true;
+          document.body.style.cursor = 'col-resize';
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerUp={(e) => {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }}
+      />
+
+      <div style={{ width: rightPanelWidth, height: '100%', flexShrink: 0 }}>
         <RightPanelLayout />
       </div>
 
       <WorkflowEditorModal />
-    </div>
+    </>
   );
 }
+

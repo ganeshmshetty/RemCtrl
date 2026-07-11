@@ -42,7 +42,7 @@ export interface SharedWorkflowRecord {
 
 // ─── Settings Types ────────────────────────────────────────────────────────────
 
-export type ApiProvider = 'openai' | 'anthropic' | 'gemini' | 'groq' | 'deepseek' | 'nebius' | 'openrouter';
+export type ApiProvider = 'openai' | 'anthropic' | 'gemini' | 'groq' | 'deepseek' | 'nebius' | 'openrouter' | 'vertex';
 export type BrowserMode = 'internal' | 'local_chrome';
 export type AppTheme = 'light' | 'dark' | 'system';
 
@@ -87,7 +87,20 @@ export type ControllerSessionState =
 // ─── Agent Types ───────────────────────────────────────────────────────────────
 
 /** Actions used by the Agent panel — separate from workflow StepType */
-export type AgentAction = 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action';
+export type AgentAction =
+  | 'act'
+  | 'observe'
+  | 'extract'
+  | 'goto'
+  | 'scroll'
+  | 'keys'
+  | 'wait'
+  | 'think'
+  | 'done'
+  | 'clipboard_read'
+  | 'clipboard_write'
+  | 'invoke_mcp'
+  | 'playwright_action';
 
 export interface AgentPromptPayload {
   commandId: string;
@@ -249,6 +262,9 @@ export interface AppDiagnostics {
 export interface RemoteCtrlAPI {
   app: {
     getDiagnostics: () => Promise<AppDiagnostics>;
+    showMainWindow: () => Promise<void>;
+    hideMiniWindow: () => Promise<void>;
+    showMiniWindow: (hideMain?: boolean) => Promise<void>;
   };
   host: {
     start: () => Promise<void>;
@@ -305,6 +321,8 @@ export interface RemoteCtrlAPI {
     setCustomBaseUrl: (provider: ApiProvider, url?: string) => Promise<void>;
     getTheme: () => Promise<AppTheme>;
     setTheme: (theme: AppTheme) => Promise<void>;
+    getGlobalShortcut: () => Promise<string>;
+    setGlobalShortcut: (shortcut: string) => Promise<void>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;
@@ -329,6 +347,9 @@ export interface RemoteCtrlAPI {
     screencastFrame: (cb: (frameData: Uint8Array) => void) => () => void;
     agentCheckpoint: (cb: (payload: AgentCheckpointPayload) => void) => () => void;
     openSettings: (cb: () => void) => () => void;
+    firstLaunch: (cb: () => void) => () => void;
+    startLocalSession: (cb: () => void) => () => void;
+    globalShortcut: (cb: () => void) => () => void;
   };
 }
 

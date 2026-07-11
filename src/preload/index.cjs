@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
   // ── App / Diagnostics ─────────────────────────────────────────────────────
   app: {
     getDiagnostics: () => ipcRenderer.invoke('app:getDiagnostics'),
+    showMainWindow: () => ipcRenderer.invoke('app:showMainWindow'),
+    hideMiniWindow: () => ipcRenderer.invoke('app:hideMiniWindow'),
+    showMiniWindow: (hideMain) => ipcRenderer.invoke('app:showMiniWindow', hideMain),
   },
 
   // ── Settings ──────────────────────────────────────────────────────────────
@@ -82,6 +85,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     setCustomBaseUrl: (provider, url) => ipcRenderer.invoke('settings:setCustomBaseUrl', provider, url),
     getTheme: () => ipcRenderer.invoke('settings:getTheme'),
     setTheme: (theme) => ipcRenderer.invoke('settings:setTheme', theme),
+    getGlobalShortcut: () => ipcRenderer.invoke('settings:getGlobalShortcut'),
+    setGlobalShortcut: (shortcut) => ipcRenderer.invoke('settings:setGlobalShortcut', shortcut),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────
@@ -175,6 +180,21 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       const listener = () => cb();
       ipcRenderer.on('app:openSettings', listener);
       return () => ipcRenderer.removeListener('app:openSettings', listener);
+    },
+    firstLaunch: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on('browser:firstLaunch', listener);
+      return () => ipcRenderer.removeListener('browser:firstLaunch', listener);
+    },
+    startLocalSession: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on('app:startLocalSession', listener);
+      return () => ipcRenderer.removeListener('app:startLocalSession', listener);
+    },
+    globalShortcut: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on('app:globalShortcut', listener);
+      return () => ipcRenderer.removeListener('app:globalShortcut', listener);
     },
   },
 });

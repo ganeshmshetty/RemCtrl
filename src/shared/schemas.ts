@@ -39,7 +39,7 @@ export const LocalWorkflowSchema = z.object({
 
 export const AppThemeSchema = z.enum(['light', 'dark', 'system']);
 
-export const ApiProviderSchema = z.enum(['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'nebius', 'openrouter']);
+export const ApiProviderSchema = z.enum(['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'nebius', 'openrouter', 'vertex']);
 
 export const SetApiKeySchema = z.object({
   provider: ApiProviderSchema,
@@ -65,6 +65,27 @@ export const SetCustomBaseUrlSchema = z.object({
 
 export const SetThemeSchema = z.object({
   theme: AppThemeSchema,
+});
+
+export const SetGlobalShortcutSchema = z.object({
+  shortcut: z.string().min(1).max(100),
+});
+
+export const ExtSaveWorkflowPayloadSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  startUrl: z.string().optional(),
+  steps: z.array(WorkflowStepSchema).optional(),
+});
+
+export const ExtStartAutomationPayloadSchema = z.object({
+  url: z.string().optional(),
+  instruction: z.string().min(1),
+});
+
+export const ExtRunWorkflowPayloadSchema = z.object({
+  workflowId: z.string().min(1),
 });
 
 // ─── Host IPC Schemas ─────────────────────────────────────────────────────────
@@ -149,6 +170,8 @@ export const PersistedSettingsSchema = z.object({
   headlessMode: z.boolean().default(true),
   useVisionCUA: z.boolean().default(true),
   theme: AppThemeSchema.default('system'),
+  profileInitialized: z.boolean().default(false),
+  globalShortcut: z.string().default('CommandOrControl+Shift+Space'),
   // API keys are stored in a separate secure store — not in this file
 });
 

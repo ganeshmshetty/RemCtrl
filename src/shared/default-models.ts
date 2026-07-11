@@ -53,5 +53,10 @@ export const DEFAULT_MODELS: Record<ApiProvider, string[]> = {
     "meta-llama/llama-3.3-70b-instruct",
     "deepseek/deepseek-r1",
     "deepseek/deepseek-chat"
+  ],
+  "vertex": [
+    "gemini-3.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash"
   ]
 };

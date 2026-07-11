@@ -1,26 +1,24 @@
-# RemoteCtrl TODO List
+# RemoteCtrl — Project Status
 
-## High Priority
-- [ ] **Browser Resolution Strategy**: Implement dynamic browser targeting for production:
-  - Default to using the user's natively installed Chrome/Edge in a temporary, isolated profile.
-  - Add an "Advanced Setting" allowing users to use their Default Profile (with a warning that they must close their browser first).
-  - **Fallback**: If no compatible local browser is found, dynamically ask the user to download the Playwright Chromium binary into a manageable directory (e.g. `app.getPath('userData')/browsers`) so it can be cleanly updated, deleted, or uninstalled with the app.
+## Completed Phases
+- **Phase A — UX Restructuring**: Local mode streaming, Home screen hierarchy overhaul, fixed navigation states.
+- **Phase B — Persistent Browser Profile**: Direct usage of the host's native Chrome binary, persistent `userDataDir` for logged-in sessions, first-launch onboarding.
+- **Phase C & D — Tray & Mini Window**: System tray integration, global keyboard shortcut (Cmd+Shift+Space), and floating mini-prompt window.
+- **Phase E — Browser Extension**: Chrome extension with local WebSocket bridge for manual workflow recording and real-session automation.
+- **Phase F — Agent Architecture Refactor**: Transitioned from multi-tier DynamicPlanner ReAct loop to an atomic, single-tier tool calling loop (`@ai-sdk`).
 
-## Medium Priority (UX / Performance)
-
-## Low Priority / Enhancements
-- [ ] **Stall Nudge UI**: Stall nudge messages from `stall-detector.ts` are currently only logged to the console. Surface these actionable hints in the UI for the Controller.
+## Final Stagehand Replacement & CI/CD Optimization (Completed)
+- **Removed Stagehand Dependency**: Ripped out `@browserbasehq/stagehand` completely to eliminate 500ms+ init latency, memory leaks, and connection timeouts.
+- **Lightweight Browser Pool**: Implemented a raw CDP/Playwright connection singleton (`browser-pool.ts`) that reuses the active browser context instantly.
+- **Optimized Native Browser Tools** (`agent-tools.ts`):
+  - `observe`: Now generates tag-prefixed, deterministic DOM selectors (e.g., `input[aria-label="Search"]`) to prevent click ambiguity.
+  - `act`: Built a robust fallback locator chain (`locator` -> `getByRole` -> `getByLabel` -> `getByText`). Replicated Stagehand's atomic `fill` behavior (auto-clears input before typing).
+  - `extract`: Custom DOM walker for clean, structured text data extraction.
+- **CI/CD Fixes**: 
+  - Restructured `build.yml` to not build the Electron app on every `main` push, saving Action minutes. 
+  - Unified the build pipeline with the Homebrew tap trigger (`repository_dispatch`).
+  - Simplified the `homebrew-tap` Cask update workflow to use lightweight `sed` operations and skipped redundant DMG hash calculations via `sha256 :no_check`.
 
 ---
 
-## Recently Completed
-- [x] **Signaling Server Optimization**: Eliminated all O(n) room iterations in the socket.io signaling server by introducing a `socketToPin` O(1) reverse lookup map.
-- [x] **Workflow Editor UX**: Implemented drag-and-drop workflow step reordering using `@dnd-kit` for a much smoother editing experience.
-- [x] **API Key Security**: Implemented Electron `safeStorage` to encrypt API keys before storing them in JSON, utilizing OS-level keychain encryption.
-- [x] **Local / Solo Mode**: Added ability to launch the browser and use Agent/Workflow panels without spinning up WebRTC or hosting.
-- [x] **Event-Driven Cancellation**: Replaced 200ms `setInterval` polling in `execution-engine.ts` with `AbortController` for zero-latency, clean cancellation.
-- [x] **WebRTC Reliability**: Added Google public STUN servers to `ICE_SERVERS` so WebRTC connects reliably across NATs and over the internet.
-- [x] **UI Reactivity**: Fixed `useConnectionStore.getState()` usage in `BrowserPanel.tsx` that was breaking React re-renders for `pendingControllerId` and `pin`.
-- [x] **Playwright Context Error**: Fixed `Object reference chain is too long` error in Playwright by returning `null;` after `window.open()` evaluates in the browser context.
-- [x] **Dynamic Agent Steps**: Added `new_tab` and `done` actions to the Agent execution loop so the LLM can open new tabs and explicitly complete goals.
-- [x] **Codebase Refactor**: Consolidated `agent-executor.ts` and `task-planner.ts` into a unified `execution-engine.ts` with proper ReAct loop.
+*All roadmap items achieved. Current focus: Stability, telemetry, and bugfixes.*

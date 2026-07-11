@@ -72,6 +72,7 @@ interface SettingsState {
   hasDeepseekKey: boolean;
   hasNebiusKey: boolean;
   hasOpenRouterKey: boolean;
+  hasVertexKey: boolean;
   headlessMode: boolean;
   theme: AppTheme;
   isLoading: boolean;
@@ -101,6 +102,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hasDeepseekKey: false,
   hasNebiusKey: false,
   hasOpenRouterKey: false,
+  hasVertexKey: false,
   headlessMode: true,
   theme: 'system',
   useVisionCUA: true,
@@ -110,7 +112,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA, theme] =
+      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, useVisionCUA, theme] =
         await Promise.all([
           window.RemoteCtrlAPI.settings.getSignalingUrl(),
           window.RemoteCtrlAPI.settings.getPreferredProvider(),
@@ -122,11 +124,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           window.RemoteCtrlAPI.settings.hasApiKey('deepseek'),
           window.RemoteCtrlAPI.settings.hasApiKey('nebius'),
           window.RemoteCtrlAPI.settings.hasApiKey('openrouter'),
+          window.RemoteCtrlAPI.settings.hasApiKey('vertex'),
           window.RemoteCtrlAPI.settings.getHeadlessMode(),
           window.RemoteCtrlAPI.settings.getUseVisionCUA(),
           window.RemoteCtrlAPI.settings.getTheme(),
         ]);
-      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, headlessMode, useVisionCUA, theme, isLoading: false });
+      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, useVisionCUA, theme, isLoading: false });
     } catch {
       set({ isLoading: false });
     }
@@ -158,6 +161,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       if (provider === 'deepseek') updates.hasDeepseekKey = !!value;
       if (provider === 'nebius') updates.hasNebiusKey = !!value;
       if (provider === 'openrouter') updates.hasOpenRouterKey = !!value;
+      if (provider === 'vertex') updates.hasVertexKey = !!value;
       return updates;
     });
   },

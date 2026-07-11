@@ -35,6 +35,7 @@ export function Settings() {
   const [browserMode, setBrowserMode] = useState('internal');
   const [showKey, setShowKey] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
+  const [shortcutInput, setShortcutInput] = useState('');
 
   const [cachedModels, setCachedModels] = useState<Record<string, string[]>>({});
   const [hasFetchedApi, setHasFetchedApi] = useState<Record<string, boolean>>({});
@@ -45,7 +46,10 @@ export function Settings() {
     loadSettings().then(() => {
       setSignalingInput(useSettingsStore.getState().signalingUrl);
     });
-    window.RemoteCtrlAPI?.settings.getBrowserMode().then(setBrowserMode);
+    window.RemoteCtrlAPI?.settings.getBrowserMode().then(setBrowserMode).catch(() => {});
+    window.RemoteCtrlAPI?.settings.getGlobalShortcut?.()
+      .then((s: string) => setShortcutInput(s || 'CommandOrControl+Shift+Space'))
+      .catch(() => setShortcutInput('CommandOrControl+Shift+Space'));
   }, []);
 
   function hasKeyForProvider(p: ApiProvider) {
@@ -57,6 +61,8 @@ export function Settings() {
       case 'deepseek': return hasDeepseekKey;
       case 'nebius': return hasNebiusKey;
       case 'openrouter': return hasOpenRouterKey;
+      // Vertex uses ADC — always treat as configured (no API key needed)
+      case 'vertex': return true;
       default: return false;
     }
   }
@@ -143,8 +149,31 @@ export function Settings() {
   }
 
   async function handleResetBrowser() {
-    await window.RemoteCtrlAPI?.browser.resetProfile();
-    flash('Browser profile reset');
+    if (!confirm('Reset browser profile? This will clear cookies and local storage.')) return;
+    try {
+      if (!window.RemoteCtrlAPI?.browser?.resetProfile) {
+        flash('Failed: resetProfile API unavailable');
+        return;
+      }
+      await window.RemoteCtrlAPI.browser.resetProfile();
+      flash('Browser profile reset');
+    } catch {
+      flash('Failed to reset browser profile');
+    }
+  }
+
+  async function handleSaveShortcut() {
+    if (!shortcutInput.trim()) return;
+    try {
+      if (!window.RemoteCtrlAPI?.settings?.setGlobalShortcut) {
+        flash('Failed: setGlobalShortcut API unavailable');
+        return;
+      }
+      await window.RemoteCtrlAPI.settings.setGlobalShortcut(shortcutInput.trim());
+      flash('Shortcut saved — restart required');
+    } catch {
+      flash('Failed to save shortcut');
+    }
   }
 
   async function handleSaveBrowserMode(m: BrowserMode) {
@@ -214,6 +243,7 @@ export function Settings() {
                       <option value="openai">OpenAI</option>
                       <option value="anthropic">Anthropic</option>
                       <option value="gemini">Google Gemini</option>
+                      <option value="vertex">Google Vertex AI</option>
                       <option value="groq">Groq</option>
                       <option value="deepseek">DeepSeek</option>
                       <option value="nebius">Nebius</option>
@@ -253,31 +283,42 @@ export function Settings() {
                   </SettingField>
                 </div>
 
-                <SettingField label={`${preferredProvider.charAt(0).toUpperCase() + preferredProvider.slice(1)} API Key`} status={hasCurrentKey ? 'Configured' : 'Not set'} hasKey={hasCurrentKey}>
-                  <div className="settings-input-row">
-                    <div className="settings-input-wrap">
-                      <input
-                        type={showKey ? 'text' : 'password'}
-                        className="settings-input"
-                        placeholder={hasCurrentKey ? '••••••••••••••••' : 'Enter API Key...'}
-                        value={apiInput}
-                        onChange={(e) => setApiInput(e.target.value)}
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
-                      <button className="settings-eye-btn" onClick={() => setShowKey(!showKey)}>
-                        {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                {preferredProvider === 'vertex' ? (
+                  <SettingField label="Google Vertex AI — Authentication" status="ADC (keyless)" hasKey={true}>
+                    <p className="settings-hint" style={{ margin: 0 }}>
+                      Vertex AI authenticates via <strong>Application Default Credentials (ADC)</strong>. No API key is required.
+                      Make sure you have run <code>gcloud auth application-default login</code> and set the environment variables
+                      <code> GOOGLE_CLOUD_PROJECT</code> (or <code>GOOGLE_VERTEX_PROJECT</code>) and optionally <code>GOOGLE_VERTEX_LOCATION</code>
+                      (defaults to <code>us-central1</code>).
+                    </p>
+                  </SettingField>
+                ) : (
+                  <SettingField label={`${preferredProvider.charAt(0).toUpperCase() + preferredProvider.slice(1)} API Key`} status={hasCurrentKey ? 'Configured' : 'Not set'} hasKey={hasCurrentKey}>
+                    <div className="settings-input-row">
+                      <div className="settings-input-wrap">
+                        <input
+                          type={showKey ? 'text' : 'password'}
+                          className="settings-input"
+                          placeholder={hasCurrentKey ? '••••••••••••••••' : 'Enter API Key...'}
+                          value={apiInput}
+                          onChange={(e) => setApiInput(e.target.value)}
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                        <button className="settings-eye-btn" onClick={() => setShowKey(!showKey)}>
+                          {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      </div>
+                      <button
+                        className="btn btn-primary"
+                        disabled={!apiInput.trim()}
+                        onClick={handleSaveApiKey}
+                      >
+                        Save Key
                       </button>
                     </div>
-                    <button
-                      className="btn btn-primary"
-                      disabled={!apiInput.trim()}
-                      onClick={handleSaveApiKey}
-                    >
-                      Save Key
-                    </button>
-                  </div>
-                </SettingField>
+                  </SettingField>
+                )}
               </Section>
             )}
 
@@ -329,7 +370,7 @@ export function Settings() {
                   )}
                 </Section>
 
-                <Section icon={<Server size={15} />} title="Advanced Connection">
+                <Section icon={<Server size={15} />} title="Advanced">
                   <SettingField label="Signaling Server URL" status="">
                     <div className="settings-input-row">
                       <input
@@ -345,9 +386,28 @@ export function Settings() {
                     </div>
                   </SettingField>
 
-                  <div style={{ marginTop: 12 }}>
+                  <SettingField label="Global Shortcut" status="">
+                    <p className="settings-hint" style={{ marginBottom: 8 }}>
+                      Keyboard shortcut to open RemoteCtrl from anywhere. Restart required after changing.
+                    </p>
+                    <div className="settings-input-row">
+                      <input
+                        type="text"
+                        className="settings-input"
+                        value={shortcutInput}
+                        onChange={(e) => setShortcutInput(e.target.value)}
+                        placeholder="CommandOrControl+Shift+Space"
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
+                      />
+                      <button className="btn btn-primary" onClick={handleSaveShortcut} disabled={!shortcutInput.trim()}>
+                        Save
+                      </button>
+                    </div>
+                  </SettingField>
+
+                  <div style={{ marginTop: 16 }}>
                     <p className="settings-hint">
-                      Reset the dedicated Playwright browser profile. This clears all session data, cookies, and cached content.
+                      Reset the persistent browser profile. Clears all session data, cookies, and logins.
                     </p>
                     <button className="btn btn-danger-outline settings-reset-btn" onClick={handleResetBrowser}>
                       <RefreshCw size={13} />

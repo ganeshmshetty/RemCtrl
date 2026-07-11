@@ -63,8 +63,9 @@ export function WorkflowsPanel() {
 }
 
 function WorkflowCard({ workflow, confirmingDelete, onEdit, onDelete, onConfirmDelete, onCancelDelete }: any) {
-  const { controllerState, hostState, sendData } = useConnectionStore();
+  const { role, controllerState, hostState, sendData } = useConnectionStore();
   const isConnected = 
+    role === 'local' ||
     hostState === 'SESSION_ACTIVE' || hostState === 'AGENT_EXECUTING' || hostState === 'HUMAN_TAKEOVER' ||
     controllerState === 'SESSION_ACTIVE' || controllerState === 'CONTROLLING_REMOTELY';
   
@@ -90,7 +91,7 @@ function WorkflowCard({ workflow, confirmingDelete, onEdit, onDelete, onConfirmD
         timestamp: Date.now(),
         payload,
       }, true);
-    } else if (hostState !== 'IDLE') {
+    } else if (hostState !== 'IDLE' || role === 'local') {
       window.RemoteCtrlAPI?.browser.startWorkflow(payload);
     }
     
