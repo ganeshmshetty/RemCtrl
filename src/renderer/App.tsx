@@ -8,6 +8,7 @@ import { LocalSession } from './screens/LocalSession';
 import { ConnectionPlaceholder } from './screens/ConnectionPlaceholder';
 import { Settings } from './screens/Settings';
 import { MiniWindow } from './screens/MiniWindow';
+import { WorkflowEditorModal } from './screens/WorkflowEditorModal';
 import { useSettingsStore } from './stores/useWorkflowStore';
 
 export default function App() {
@@ -104,6 +105,7 @@ export default function App() {
         )}
       </div>
       {isSettingsOpen && <Settings />}
+      <WorkflowEditorModal />
     </div>
   );
 }

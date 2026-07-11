@@ -19,9 +19,15 @@ import {
   setPreferredModel,
   getBrowserMode,
   setBrowserMode,
-  getApiKey,
   getHeadlessMode,
   setHeadlessMode,
+  getKeepBrowserOpenOnQuit,
+  setKeepBrowserOpenOnQuit,
+  getBrowserProfile,
+  setBrowserProfile,
+  getCustomProfiles,
+  addCustomProfile,
+  deleteCustomProfile,
   getModelsList,
   saveModelsList,
   getCustomBaseUrl,
@@ -161,6 +167,28 @@ export function registerSettingsIpc() {
 
   ipcMain.handle('settings:setHeadlessMode', async (_e, headless: unknown) => {
     setHeadlessMode(Boolean(headless));
+  });
+
+  ipcMain.handle('settings:getKeepBrowserOpenOnQuit', async () => getKeepBrowserOpenOnQuit());
+
+  ipcMain.handle('settings:setKeepBrowserOpenOnQuit', async (_e, keepOpen: unknown) => {
+    setKeepBrowserOpenOnQuit(Boolean(keepOpen));
+  });
+
+  ipcMain.handle('settings:getBrowserProfile', async () => getBrowserProfile());
+
+  ipcMain.handle('settings:setBrowserProfile', async (_e, profile: unknown) => {
+    setBrowserProfile(String(profile || 'default'));
+  });
+
+  ipcMain.handle('settings:getCustomProfiles', async () => getCustomProfiles());
+
+  ipcMain.handle('settings:addCustomProfile', async (_e, name: unknown) => {
+    addCustomProfile(String(name || ''));
+  });
+
+  ipcMain.handle('settings:deleteCustomProfile', async (_e, name: unknown) => {
+    deleteCustomProfile(String(name || ''));
   });
 
   ipcMain.handle('settings:getUseVisionCUA', async () => getUseVisionCUA());

@@ -2,10 +2,10 @@ import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
 import { startScreencast, stopScreencast } from './screencast.js';
-import { getBrowserMode, getHeadlessMode, getUseVisionCUA, BROWSER_PROFILE_DIR, isProfileInitialized, markProfileInitialized } from './storage.js';
+import { getBrowserMode, getHeadlessMode, getUseVisionCUA, BROWSER_PROFILE_DIR, getBrowserProfileDir, isProfileInitialized, markProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
 import { closeBrowser as closeAutomationPool } from './automation/browser-pool.js';
 import type { BrowserWindow } from 'electron';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import net from 'net';
 
@@ -235,9 +235,9 @@ function findSystemChrome(): string | null {
  * Returns true if this is a brand-new, empty browser profile dir.
  * We detect by checking if the profile dir doesn't exist or has no Preferences file.
  */
-function isEmptyProfile(): boolean {
-  if (!fs.existsSync(BROWSER_PROFILE_DIR)) return true;
-  const prefsPath = `${BROWSER_PROFILE_DIR}/Default/Preferences`;
+function isEmptyProfile(profileDir = BROWSER_PROFILE_DIR): boolean {
+  if (!fs.existsSync(profileDir)) return true;
+  const prefsPath = `${profileDir}/Default/Preferences`;
   return !fs.existsSync(prefsPath);
 }
 
@@ -252,7 +252,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
   if (mode === 'local_chrome') {
     try {
       console.log('[browser] Attempting to connect to Local Chrome on port 9222...');
-      browser = await chromium.connectOverCDP('http://localhost:9222');
+      browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
       // Use existing default context
       context = browser.contexts()[0];
       if (!context) {
@@ -270,51 +270,113 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     const useCua = getUseVisionCUA();
     const width = useCua ? 1288 : 1280;
     const height = useCua ? 711 : 800;
+    const profileDir = getBrowserProfileDir();
 
     // Detect first-launch for onboarding (before creating profile dir)
-    const firstLaunch = isEmptyProfile() && !isProfileInitialized();
-
-    // Try system Chrome first, fall back to bundled Playwright Chromium
-    const systemChrome = findSystemChrome();
-    const executablePath = systemChrome || undefined;
-    if (systemChrome) {
-      console.log(`[browser] Using system Chrome: ${systemChrome}`);
-    } else {
-      console.log('[browser] No system Chrome found, using bundled Playwright Chromium');
-    }
-
-    console.log(`[browser] Launching persistent context (headless: ${headless}) → ${BROWSER_PROFILE_DIR}`);
-
-    // For first launch, force non-headless so the user can log into sites
+    const firstLaunch = isEmptyProfile(profileDir) && !isProfileInitialized();
     const launchHeadless = firstLaunch ? false : headless;
 
-    const cdpPort = await getAvailablePort(INTERNAL_CDP_PORT);
+    const keepOpen = getKeepBrowserOpenOnQuit();
+    const cdpPort = INTERNAL_CDP_PORT;
 
-    // launchPersistentContext gives us cookies/logins that survive across sessions
-    context = await chromium.launchPersistentContext(BROWSER_PROFILE_DIR, {
-      headless: launchHeadless,
-      executablePath,
-      args: [
-        `--remote-debugging-port=${cdpPort}`,
-        `--window-size=${width},${height}`,
-        '--window-position=100,100',
-        '--no-first-run',
-        '--no-default-browser-check',
-      ],
-      viewport: { width, height },
-    });
+    let alreadyRunning = false;
+    try {
+      const checkResp = await fetch(`http://127.0.0.1:${cdpPort}/json/version`);
+      if (checkResp.ok) {
+        alreadyRunning = true;
+      }
+    } catch {
+      // not running
+    }
 
-    // For persistent context, the "browser" object is the context itself.
-    // We store the underlying browser via the context's browser() method.
-    browser = context.browser() ?? (context as unknown as Browser);
+    if (alreadyRunning) {
+      if (keepOpen) {
+        console.log(`[browser] Detached Chrome already running on port ${cdpPort}, connecting...`);
+        browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+        context = browser.contexts()[0];
+        if (!context) {
+          context = await browser.newContext({ viewport: { width, height } });
+        }
+        cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${cdpPort}`);
+      } else {
+        console.log(`[browser] Leftover Chrome detected on port ${cdpPort}. Closing it before launching a new context...`);
+        try {
+          const tempBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+          await tempBrowser.close();
+          // Give it a moment to release file locks
+          await new Promise(r => setTimeout(r, 1200));
+        } catch (err) {
+          console.warn('[browser] Failed to close leftover Chrome cleanly:', err);
+        }
+      }
+    }
 
-    // Resolve the actual ws:// URL from the CDP HTTP endpoint
-    cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${cdpPort}`);
+    if (!browser) {
+      if (keepOpen) {
+        const systemChrome = findSystemChrome();
+        const executablePath = systemChrome || undefined;
+        if (!executablePath) {
+          throw new Error('Chrome browser not found on this system. Please install Google Chrome or Edge.');
+        }
+        console.log(`[browser] Spawning detached Chrome process: ${executablePath}`);
+        const args = [
+          `--remote-debugging-port=${cdpPort}`,
+          `--user-data-dir=${profileDir}`,
+          `--window-size=${width},${height}`,
+          '--window-position=100,100',
+          '--no-first-run',
+          '--no-default-browser-check',
+        ];
+        if (launchHeadless) {
+          args.push('--headless=new');
+        }
+        const child = spawn(executablePath, args, {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.unref();
+
+        cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${cdpPort}`);
+        browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+        context = browser.contexts()[0];
+        if (!context) {
+          context = await browser.newContext({ viewport: { width, height } });
+        }
+      } else {
+      // Try system Chrome first, fall back to bundled Playwright Chromium
+      const systemChrome = findSystemChrome();
+      const executablePath = systemChrome || undefined;
+      if (systemChrome) {
+        console.log(`[browser] Using system Chrome: ${systemChrome}`);
+      } else {
+        console.log('[browser] No system Chrome found, using bundled Playwright Chromium');
+      }
+
+      console.log(`[browser] Launching persistent context (headless: ${headless}) → ${profileDir}`);
+
+      const dynamicPort = await getAvailablePort(INTERNAL_CDP_PORT);
+
+      context = await chromium.launchPersistentContext(profileDir, {
+        headless: launchHeadless,
+        executablePath,
+        args: [
+          `--remote-debugging-port=${dynamicPort}`,
+          `--window-size=${width},${height}`,
+          '--window-position=100,100',
+          '--no-first-run',
+          '--no-default-browser-check',
+        ],
+        viewport: { width, height },
+      });
+
+      browser = context.browser() ?? (context as unknown as Browser);
+      cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${dynamicPort}`);
+    }
+    }
 
     if (firstLaunch) {
       console.log('[browser] First launch — onboarding mode (visible browser for login)');
       markProfileInitialized();
-      // Emit an IPC event so the renderer can show the onboarding prompt
       if (notifyWindow && !notifyWindow.isDestroyed()) {
         notifyWindow.webContents.send('browser:firstLaunch');
       }
@@ -334,6 +396,17 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     if (!launchingInitialPage) {
       startScreencast(p).then(() => emitTabsChange());
     }
+  });
+
+  context.on('close', () => {
+    console.log('[browser] Chrome context closed unexpectedly or by user');
+    browser = null;
+    context = null;
+    cdpWsUrl = null;
+    pages = [];
+    activePageEntry = null;
+    stopScreencast().catch(() => {});
+    emitTabsChange();
   });
 
   // Populate existing pages if connecting to a live browser

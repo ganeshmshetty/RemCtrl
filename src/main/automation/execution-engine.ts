@@ -18,6 +18,7 @@
 import type { Page } from 'playwright';
 import { getBrowserPage, closeBrowser } from './browser-pool.js';
 import { getPage, getCdpUrl } from '../browser-manager.js';
+import { ensureCursorOverlay } from './cursor-overlay.js';
 import { resolveModel } from './model-resolver.js';
 import { ExecutionLogger } from './execution-logger.js';
 import { TaskSession } from './task-session.js';
@@ -66,10 +67,8 @@ export async function runAgent(
   variables?: Record<string, string>,
 ): Promise<void> {
   if (activeSession?.isActive) {
-    const msg = 'Another command is already running. Cancel it first.';
-    log(onLog, 'warn', msg);
-    onStatus({ commandId, state: 'failed', error: msg });
-    return;
+    log(onLog, 'info', 'Terminating previous agent run before starting new task...');
+    activeSession.cancel();
   }
 
   const page = getPage();
@@ -104,13 +103,17 @@ export async function runAgent(
       );
     });
 
-    log(onLog, 'info', 'Connecting to local browser via CDP...');
-
-    const connectionPromise = getBrowserPage(cdpUrl, (level, msg) => {
-      log(onLog, level, msg, '[Browser]');
-    });
-
-    localPage = await Promise.race([connectionPromise, timeoutPromise]);
+    localPage = getPage();
+    if (!localPage) {
+      log(onLog, 'info', 'Connecting to local browser via CDP...');
+      const connectionPromise = getBrowserPage(cdpUrl, (level, msg) => {
+        log(onLog, level, msg, '[Browser]');
+      });
+      localPage = await Promise.race([connectionPromise, timeoutPromise]);
+    }
+    if (localPage) {
+      await ensureCursorOverlay(localPage);
+    }
 
     const cancelPromise = new Promise<never>((_, reject) => {
       if (session.abortSignal.aborted) reject(session.abortSignal.reason);

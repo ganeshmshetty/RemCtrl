@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2 } from 'lucide-react';
+import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
@@ -35,6 +35,7 @@ export function AgentPanel() {
     if (!text || !isConnected) return;
 
     const commandId = crypto.randomUUID();
+    useAgentStore.getState().startNewExecution('agent', commandId, text);
     useAgentStore.getState().appendMessage({
       id: `user-${commandId}`,
       sender: 'user',
@@ -85,6 +86,40 @@ export function AgentPanel() {
     setTakeoverActive(true);
   }
 
+  const renderChatHistory = () => {
+    const rendered: React.ReactNode[] = [];
+    let currentLogGroup: ChatMessage[] = [];
+
+    const flushLogs = (key: string) => {
+      if (currentLogGroup.length > 0) {
+        const logs = [...currentLogGroup];
+        rendered.push(
+          <CollapsableLogs key={key} logs={logs} agentStatus={agentStatus} />
+        );
+        currentLogGroup = [];
+      }
+    };
+
+    for (let i = 0; i < chatHistory.length; i++) {
+      const msg = chatHistory[i];
+      if (msg.type === 'log') {
+        currentLogGroup.push(msg);
+      } else {
+        flushLogs(`log-group-${i}`);
+        rendered.push(
+          <ChatBubble
+            key={msg.id}
+            msg={msg}
+            onCheckpointResponse={handleCheckpointResponse}
+            onTakeover={handleTakeover}
+          />
+        );
+      }
+    }
+    flushLogs('log-group-end');
+    return rendered;
+  };
+
   return (
     <div className="agent-panel">
       <div className="agent-chat-area">
@@ -114,14 +149,7 @@ export function AgentPanel() {
           </div>
         )}
 
-        {chatHistory.map((msg) => (
-          <ChatBubble
-            key={msg.id}
-            msg={msg}
-            onCheckpointResponse={handleCheckpointResponse}
-            onTakeover={handleTakeover}
-          />
-        ))}
+        {renderChatHistory()}
         
         {agentStatus === 'running' && (
           <div
@@ -302,15 +330,15 @@ function ChatBubble({
             alignItems: 'center',
             gap: 8,
             padding: '6px 12px',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: 'var(--radius-sm)',
             fontSize: 12,
-            color: 'var(--text-primary)',
+            color: 'var(--text-secondary)',
           }}
         >
-          {icon}
-          <span style={{ fontFamily: 'var(--font-sans)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ opacity: 0.7, display: 'flex', alignItems: 'center' }}>{icon}</div>
+          <span style={{ fontFamily: 'var(--font-sans)', overflow: 'hidden', textOverflow: 'ellipsis', opacity: 0.85 }}>
             {msg.text}
           </span>
         </div>
@@ -336,6 +364,52 @@ function ChatBubble({
       <div className={`agent-msg-bubble ${isUser ? 'user' : 'agent'}`}>
         {msg.text}
       </div>
+    </div>
+  );
+}
+
+function CollapsableLogs({ logs, agentStatus }: { logs: ChatMessage[]; agentStatus: string }) {
+  const [isOpen, setIsOpen] = useState(agentStatus === 'running');
+
+  useEffect(() => {
+    if (agentStatus === 'running') {
+      setIsOpen(true);
+    }
+  }, [agentStatus, logs.length]);
+
+  return (
+    <div className="agent-msg-logs-collapsable animate-fade-in" style={{ margin: '6px 0', width: '100%' }}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: 'none',
+          border: 'none',
+          color: 'var(--text-muted)',
+          fontSize: 11,
+          fontWeight: 600,
+          cursor: 'pointer',
+          padding: '4px 0',
+          outline: 'none',
+        }}
+      >
+        <div style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s ease' }}>
+          <ChevronDown size={12} />
+        </div>
+        <span>
+          {isOpen ? 'Hide' : 'Show'} {logs.length} execution step{logs.length > 1 ? 's' : ''}
+        </span>
+      </button>
+
+      {isOpen && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 12, borderLeft: '1px dashed var(--border)' }}>
+          {logs.map((log) => (
+            <ChatBubble key={log.id} msg={log} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

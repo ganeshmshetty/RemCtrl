@@ -140,6 +140,18 @@ export interface CheckpointResponse {
   customInput?: string;
 }
 
+export interface AutomationRunHistoryItem {
+  id: string;
+  type: 'agent' | 'workflow';
+  title: string;
+  startTime: number;
+  endTime?: number;
+  status: 'completed' | 'error' | 'cancelled';
+  logs: { level: 'info' | 'warn' | 'error'; message: string; step?: string; timestamp?: number }[];
+  chatHistory: any[];
+  error?: string;
+}
+
 // ─── Workflow Run Types ────────────────────────────────────────────────────────
 
 export interface AgentWorkflowBatchPayload {
@@ -315,6 +327,13 @@ export interface RemoteCtrlAPI {
     setBrowserMode: (mode: BrowserMode) => Promise<void>;
     getHeadlessMode: () => Promise<boolean>;
     setHeadlessMode: (headless: boolean) => Promise<void>;
+    getKeepBrowserOpenOnQuit: () => Promise<boolean>;
+    setKeepBrowserOpenOnQuit: (keepOpen: boolean) => Promise<void>;
+    getBrowserProfile: () => Promise<string>;
+    setBrowserProfile: (profile: string) => Promise<void>;
+    getCustomProfiles: () => Promise<string[]>;
+    addCustomProfile: (name: string) => Promise<void>;
+    deleteCustomProfile: (name: string) => Promise<void>;
     getUseVisionCUA: () => Promise<boolean>;
     setUseVisionCUA: (useCua: boolean) => Promise<void>;
     getCustomBaseUrl: (provider: ApiProvider) => Promise<string | undefined>;

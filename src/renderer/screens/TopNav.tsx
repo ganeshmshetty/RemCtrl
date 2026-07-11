@@ -44,15 +44,14 @@ export function TopNav() {
             <div className="connection-pill-dot connected"></div>
             <span style={{ fontWeight: 500 }}>Local Session</span>
             <button
-              className="disconnect-btn"
-              style={{ background: 'var(--accent)', borderColor: 'var(--accent)' }}
+              className="top-nav-mini-btn"
               onClick={() => window.RemoteCtrlAPI?.app.showMiniWindow(true)}
               title="Switch to Mini Prompt Window"
             >
               Mini Window ↗
             </button>
             <button 
-              className="disconnect-btn"
+              className="top-nav-stop-btn"
               onClick={handleDisconnect}
               title="Stop Local Session"
             >

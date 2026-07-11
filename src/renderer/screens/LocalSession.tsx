@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';
-import { WorkflowEditorModal } from './WorkflowEditorModal';
 
 export function LocalSession() {
   const [rightPanelWidth, setRightPanelWidth] = useState(380);
@@ -48,8 +47,6 @@ export function LocalSession() {
       <div style={{ width: rightPanelWidth, height: '100%', flexShrink: 0 }}>
         <RightPanelLayout />
       </div>
-
-      <WorkflowEditorModal />
     </>
   );
 }

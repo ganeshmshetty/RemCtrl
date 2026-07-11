@@ -23,6 +23,13 @@ export function Settings() {
     setApiKey,
     headlessMode,
     setHeadlessMode,
+    keepBrowserOpenOnQuit,
+    setKeepBrowserOpenOnQuit,
+    browserProfile,
+    setBrowserProfile,
+    customProfiles,
+    addCustomProfile,
+    deleteCustomProfile,
     useVisionCUA,
     setUseVisionCUA,
     theme,
@@ -36,6 +43,7 @@ export function Settings() {
   const [showKey, setShowKey] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
   const [shortcutInput, setShortcutInput] = useState('');
+  const [newProfileInput, setNewProfileInput] = useState('');
 
   const [cachedModels, setCachedModels] = useState<Record<string, string[]>>({});
   const [hasFetchedApi, setHasFetchedApi] = useState<Record<string, boolean>>({});
@@ -356,6 +364,72 @@ export function Settings() {
                         onChange={(val) => setHeadlessMode(val)} 
                         label="Run invisibly in background (prevents stealing OS focus)" 
                       />
+                    </SettingField>
+                  )}
+
+                  {browserMode === 'internal' && (
+                    <SettingField label="Persistence" status="">
+                      <ToggleSwitch 
+                        checked={keepBrowserOpenOnQuit} 
+                        onChange={(val) => setKeepBrowserOpenOnQuit(val)} 
+                        label="Keep browser running on screen even after quitting RemoteCtrl app" 
+                      />
+                    </SettingField>
+                  )}
+
+                  {browserMode === 'internal' && (
+                    <SettingField label="Browser Profile" status="">
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <select
+                          className="settings-select"
+                          value={browserProfile || 'default'}
+                          onChange={(e) => setBrowserProfile(e.target.value)}
+                          style={{ flex: 1 }}
+                        >
+                          <option value="default">Default Profile (Standard logins & cookies)</option>
+                          <option value="work">Work Profile (Isolated business session)</option>
+                          <option value="personal">Personal Profile (Isolated personal session)</option>
+                          <option value="clean">Clean / Ephemeral Profile (Fresh session)</option>
+                          {(customProfiles || []).map((p) => (
+                            <option key={p} value={p}>{p} (Custom Profile)</option>
+                          ))}
+                        </select>
+                        {browserProfile !== 'default' && browserProfile !== 'work' && browserProfile !== 'personal' && browserProfile !== 'clean' && (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ color: '#ef4444' }}
+                            onClick={() => deleteCustomProfile(browserProfile)}
+                            title="Delete this custom profile"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          placeholder="Create custom profile (e.g. Client A, Staging)..."
+                          value={newProfileInput}
+                          onChange={(e) => setNewProfileInput(e.target.value)}
+                        />
+                        <button
+                          className="btn btn-primary"
+                          disabled={!newProfileInput.trim()}
+                          onClick={async () => {
+                            if (newProfileInput.trim()) {
+                              await addCustomProfile(newProfileInput.trim());
+                              await setBrowserProfile(newProfileInput.trim());
+                              setNewProfileInput('');
+                            }
+                          }}
+                        >
+                          + Create
+                        </button>
+                      </div>
+                      <p className="settings-hint" style={{ marginTop: 6 }}>
+                        Choose or create any persistent profile directory. Each profile gets its own isolated cookies, logins, and storage.
+                      </p>
                     </SettingField>
                   )}
 

@@ -6,21 +6,43 @@ Remote browser control desktop app — Electron + React + TypeScript.
 
 ```
 src/
-  main/         Electron main process (Node.js)
-    index.ts    App lifecycle, window creation
-    storage.ts  Settings + workflow file storage
-    ipc-handlers.ts  All IPC handler registrations
+  main/                   Electron main process (Node.js)
+    automation/           AI Agent execution engine, tools, planner & workflow executors
+      agent-loop.ts       Core AI step-by-step tool generation loop
+      agent-tools.ts      Playwright browser tool wrappers (goto, act, observe, extract, scroll, etc.)
+      cursor-overlay.ts   Stagehand-inspired visual cursor overlay script injector
+      human-checkpoint.ts Interactive human takeover & checkpoint prompts
+      workflow-executor.ts Workflow runner and task evaluations
+      ... (planner, resolver, stall-detector, logger)
+    ipc/                  Electron IPC handler registrations
+      agent.ipc.ts        Agent prompt execution signaling handlers
+      browser.ipc.ts      Browser lifecycle (launch, tabs, keyboard/mouse events)
+      settings.ipc.ts     Application settings & multi-profile configurations
+      webrtc.ipc.ts       WebRTC signaling & connection setup
+      workflow.ipc.ts     Workflow storage CRUD operations
+    browser-manager.ts    Playwright context, tab tracking, dynamic/detached launcher
+    ext-server.ts         WebSocket server bridge for Chrome Extension integrations
+    index.ts              App lifecycle, tray creation, window management, and graceful exits
+    storage.ts            Filesystem-backed JSON store for settings, workflows, and API keys
   preload/
-    index.cjs   contextBridge API (renderer ↔ main)
-  renderer/     React UI (browser context)
-    main.tsx    Entry point
-    App.tsx     Router + event wiring
-    screens/    Home, HostSession, ControllerSession, Settings, WorkflowLibrary, WorkflowEditor
-    stores/     Zustand stores (connection, agent, workflow, settings)
-    index.css   Global CSS with design tokens
+    index.cjs             Secure contextBridge API (renderer ↔ main)
+  renderer/               React UI (browser context)
+    screens/              Panels & view screens
+      AgentPanel.tsx      AI Agent console, chat feed with collapsable steps
+      BrowserPanel.tsx    Remote browser screen capture & WebRTC streaming panel
+      Settings.tsx        Configuration panels for models, keys, and custom profiles
+      WorkflowsPanel.tsx  Workflow listing and run triggers
+      WorkflowEditorModal.tsx Drag-and-drop workflow editor
+      MiniWindow.tsx      Minimal Spotlight-like floating controller overlay
+    stores/               Zustand state managers
+      useAgentStore.ts    Agent logs, run history, and streaming chat history
+      useConnectionStore.ts Peer-to-peer signaling & connection state
+      useUIStore.ts       View transitions and routing states
+      useWorkflowStore.ts App configurations, profiles, and workflow definitions
+    index.css             Global design system CSS tokens and components
   shared/
-    types.ts    Shared TypeScript types
-    schemas.ts  Zod validation schemas for all IPC payloads
+    types.ts              Shared TypeScript interfaces and types
+    schemas.ts            Zod schemas for IPC and store configuration validations
 ```
 
 ## Development
@@ -50,15 +72,7 @@ npm run build
 
 ## Implementation Status
 
-- **Phase 0** ✅ Project skeleton, routing, settings storage, workflow storage
-- **Phase 1** ✅ Socket.io signaling, PIN registration, session state, host approval
-- **Phase 2** ✅ Playwright browser launch, capture, WebRTC streaming
-- **Phase 3** ✅ Manual takeover, coordinate mapping
-- **Phase 4** ✅ Agent prompt execution (Stagehand)
-- **Phase 5** ✅ Remote workflow runs
-- **Phase 6** ✅ Hardening, packaging
-
-*Currently in Bug Fixes & Enhancements Phase.*
+*Implementation complete. Currently in Bug Fixes & Enhancements Phase.*
 
 ## Key Constraints
 
@@ -67,3 +81,4 @@ npm run build
 - API keys stored in `~/.config/RemoteCtrl/api-keys.json` (never in renderer state)
 - Workflows stored in `~/.config/RemoteCtrl/workflows.json`
 - Settings stored in `~/.config/RemoteCtrl/settings.json`
+- Custom Chrome profiles stored under `~/.config/RemoteCtrl/browser-profiles/`

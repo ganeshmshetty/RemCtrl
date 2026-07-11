@@ -114,6 +114,57 @@ export function setHeadlessMode(headless: boolean) {
   saveSettings({ ...s, headlessMode: headless });
 }
 
+export function getKeepBrowserOpenOnQuit(): boolean {
+  return loadSettings().keepBrowserOpenOnQuit;
+}
+
+export function setKeepBrowserOpenOnQuit(keepOpen: boolean) {
+  const s = loadSettings();
+  saveSettings({ ...s, keepBrowserOpenOnQuit: keepOpen });
+}
+
+export function getBrowserProfile(): string {
+  return loadSettings().browserProfile ?? 'default';
+}
+
+export function setBrowserProfile(profile: string) {
+  const s = loadSettings();
+  saveSettings({ ...s, browserProfile: profile });
+}
+
+export function getBrowserProfileDir(profileName?: string): string {
+  const active = (profileName || getBrowserProfile()).trim();
+  if (!active || active.toLowerCase() === 'default') {
+    return BROWSER_PROFILE_DIR;
+  }
+  const safeName = active.replace(/[^a-zA-Z0-9_\- ]/g, '_');
+  return path.join(USER_DATA, 'browser-profiles', safeName);
+}
+
+export function getCustomProfiles(): string[] {
+  return loadSettings().customProfiles || [];
+}
+
+export function addCustomProfile(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const s = loadSettings();
+  const existing = s.customProfiles || [];
+  if (!existing.includes(trimmed)) {
+    saveSettings({ ...s, customProfiles: [...existing, trimmed] });
+  }
+}
+
+export function deleteCustomProfile(name: string) {
+  const s = loadSettings();
+  const existing = s.customProfiles || [];
+  saveSettings({
+    ...s,
+    customProfiles: existing.filter(p => p !== name),
+    browserProfile: s.browserProfile === name ? 'default' : s.browserProfile,
+  });
+}
+
 export function getCustomBaseUrl(provider: ApiProvider): string | undefined {
   return loadSettings().customBaseUrls?.[provider];
 }

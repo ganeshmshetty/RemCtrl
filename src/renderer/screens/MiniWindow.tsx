@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, ExternalLink, Sparkles, X, Zap } from 'lucide-react';
+import { Play, Square, ExternalLink, Sparkles, X, Activity } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
-import { useWorkflowStore } from '../stores/useWorkflowStore';
-import type { LocalWorkflow } from '../../shared/types';
 
 export function MiniWindow() {
   const [instruction, setInstruction] = useState('');
@@ -13,25 +11,35 @@ export function MiniWindow() {
     agentStatus,
     workflowRunState,
     currentAction,
+    executionLogs,
+    currentStepIndex,
     setActiveCommandId,
     setAgentStatus,
   } = useAgentStore();
 
-  const { workflows, loadWorkflows } = useWorkflowStore();
-
   useEffect(() => {
-    loadWorkflows();
     inputRef.current?.focus();
 
-    const unsub = window.RemoteCtrlAPI?.on?.globalShortcut?.(() => {
-      inputRef.current?.focus();
-    });
-    return () => { unsub && unsub(); };
+    const store = useAgentStore.getState();
+    const unsubs = [
+      window.RemoteCtrlAPI?.on?.globalShortcut?.(() => inputRef.current?.focus()),
+      window.RemoteCtrlAPI?.on?.workflowRunStatus?.((status) => store.handleWorkflowRunStatus(status)),
+      window.RemoteCtrlAPI?.on?.workflowStepStatus?.((status) => store.handleWorkflowStepStatus(status)),
+      window.RemoteCtrlAPI?.on?.agentStatus?.((payload) => store.handleAgentStatus(payload)),
+      window.RemoteCtrlAPI?.on?.agentLog?.((payload) => store.handleAgentLog(payload)),
+    ];
+    return () => {
+      unsubs.forEach((u) => u && u());
+    };
   }, []);
 
   const isRunning =
     agentStatus === 'running' ||
     workflowRunState === 'running';
+
+  const latestLog = executionLogs.length > 0
+    ? executionLogs[executionLogs.length - 1].message
+    : null;
 
   const handleRunAgent = async () => {
     if (!instruction.trim() || isRunning) return;
@@ -40,6 +48,7 @@ export function MiniWindow() {
     setErrorMsg(null);
 
     const commandId = crypto.randomUUID();
+    useAgentStore.getState().startNewExecution('agent', commandId, text);
     try {
       await window.RemoteCtrlAPI?.browser.launch();
       await window.RemoteCtrlAPI?.browser.startAgent({
@@ -51,26 +60,6 @@ export function MiniWindow() {
       setAgentStatus('running');
     } catch (err) {
       setAgentStatus('idle');
-      setErrorMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
-  const handleRunWorkflow = async (wf: LocalWorkflow) => {
-    if (isRunning) return;
-    setErrorMsg(null);
-    try {
-      await window.RemoteCtrlAPI?.browser.launch();
-      const workflowRunId = crypto.randomUUID();
-      useAgentStore.getState().clearWorkflow();
-
-      await window.RemoteCtrlAPI?.browser.startWorkflow({
-        workflowRunId,
-        workflowId: wf.id,
-        name: wf.name,
-        startUrl: wf.startUrl,
-        steps: wf.steps,
-      });
-    } catch (err) {
       setErrorMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
@@ -91,8 +80,6 @@ export function MiniWindow() {
   const handleHideMini = () => {
     window.RemoteCtrlAPI?.app.hideMiniWindow();
   };
-
-  const quickWorkflows = workflows.slice(0, 3);
 
   return (
     <div className="mini-window-root">
@@ -150,52 +137,43 @@ export function MiniWindow() {
         )}
       </div>
 
-      {/* Live Status Card when active */}
+      {/* Enhanced Live Status Card when active */}
       {isRunning && (
-        <div className="mini-status-card animate-fade-in">
-          <div className="mini-status-header">
-            <span className="mini-status-dot animate-pulse" />
-            <span className="mini-status-label truncate">
-              {agentStatus === 'running'
-                ? currentAction || 'Agent automating browser...'
-                : 'Workflow automating browser...'}
+        <div className="mini-status-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="mini-status-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+              <span className="mini-status-dot animate-pulse" />
+              <span className="mini-status-label truncate" style={{ fontWeight: 600 }}>
+                {agentStatus === 'running'
+                  ? 'AI Agent Running'
+                  : `Workflow Running ${currentStepIndex !== null ? `(Step ${currentStepIndex + 1})` : ''}`}
+              </span>
+            </div>
+            <button className="mini-watch-btn" onClick={handleOpenMain} style={{ flexShrink: 0 }}>
+              Watch in Browser →
+            </button>
+          </div>
+
+          <div
+            style={{
+              background: 'var(--bg-overlay)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '6px 8px',
+              fontSize: '11px',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <Activity size={12} className="animate-pulse" color="var(--accent)" style={{ flexShrink: 0 }} />
+            <span className="truncate">
+              {latestLog || currentAction || 'Executing automation commands...'}
             </span>
           </div>
-          <button className="mini-watch-btn" onClick={handleOpenMain}>
-            Watch in Browser →
-          </button>
         </div>
       )}
-
-      {/* Quick-Run Workflows */}
-      <div className="mini-workflows-section">
-        <div className="mini-workflows-header">
-          <span className="mini-section-label">Quick-Run Workflows</span>
-        </div>
-        <div className="mini-workflows-grid">
-          {quickWorkflows.length > 0 ? (
-            quickWorkflows.map((wf) => (
-              <button
-                key={wf.id}
-                className="mini-workflow-card"
-                onClick={() => handleRunWorkflow(wf)}
-                disabled={isRunning}
-                title={wf.description || wf.name}
-              >
-                <Zap size={13} className="mini-wf-icon" />
-                <div className="mini-wf-info">
-                  <span className="mini-wf-name truncate">{wf.name}</span>
-                  <span className="mini-wf-steps">{wf.steps.length} steps</span>
-                </div>
-              </button>
-            ))
-          ) : (
-            <div className="mini-empty-workflows">
-              <span>Save workflows in the full app for one-click shortcuts here.</span>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

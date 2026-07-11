@@ -5,6 +5,7 @@ import type {
   WorkflowRunStatus,
   WorkflowStepStatus,
   AgentCheckpointPayload,
+  AutomationRunHistoryItem,
 } from '../../shared/types';
 
 export interface ChatMessage {
@@ -33,6 +34,14 @@ interface AgentState {
   workflowStepStatuses: WorkflowStepStatus[];
   currentStepIndex: number | null;
 
+  // Run History & Lifecycle
+  runHistory: AutomationRunHistoryItem[];
+  currentRunTitle: string | null;
+  currentRunStartTime: number | null;
+  lastOutcome: 'completed' | 'error' | 'cancelled' | null;
+  archiveCurrentRun: (finalStatus?: 'completed' | 'error' | 'cancelled', error?: string) => void;
+  startNewExecution: (type: 'agent' | 'workflow', id: string, title: string) => void;
+
   // Actions
   setTakeoverActive: (active: boolean) => void;
   setAgentStatus: (status: AgentStatus) => void;
@@ -60,6 +69,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   workflowStepStatuses: [],
   currentStepIndex: null,
 
+  runHistory: [],
+  currentRunTitle: null,
+  currentRunStartTime: null,
+  lastOutcome: null,
+
   setTakeoverActive: (active) => set({ isTakeoverActive: active }),
   setAgentStatus: (agentStatus) => set({ agentStatus }),
   setActiveCommandId: (id) => set({ activeCommandId: id }),
@@ -83,8 +97,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       activeCommandId: payload.state === 'running' ? payload.commandId : null,
     };
 
+    if (payload.state === 'completed') {
+      updates.lastOutcome = 'completed';
+    } else if (payload.state === 'failed') {
+      updates.lastOutcome = 'error';
+    } else if (payload.state === 'cancelled') {
+      updates.lastOutcome = 'cancelled';
+    }
+
     if (payload.state === 'running') {
       updates.currentAction = 'Initializing agent...';
+      updates.lastOutcome = null;
     } else if (['completed', 'failed', 'cancelled'].includes(payload.state)) {
       updates.currentAction = null;
     }
@@ -175,10 +198,44 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       failed: 'failed',
       cancelled: 'cancelled',
     };
-    set({
-      workflowRunState: stateMap[status.state] ?? 'idle',
-      workflowRunId: status.workflowRunId,
-      currentStepIndex: status.currentStepIndex ?? null,
+    set((state) => {
+      const newHistory = [...state.chatHistory];
+      const newLogs = [...state.executionLogs];
+      if (status.state === 'failed' && status.error) {
+        newHistory.push({
+          id: `wf-err-${Date.now()}`,
+          sender: 'agent',
+          type: 'error',
+          text: `Workflow failed: ${status.error}`,
+          timestamp: Date.now(),
+        });
+        newLogs.push({
+          level: 'error',
+          message: status.error,
+          step: '[Workflow]',
+        });
+      } else if (status.state === 'completed') {
+        newHistory.push({
+          id: `wf-done-${Date.now()}`,
+          sender: 'agent',
+          type: 'workflow',
+          text: 'Workflow completed successfully ✓',
+          timestamp: Date.now(),
+        });
+      }
+      let lastOutcome: 'completed' | 'error' | 'cancelled' | null = null;
+      if (status.state === 'completed') lastOutcome = 'completed';
+      else if (status.state === 'failed') lastOutcome = 'error';
+      else if (status.state === 'cancelled') lastOutcome = 'cancelled';
+
+      return {
+        workflowRunState: stateMap[status.state] ?? 'idle',
+        workflowRunId: status.workflowRunId,
+        currentStepIndex: status.currentStepIndex ?? state.currentStepIndex,
+        chatHistory: newHistory,
+        executionLogs: newLogs,
+        lastOutcome,
+      };
     });
   },
 
@@ -205,6 +262,53 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       text: payload.question,
       timestamp: Date.now(),
       checkpointPayload: payload,
+    });
+  },
+
+  archiveCurrentRun: (finalStatus = 'completed', error) => {
+    const state = get();
+    if (state.chatHistory.length === 0 && state.executionLogs.length === 0) return;
+    const id = state.activeCommandId || state.workflowRunId || `run-${Date.now()}`;
+    const type = state.workflowRunId ? 'workflow' : 'agent';
+    const title = state.currentRunTitle || (type === 'workflow' ? 'Workflow Execution' : 'Agent Execution');
+    const newItem: AutomationRunHistoryItem = {
+      id,
+      type,
+      title,
+      startTime: state.currentRunStartTime || Date.now(),
+      endTime: Date.now(),
+      status: finalStatus,
+      logs: [...state.executionLogs],
+      chatHistory: [...state.chatHistory],
+      error,
+    };
+    set({
+      runHistory: [newItem, ...state.runHistory].slice(0, 30),
+    });
+  },
+
+  startNewExecution: (type, id, title) => {
+    const state = get();
+    if (state.chatHistory.length > 0 || state.executionLogs.length > 0) {
+      const lastStatus = state.lastOutcome ||
+        (state.agentStatus === 'error' || state.workflowRunState === 'failed'
+          ? 'error'
+          : 'completed');
+      state.archiveCurrentRun(lastStatus);
+    }
+    set({
+      chatHistory: [],
+      executionLogs: [],
+      currentAction: null,
+      lastOutcome: null,
+      agentStatus: type === 'agent' ? 'running' : 'idle',
+      activeCommandId: type === 'agent' ? id : null,
+      workflowRunState: type === 'workflow' ? 'running' : 'idle',
+      workflowRunId: type === 'workflow' ? id : null,
+      workflowStepStatuses: [],
+      currentStepIndex: null,
+      currentRunTitle: title,
+      currentRunStartTime: Date.now(),
     });
   },
 

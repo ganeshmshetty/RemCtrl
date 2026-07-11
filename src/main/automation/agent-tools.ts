@@ -10,6 +10,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import type { Page } from 'playwright';
+import { ensureCursorOverlay, moveCursorToLocator } from './cursor-overlay.js';
 
 export function createBrowserTools(page: Page) {
   return {
@@ -18,6 +19,7 @@ export function createBrowserTools(page: Page) {
       inputSchema: z.object({ url: z.string() }),
       execute: async ({ url }) => {
         await page.goto(url, { waitUntil: 'domcontentloaded' });
+        await ensureCursorOverlay(page);
         await page.waitForLoadState('networkidle').catch(() => {});
         return { success: true, url: page.url() };
       },
@@ -59,6 +61,8 @@ export function createBrowserTools(page: Page) {
         if (!locator) {
           throw new Error(`Element not found matching selector or name: "${selector}". Try calling observe() first to find exact selectors.`);
         }
+
+        await moveCursorToLocator(page, locator);
 
         switch (action) {
           case 'click':

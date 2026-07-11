@@ -13,6 +13,8 @@ import { runWorkflow, cancelWorkflow, isWorkflowRunning, setWorkflowPaused } fro
 import { submitCheckpointResponse } from './human-checkpoint.js';
 import { closeBrowser } from './browser-pool.js';
 
+import { ensureCursorOverlay, moveCursorTo, moveCursorToLocator } from './cursor-overlay.js';
+
 export {
   runAgent,
   cancelAgent,
@@ -25,6 +27,9 @@ export {
   submitCheckpointResponse,
   closeBrowser as closeStagehand,
   closeBrowser,
+  ensureCursorOverlay,
+  moveCursorTo,
+  moveCursorToLocator,
 };
 
 export interface AutomationOrchestrator {

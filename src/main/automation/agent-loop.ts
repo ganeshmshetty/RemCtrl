@@ -62,7 +62,7 @@ function formatToolAction(toolName: string, input: any): string {
       return `Scrolling ${input?.direction || ''} ${input?.pixels || 500}px`;
     }
     case 'done': {
-      return `Completing task: ${input?.message || 'Done'}`;
+      return 'Task completed';
     }
     default:
       return `Running ${toolName}`;

@@ -15,7 +15,7 @@ export const WorkflowStepSchema = z.object({
   onTrue: z.string().optional(),
   onFalse: z.string().optional(),
   // recovery policy
-  onFailure: z.enum(['stop', 'skip']),
+  onFailure: z.enum(['stop', 'skip']).optional().default('stop'),
 }).refine(
   (s) => {
     if (s.type === 'navigate') return !!s.url;
@@ -121,7 +121,7 @@ export const AgentWorkflowBatchSchema = z.object({
   workflowRunId: z.string().uuid(),
   workflowId: z.string().min(1),
   name: z.string().min(1),
-  startUrl: z.union([z.string().url(), z.literal('')]).optional(),
+  startUrl: z.string().optional(),
   steps: z.array(WorkflowStepSchema).min(1).max(100),
   variables: z.record(z.string(), z.string()).optional(),
 });
@@ -168,7 +168,10 @@ export const PersistedSettingsSchema = z.object({
   customBaseUrls: z.record(z.string(), z.string()).optional(),
   browserMode: BrowserModeSchema.default('internal'),
   headlessMode: z.boolean().default(true),
+  keepBrowserOpenOnQuit: z.boolean().default(false),
   useVisionCUA: z.boolean().default(true),
+  browserProfile: z.string().default('default'),
+  customProfiles: z.array(z.string()).default([]),
   theme: AppThemeSchema.default('system'),
   profileInitialized: z.boolean().default(false),
   globalShortcut: z.string().default('CommandOrControl+Shift+Space'),

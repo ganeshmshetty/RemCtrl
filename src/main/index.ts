@@ -14,7 +14,7 @@ import path from 'path';
 import { setMainWindow } from './ipc-handlers.js';
 import { closeBrowser, launchBrowser, isBrowserRunning } from './browser-manager.js';
 import { automationOrchestrator } from './automation/index.js';
-import { getGlobalShortcut, isProfileInitialized } from './storage.js';
+import { getGlobalShortcut, isProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
 import { startExtensionBridgeServer, stopExtensionBridgeServer } from './ext-server.js';
 
 // __dirname is available natively in CJS (esbuild target: cjs)
@@ -29,6 +29,7 @@ let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let forceQuit = false;
 
 // ── Tray ──────────────────────────────────────────────────────────────────────
 function createTray() {
@@ -88,6 +89,7 @@ function updateTrayMenu() {
 }
 
 function showWindow() {
+  if (isQuitting) return;
   if (!mainWindow) {
     const win = createWindow();
     setMainWindow(win);
@@ -128,6 +130,9 @@ function getOrCreateMiniWindow() {
 
   miniWindow.on('closed', () => {
     miniWindow = null;
+    if (!isQuitting) {
+      showWindow();
+    }
   });
 
   return miniWindow;
@@ -354,6 +359,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('app:hideMiniWindow', () => {
     if (miniWindow && !miniWindow.isDestroyed()) miniWindow.hide();
+    showWindow();
   });
 
   ipcMain.handle('app:showMiniWindow', (_e, hideMain?: boolean) => {
@@ -424,14 +430,24 @@ app.on('window-all-closed', () => {
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 // Cancel any running agent/workflow and close the Playwright browser before quitting.
-app.on('before-quit', async () => {
+app.on('before-quit', (e) => {
+  if (forceQuit) return;
+  e.preventDefault();
+  cleanupAndQuit();
+});
+
+async function cleanupAndQuit() {
   isQuitting = true;
   stopExtensionBridgeServer();
   globalShortcut.unregisterAll();
   automationOrchestrator.cancelActiveTask();
   await automationOrchestrator.closePool().catch(() => { });
-  await closeBrowser().catch(() => { });
-});
+  if (!getKeepBrowserOpenOnQuit()) {
+    await closeBrowser().catch(() => { });
+  }
+  forceQuit = true;
+  app.quit();
+}
 
 // Security: block navigation away from the app
 app.on('web-contents-created', (_event, contents) => {

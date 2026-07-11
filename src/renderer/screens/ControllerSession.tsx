@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';
-import { WorkflowEditorModal } from './WorkflowEditorModal';
 import { useConnectionStore } from '../stores/useConnectionStore';
 
 export function ControllerSession() {
@@ -57,8 +56,6 @@ export function ControllerSession() {
           </div>
         </>
       )}
-
-      <WorkflowEditorModal />
     </>
   );
 }

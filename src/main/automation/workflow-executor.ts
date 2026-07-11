@@ -14,6 +14,7 @@
 import { getBrowserPage } from './browser-pool.js';
 import type { Page } from 'playwright';
 import { resolveModel } from './model-resolver.js';
+import { ensureCursorOverlay } from './cursor-overlay.js';
 import type {
   AgentWorkflowBatchPayload,
   WorkflowStep,
@@ -21,7 +22,7 @@ import type {
   WorkflowStepStatus,
   AgentLogPayload,
 } from '../../shared/types.js';
-import { getPage, getCdpUrl } from '../browser-manager.js';
+import { getPage, getCdpUrl, launchBrowser } from '../browser-manager.js';
 import { getPreferredProvider, getApiKey } from '../storage.js';
 import {
   BrowserNotReadyError,
@@ -68,45 +69,52 @@ export async function runWorkflow(
   onLog: WorkflowLogCb,
 ): Promise<void> {
   const { workflowRunId, name, startUrl, steps } = payload;
-
   if (activeSession?.isActive) {
-    const msg = 'Another workflow is already running.';
-    emitLog(onLog, 'warn', msg, '[Workflow]');
-    onRunStatus({ workflowRunId, state: 'failed', error: msg });
-    return;
-  }
-
-  const page = getPage();
-  const cdpUrl = getCdpUrl();
-
-  if (!page || !cdpUrl) {
-    const err = new BrowserNotReadyError('Launch a browser from the Host session first.');
-    emitLog(onLog, 'error', err.message, '[Workflow]');
-    onRunStatus({ workflowRunId, state: 'failed', error: err.message });
-    return;
+    emitLog(onLog, 'info', 'Terminating previous workflow run before starting new execution...', '[Workflow]');
+    activeSession.cancel();
   }
 
   const session = new TaskSession();
   activeSession = session;
   session.start();
 
-  const provider = getPreferredProvider();
-
-  onRunStatus({ workflowRunId, state: 'running', currentStepIndex: 0 });
-  emitLog(onLog, 'info', `Workflow "${name}" started — ${steps.length} step(s), provider="${provider}"`, '[Workflow]');
-
   let localPage: Page | null = null;
 
   try {
-    emitLog(onLog, 'info', `Connecting to local browser via CDP: ${cdpUrl}`, '[Workflow]');
+    let page = getPage();
+    let cdpUrl = getCdpUrl();
 
-    localPage = await getBrowserPage(cdpUrl, (level, msg) => {
-      emitLog(onLog, level, msg, '[Browser]');
-    });
+    if (!page || !cdpUrl) {
+      emitLog(onLog, 'info', 'Launching local browser...', '[Workflow]');
+      await launchBrowser();
+      page = getPage();
+      cdpUrl = getCdpUrl();
+    }
+
+    if (!page || !cdpUrl) {
+      throw new BrowserNotReadyError('Browser failed to initialize.');
+    }
+
+    const provider = getPreferredProvider();
+
+    onRunStatus({ workflowRunId, state: 'running', currentStepIndex: 0 });
+    emitLog(onLog, 'info', `Workflow "${name}" started — ${steps.length} step(s), provider="${provider}"`, '[Workflow]');
+
+    localPage = getPage();
+    if (!localPage) {
+      emitLog(onLog, 'info', `Connecting to local browser via CDP: ${cdpUrl}`, '[Workflow]');
+      localPage = await getBrowserPage(cdpUrl, (level, msg) => {
+        emitLog(onLog, level, msg, '[Browser]');
+      });
+    }
 
     if (startUrl) {
-      emitLog(onLog, 'info', `Navigating to start URL: ${startUrl}`, '[Workflow]');
-      await localPage.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch((e: Error) => {
+      let targetUrl = startUrl.trim();
+      if (!/^https?:\/\//i.test(targetUrl)) {
+        targetUrl = 'https://' + targetUrl;
+      }
+      emitLog(onLog, 'info', `Navigating to start URL: ${targetUrl}`, '[Workflow]');
+      await localPage.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch((e: Error) => {
         emitLog(onLog, 'warn', `Start URL navigation warning: ${e.message}`, '[Workflow]');
       });
     }
@@ -125,48 +133,45 @@ export async function runWorkflow(
       );
 
       if (session.isCancelled) {
-        emitLog(onLog, 'info', 'Workflow cancelled.', '[Workflow]');
+        emitLog(onLog, 'info', 'Workflow run cancelled.', '[Workflow]');
         onRunStatus({ workflowRunId, state: 'cancelled' });
         return;
       }
 
       const index = steps.findIndex((s) => s.id === currentStepId);
       if (index === -1) {
-        throw new Error(`Workflow branch target step not found: "${currentStepId}"`);
+        throw new Error(`Step ID "${currentStepId}" not found in workflow steps.`);
       }
 
       const step = steps[index];
-      const stepLabel = `Step ${index + 1}/${steps.length} (${step.type.toUpperCase()})`;
+      const stepLabel = `Step ${index + 1}/${steps.length} [${step.type.toUpperCase()}]`;
 
-      emitLog(onLog, 'info', `━━ ${stepLabel}${step.instruction ? `: "${step.instruction}"` : step.url ? `: ${step.url}` : ''}`, '[Workflow]');
-      onRunStatus({ workflowRunId, state: 'running', currentStepId: step.id, currentStepIndex: index });
+      onRunStatus({ workflowRunId, state: 'running', currentStepIndex: index });
       onStepStatus({ workflowRunId, stepId: step.id, index, state: 'running' });
-
-      const nextStepId = steps[index + 1]?.id ?? null;
-      let jumpToStepId: string | null = nextStepId;
+      emitLog(onLog, 'info', `▶ ${stepLabel}`, '[Workflow]');
 
       try {
         const result = await executeStepWithRetry(localPage, step, onLog);
 
-        if (session.isCancelled) {
-          onStepStatus({ workflowRunId, stepId: step.id, index, state: 'skipped' });
-          onRunStatus({ workflowRunId, state: 'cancelled' });
-          return;
-        }
-
+        let jumpToStepId: string | null = null;
         if (step.type === 'check') {
-          const conditionMet = result as boolean;
-          emitLog(onLog, 'info', `✓ ${stepLabel} — condition: ${conditionMet ? 'TRUE' : 'FALSE'}`, '[Workflow]');
-          onStepStatus({ workflowRunId, stepId: step.id, index, state: 'completed', result: conditionMet });
+          const checkPassed = Boolean((result as { passed: boolean }).passed);
+          onStepStatus({
+            workflowRunId,
+            stepId: step.id,
+            index,
+            state: checkPassed ? 'completed' : 'failed',
+            result,
+          });
 
-          if (conditionMet && step.onTrue) {
-            jumpToStepId = step.onTrue;
-          } else if (!conditionMet && step.onFalse) {
-            jumpToStepId = step.onFalse;
+          if (checkPassed) {
+            jumpToStepId = step.onTrue ?? (steps[index + 1]?.id ?? null);
+          } else {
+            jumpToStepId = step.onFalse ?? null;
           }
         } else {
-          emitLog(onLog, 'info', `✓ ${stepLabel} completed.`, '[Workflow]');
           onStepStatus({ workflowRunId, stepId: step.id, index, state: 'completed', result });
+          jumpToStepId = steps[index + 1]?.id ?? null;
         }
 
         currentStepId = jumpToStepId;
@@ -177,7 +182,7 @@ export async function runWorkflow(
 
         if (step.onFailure === 'skip') {
           emitLog(onLog, 'warn', `onFailure=skip — continuing to next step.`, '[Workflow]');
-          currentStepId = nextStepId;
+          currentStepId = steps[index + 1]?.id ?? null;
         } else {
           onRunStatus({ workflowRunId, state: 'failed', error: errorInfo.message });
           return;
@@ -197,7 +202,9 @@ export async function runWorkflow(
       onRunStatus({ workflowRunId, state: 'failed', error: errorInfo.message });
     }
   } finally {
-    activeSession = null;
+    if (activeSession === session) {
+      activeSession = null;
+    }
     localPage = null;
   }
 }
@@ -246,6 +253,7 @@ async function executeStep(
   step: WorkflowStep,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
+  await ensureCursorOverlay(page);
   await activeSession?.waitIfPaused(
     () => emitLog(onLog, 'info', 'Workflow paused for manual takeover. Waiting for resume…', '[Workflow]'),
     () => emitLog(onLog, 'info', 'Workflow resumed. Capturing fresh page state…', '[Workflow]'),
@@ -270,15 +278,20 @@ async function executeNavigateStep(
 ): Promise<{ navigatedTo: string; finalUrl: string; redirected: boolean }> {
   if (!step.url) throw new Error('navigate step requires a url');
 
-  emitLog(onLog, 'info', `Navigating to: ${step.url}`, '[Navigate]');
-  await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+  let targetUrl = step.url.trim();
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    targetUrl = 'https://' + targetUrl;
+  }
 
+  emitLog(onLog, 'info', `Navigating to: ${targetUrl}`, '[Navigate]');
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+  await ensureCursorOverlay(page);
+  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
   const finalUrl = page.url();
   let redirected = false;
 
   try {
-    const target = new URL(step.url);
+    const target = new URL(targetUrl);
     const actual = new URL(finalUrl);
     redirected = target.hostname !== actual.hostname || target.pathname !== actual.pathname;
   } catch {
@@ -286,12 +299,12 @@ async function executeNavigateStep(
   }
 
   if (redirected) {
-    emitLog(onLog, 'warn', `Redirected: ${step.url} → ${finalUrl}. Page may be an auth wall or interstitial.`, '[Navigate]');
+    emitLog(onLog, 'warn', `Redirected: ${targetUrl} → ${finalUrl}. Page may be an auth wall or interstitial.`, '[Navigate]');
   } else {
     emitLog(onLog, 'info', `Arrived at: ${finalUrl}`, '[Navigate]');
   }
 
-  return { navigatedTo: step.url, finalUrl, redirected };
+  return { navigatedTo: targetUrl, finalUrl, redirected };
 }
 
 async function executeDoStep(

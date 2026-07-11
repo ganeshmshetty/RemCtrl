@@ -74,7 +74,7 @@ function WorkflowCard({ workflow, confirmingDelete, onEdit, onDelete, onConfirmD
   function handleRun() {
     if (!isConnected) return;
     const workflowRunId = crypto.randomUUID();
-    useAgentStore.getState().clearWorkflow();
+    useAgentStore.getState().startNewExecution('workflow', workflowRunId, workflow.name);
     
     const payload = {
       workflowRunId,

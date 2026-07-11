@@ -74,6 +74,9 @@ interface SettingsState {
   hasOpenRouterKey: boolean;
   hasVertexKey: boolean;
   headlessMode: boolean;
+  keepBrowserOpenOnQuit: boolean;
+  browserProfile: string;
+  customProfiles: string[];
   theme: AppTheme;
   isLoading: boolean;
 
@@ -84,6 +87,10 @@ interface SettingsState {
   setPreferredModel: (model: string) => Promise<void>;
   setApiKey: (provider: ApiProvider, value: string) => Promise<void>;
   setHeadlessMode: (headless: boolean) => Promise<void>;
+  setKeepBrowserOpenOnQuit: (keepOpen: boolean) => Promise<void>;
+  setBrowserProfile: (profile: string) => Promise<void>;
+  addCustomProfile: (name: string) => Promise<void>;
+  deleteCustomProfile: (name: string) => Promise<void>;
   setTheme: (theme: AppTheme) => Promise<void>;
   useVisionCUA: boolean;
   setUseVisionCUA: (useCua: boolean) => Promise<void>;
@@ -104,6 +111,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hasOpenRouterKey: false,
   hasVertexKey: false,
   headlessMode: true,
+  keepBrowserOpenOnQuit: false,
+  browserProfile: 'default',
+  customProfiles: [],
   theme: 'system',
   useVisionCUA: true,
   isLoading: false,
@@ -112,7 +122,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, useVisionCUA, theme] =
+      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme] =
         await Promise.all([
           window.RemoteCtrlAPI.settings.getSignalingUrl(),
           window.RemoteCtrlAPI.settings.getPreferredProvider(),
@@ -126,10 +136,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           window.RemoteCtrlAPI.settings.hasApiKey('openrouter'),
           window.RemoteCtrlAPI.settings.hasApiKey('vertex'),
           window.RemoteCtrlAPI.settings.getHeadlessMode(),
+          window.RemoteCtrlAPI.settings.getKeepBrowserOpenOnQuit(),
+          window.RemoteCtrlAPI.settings.getBrowserProfile(),
+          window.RemoteCtrlAPI.settings.getCustomProfiles(),
           window.RemoteCtrlAPI.settings.getUseVisionCUA(),
           window.RemoteCtrlAPI.settings.getTheme(),
         ]);
-      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, useVisionCUA, theme, isLoading: false });
+      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, isLoading: false });
     } catch {
       set({ isLoading: false });
     }
@@ -169,6 +182,29 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setHeadlessMode: async (headless) => {
     await window.RemoteCtrlAPI.settings.setHeadlessMode(headless);
     set({ headlessMode: headless });
+  },
+
+  setKeepBrowserOpenOnQuit: async (keepOpen) => {
+    await window.RemoteCtrlAPI.settings.setKeepBrowserOpenOnQuit(keepOpen);
+    set({ keepBrowserOpenOnQuit: keepOpen });
+  },
+
+  setBrowserProfile: async (profile) => {
+    await window.RemoteCtrlAPI.settings.setBrowserProfile(profile);
+    set({ browserProfile: profile });
+  },
+
+  addCustomProfile: async (name) => {
+    await window.RemoteCtrlAPI.settings.addCustomProfile(name);
+    const customProfiles = await window.RemoteCtrlAPI.settings.getCustomProfiles();
+    set({ customProfiles });
+  },
+
+  deleteCustomProfile: async (name) => {
+    await window.RemoteCtrlAPI.settings.deleteCustomProfile(name);
+    const customProfiles = await window.RemoteCtrlAPI.settings.getCustomProfiles();
+    const currentProfile = await window.RemoteCtrlAPI.settings.getBrowserProfile();
+    set({ customProfiles, browserProfile: currentProfile });
   },
 
   setTheme: async (theme) => {

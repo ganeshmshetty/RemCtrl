@@ -309,6 +309,39 @@ code, pre, kbd {
   color: var(--danger);
 }
 
+.top-nav-mini-btn {
+  background: var(--accent);
+  color: #ffffff;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: all 0.15s ease;
+}
+.top-nav-mini-btn:hover {
+  filter: brightness(1.15);
+}
+
+.top-nav-stop-btn {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all 0.15s ease;
+}
+.top-nav-stop-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
 .main-content {
   flex: 1;
   display: flex;
@@ -735,7 +768,7 @@ code, pre, kbd {
 
 .agent-msg-bubble.agent {
   background: var(--bg-overlay);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   border: 1px solid var(--border);
 }
 
@@ -1708,24 +1741,31 @@ code, pre, kbd {
 .mini-input-bar {
   display: flex;
   align-items: center;
-  padding: 12px 14px;
-  gap: 10px;
+  padding: 14px 16px;
+  gap: 12px;
   background: var(--bg-primary);
 }
 
 .mini-prompt-input {
   flex: 1;
-  background: transparent;
-  border: none;
+  background: var(--bg-secondary);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  padding: 11px 16px;
   color: var(--text-primary);
   font-size: 14px;
   outline: none;
+  transition: all 0.2s ease;
 }
 
+.mini-prompt-input:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.mini-prompt-input:focus,
 .mini-prompt-input:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25);
 }
 
 .mini-prompt-input::placeholder {
@@ -1736,9 +1776,9 @@ code, pre, kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   background: var(--accent);
   border: none;
   color: #fff;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Zap, Play, Radio, ArrowRight } from 'lucide-react';
+import { Zap, Play, Radio, Plus, FolderPlus, ArrowRight } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
 import { useAgentStore } from '../stores/useAgentStore';
@@ -10,7 +10,7 @@ export function ConnectionPlaceholder() {
   const [pinInput, setPinInput] = useState('');
   const { setRole } = useConnectionStore();
   const { workflows, loadWorkflows } = useWorkflowStore();
-  const { setRightPanelTab } = useUIStore();
+  const { setRightPanelTab, openWorkflowEditor } = useUIStore();
 
   useEffect(() => {
     loadWorkflows();
@@ -20,6 +20,10 @@ export function ConnectionPlaceholder() {
     setRole('local');
     window.RemoteCtrlAPI?.browser.launch();
     window.RemoteCtrlAPI?.app.showMiniWindow(true);
+  }
+
+  function handleCreateWorkflow() {
+    openWorkflowEditor();
   }
 
   async function handleQuickRunWorkflow(workflow: LocalWorkflow) {
@@ -33,7 +37,7 @@ export function ConnectionPlaceholder() {
     }
 
     const workflowRunId = crypto.randomUUID();
-    useAgentStore.getState().clearWorkflow();
+    useAgentStore.getState().startNewExecution('workflow', workflowRunId, workflow.name);
 
     window.RemoteCtrlAPI?.browser.startWorkflow({
       workflowRunId,
@@ -61,9 +65,10 @@ export function ConnectionPlaceholder() {
   }
 
   return (
-    <div className="connection-placeholder">
+    <div className="connection-placeholder" style={{ maxWidth: '680px' }}>
+      {/* Top Hero Section */}
       <div className="cp-icon">
-        <Zap size={40} strokeWidth={1.5} color="var(--accent)" />
+        <Zap size={36} strokeWidth={1.75} color="var(--accent)" />
       </div>
 
       <h2 className="cp-title">Start Automating</h2>
@@ -73,40 +78,55 @@ export function ConnectionPlaceholder() {
 
       <button
         className="btn btn-primary glow-accent"
-        style={{ width: '100%', padding: '12px', fontSize: '15px', fontWeight: 600 }}
+        style={{ width: '100%', maxWidth: '380px', padding: '12px 20px', fontSize: '15px', fontWeight: 600, marginBottom: '32px' }}
         onClick={handleLocal}
       >
         Start Local Session
       </button>
 
-      {workflows.length > 0 && (
-        <div style={{ width: '100%', marginTop: '24px', textAlign: 'left' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '10px', letterSpacing: '0.08em' }}>
-            QUICK-RUN SAVED WORKFLOWS
+      {/* Workflows Section */}
+      <div style={{ width: '100%', marginBottom: '32px', textAlign: 'left' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
+            SAVED WORKFLOWS ({workflows.length})
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(workflows.slice(0,4).length, 2)}, 1fr)`, gap: '8px' }}>
-            {workflows.slice(0, 4).map((wf) => (
+          <button
+            className="btn btn-sm btn-outline"
+            style={{ padding: '4px 10px', fontSize: '12px', gap: '6px', color: 'var(--text-primary)' }}
+            onClick={handleCreateWorkflow}
+          >
+            <Plus size={13} /> New Workflow
+          </button>
+        </div>
+
+        {workflows.length > 0 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+            {workflows.slice(0, 6).map((wf) => (
               <div
                 key={wf.id}
                 style={{
                   background: 'var(--bg-secondary)',
                   border: '1px solid var(--border)',
                   borderRadius: 'var(--radius)',
-                  padding: '12px',
+                  padding: '14px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '8px',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  transition: 'border-color 0.15s ease',
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '2px' }}>{wf.name}</div>
+                  <div className="truncate" style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                    {wf.name}
+                  </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                     {wf.steps.length} step{wf.steps.length === 1 ? '' : 's'}
                   </div>
                 </div>
                 <button
                   className="btn btn-sm btn-ghost"
-                  style={{ alignSelf: 'flex-start', color: 'var(--accent)', padding: '4px 8px', gap: '4px' }}
+                  style={{ alignSelf: 'flex-start', color: 'var(--accent)', padding: '4px 8px', gap: '4px', background: 'rgba(99,102,241,0.08)' }}
                   onClick={() => handleQuickRunWorkflow(wf)}
                 >
                   <Play size={11} /> Run Now
@@ -114,25 +134,52 @@ export function ConnectionPlaceholder() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <div
+            style={{
+              background: 'var(--bg-secondary)',
+              border: '1px dashed var(--border)',
+              borderRadius: 'var(--radius)',
+              padding: '24px',
+              textAlign: 'center',
+              color: 'var(--text-secondary)',
+              fontSize: '13px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <FolderPlus size={24} color="var(--text-muted)" />
+            <span>No saved workflows yet</span>
+            <button
+              className="btn btn-sm btn-ghost"
+              style={{ color: 'var(--accent)', marginTop: '4px' }}
+              onClick={handleCreateWorkflow}
+            >
+              + Create your first workflow
+            </button>
+          </div>
+        )}
+      </div>
 
-      <div className="cp-divider" style={{ margin: '28px 0 20px' }}>
+      {/* Remote Control Section */}
+      <div className="cp-divider" style={{ margin: '12px 0 20px' }}>
         <div className="cp-divider-line"></div>
         <span className="cp-divider-text">Remote Control</span>
         <div className="cp-divider-line"></div>
       </div>
 
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
         <button
           className="btn btn-outline"
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          style={{ flex: '1 1 240px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
           onClick={handleHost}
         >
-          <Radio size={15} /> Host your browser for remote session
+          <Radio size={15} /> Host browser session
         </button>
 
-        <form onSubmit={handleJoin} className="cp-pin-form">
+        <form onSubmit={handleJoin} className="cp-pin-form" style={{ flex: '1 1 240px' }}>
           <input
             type="text"
             className="cp-pin-input"
@@ -155,3 +202,4 @@ export function ConnectionPlaceholder() {
     </div>
   );
 }
+
