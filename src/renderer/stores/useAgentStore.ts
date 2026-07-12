@@ -163,17 +163,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             timestamp: Date.now(),
           },
         ];
-      } else if (isActionable && !state.chatHistory.some((m) => m.text === payload.message)) {
-        newHistory = [
-          ...newHistory,
-          {
-            id: `log-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            sender: 'agent' as const,
-            type: 'log' as const,
-            text: payload.message,
-            timestamp: Date.now(),
-          },
-        ];
+      } else if (isActionable) {
+        const lastMsg = state.chatHistory.at(-1);
+        const isDuplicateOfLast = lastMsg?.type === 'log' && lastMsg?.text === payload.message;
+        if (!isDuplicateOfLast) {
+          newHistory = [
+            ...newHistory,
+            {
+              id: `log-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              sender: 'agent' as const,
+              type: 'log' as const,
+              text: payload.message,
+              timestamp: Date.now(),
+            },
+          ];
+        }
       }
 
       return {

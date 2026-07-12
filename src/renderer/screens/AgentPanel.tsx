@@ -5,6 +5,7 @@ import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload } from '../../shared/types';
+import { MarkdownRenderer } from '../components/MarkdownRenderer';
 
 export function AgentPanel() {
   const { 
@@ -362,7 +363,7 @@ function ChatBubble({
   return (
     <div className={`agent-msg ${isUser ? 'user' : ''}`}>
       <div className={`agent-msg-bubble ${isUser ? 'user' : 'agent'}`}>
-        {msg.text}
+        <MarkdownRenderer content={msg.text} />
       </div>
     </div>
   );
