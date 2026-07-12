@@ -11,6 +11,7 @@ import {
   isWorkflowRunning,
   submitCheckpointResponse,
   automationOrchestrator,
+  sessionHistory,
 } from '../automation/index.js';
 import type { AgentWorkflowBatchPayload } from '../../shared/types.js';
 
@@ -111,6 +112,11 @@ export function registerAgentIpc(_win: BrowserWindow) {
 
   ipcMain.handle('browser:cancelWorkflow', async () => {
     cancelWorkflow();
+    return { ok: true };
+  });
+
+  ipcMain.handle('agent:clearHistory', async () => {
+    sessionHistory.clear();
     return { ok: true };
   });
 }

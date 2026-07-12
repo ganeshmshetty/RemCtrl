@@ -24,6 +24,7 @@ import { ExecutionLogger } from './execution-logger.js';
 import { TaskSession } from './task-session.js';
 import { runToolLoop } from './agent-loop.js';
 import { buildAgentSystemPrompt } from './agent-system-prompt.js';
+import { sessionHistory } from './agent-history.js';
 import {
   AgentTimeoutError,
   BrowserNotReadyError,
@@ -126,9 +127,10 @@ export async function runAgent(
     };
 
     const runLoop = async () => {
+      const fullInstruction = sessionHistory.buildPromptContext(instruction);
       return await runToolLoop({
         commandId,
-        instruction,
+        instruction: fullInstruction,
         systemPrompt: buildAgentSystemPrompt(instruction, variables),
         page: localPage!,
         session,
@@ -147,6 +149,8 @@ export async function runAgent(
       log(onLog, 'info', 'Pipeline cancelled.');
       onStatus({ commandId, state: 'cancelled' });
     } else {
+      sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions);
+      await sessionHistory.maybeCompactHistory(resolveModel(provider, apiKey)).catch(() => {});
       executionLogger.complete();
       const summary = executionLogger.getSummary() as Record<string, any>;
       summary.totalSteps = loopResult.stepCount;

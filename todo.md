@@ -48,7 +48,7 @@
   Support executing custom in-page JavaScript helper scripts that emit structured dictionaries (`emit_output`, tables, pagination feeds) back to the agent engine for instant bulk extraction without repeated DOM lookups.
 
 ### Milestone 4: Replayable Workflows & Conversational Resume
-- [ ] **Conversational Resume (Task State Persistence & Checkpoint Breakpoints)** `[High Impact, High Complexity]`
+- [x] **Conversational Resume (Task State Persistence & Checkpoint Breakpoints)** `[High Impact, High Complexity]`
   - If an agent run is cancelled, pauses, or fails, persist the step history and browser context. Enable the user to submit a correction prompt (e.g., "Try entering the login details again") and click Resume to continue from that exact step instead of restarting the run.
   - **Playwright State Snapshotting**: Persist Playwright context storage state (`context.storageState()`) for cookies/localStorage/sessionStorage plus current URL and step index.
   - **Chat History & Token Compaction**: Key chat message arrays by run ID on disk. Implement token compaction (`_maybe_compact_messages`) to summarize older tool results while keeping recent turns verbatim.

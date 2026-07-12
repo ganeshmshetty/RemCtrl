@@ -1,0 +1,131 @@
+/**
+ * AgentHistoryManager — Conversational Resume & Multi-Turn Session Continuity
+ *
+ * Modeled after browser-use MessageManager (browser_use/agent/message_manager/service.py).
+ * Maintains turn-by-turn history across multiple user instructions in the same session,
+ * avoiding conversational amnesia while bounding context growth via LLM prompt compaction.
+ */
+
+import { generateText } from 'ai';
+
+export interface HistoryTurnItem {
+  turnIndex: number;
+  userRequest: string;
+  finalMessage?: string;
+  actionsTaken: string[];
+}
+
+export class AgentHistoryManager {
+  private turns: HistoryTurnItem[] = [];
+  private compactedSummary: string | null = null;
+  private initialRequest: string | null = null;
+
+  /**
+   * Clears the current conversational session history.
+   */
+  clear(): void {
+    this.turns = [];
+    this.compactedSummary = null;
+    this.initialRequest = null;
+  }
+
+  /**
+   * Returns whether this session already has prior turns recorded.
+   */
+  get hasHistory(): boolean {
+    return this.turns.length > 0;
+  }
+
+  /**
+   * Records a completed turn into session history.
+   */
+  recordTurn(userRequest: string, finalMessage: string | undefined, actionsTaken: string[]): void {
+    if (this.turns.length === 0) {
+      this.initialRequest = userRequest;
+    }
+    this.turns.push({
+      turnIndex: this.turns.length + 1,
+      userRequest,
+      finalMessage,
+      actionsTaken,
+    });
+  }
+
+  /**
+   * Builds the full prompt instruction with multi-turn context.
+   * If this is the first turn, returns the instruction as-is.
+   * If subsequent turn, embeds <initial_user_request>, <previous_compacted_memory>,
+   * <past_session_history>, and <follow_up_user_request>.
+   */
+  buildPromptContext(newRequest: string): string {
+    if (this.turns.length === 0) {
+      return newRequest;
+    }
+
+    const sections: string[] = [];
+
+    if (this.initialRequest) {
+      sections.push(`<initial_user_request>\n${this.initialRequest}\n</initial_user_request>`);
+    }
+
+    if (this.compactedSummary) {
+      sections.push(`<previous_compacted_memory>\n${this.compactedSummary}\n</previous_compacted_memory>`);
+    }
+
+    // Keep the most recent turns (up to last 4 turns)
+    const recentTurns = this.turns.slice(-4);
+    const turnsText = recentTurns
+      .map((t) => {
+        const actionLines = t.actionsTaken.slice(0, 10).map((a) => `  - ${a}`).join('\n');
+        return `[Turn ${t.turnIndex}]\nUser Request: "${t.userRequest}"\nActions Executed:\n${actionLines || '  (None)'}\nOutcome / Final Message: ${t.finalMessage ?? 'Completed'}`;
+      })
+      .join('\n\n');
+
+    sections.push(`<past_session_history>\n${turnsText}\n</past_session_history>`);
+    sections.push(`<follow_up_user_request>\n${newRequest}\n</follow_up_user_request>`);
+
+    return sections.join('\n\n');
+  }
+
+  /**
+   * Compacts older turns using the LLM if history grows large (> 5 turns or > 30k characters).
+   */
+  async maybeCompactHistory(model: any): Promise<void> {
+    if (this.turns.length <= 5) return;
+
+    const fullHistoryText = this.turns
+      .map(
+        (t) =>
+          `[Turn ${t.turnIndex}] Request: "${t.userRequest}" -> Actions: ${t.actionsTaken.join(', ')} -> Outcome: ${t.finalMessage ?? 'Done'}`
+      )
+      .join('\n\n');
+
+    if (fullHistoryText.length < 25_000 && this.turns.length <= 8) return;
+
+    try {
+      const promptText = [
+        this.compactedSummary ? `Previous Summary:\n${this.compactedSummary}` : '',
+        `History to Compact:\n${fullHistoryText}`,
+      ].join('\n\n');
+
+      const res = await generateText({
+        model,
+        system:
+          'You are summarizing an agent run for prompt compaction. Capture task requirements, key facts learned, decisions, partial progress, errors, and next steps. Preserve important entities, values, URLs, and scraped data. Return plain text only.',
+        prompt: promptText,
+      });
+
+      if (res.text && res.text.trim()) {
+        this.compactedSummary = res.text.trim().slice(0, 3000);
+        // Prune turns array keeping only the first and last 2 turns
+        if (this.turns.length > 3) {
+          this.turns = [this.turns[0], ...this.turns.slice(-2)];
+        }
+      }
+    } catch {
+      // If compaction fails, continue without blocking execution
+    }
+  }
+}
+
+export const sessionHistory = new AgentHistoryManager();

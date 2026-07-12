@@ -306,7 +306,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
   },
 
-  clearHistory: () => set({ chatHistory: [], executionLogs: [], currentAction: null }),
+  clearHistory: () => {
+    (window as any).RemoteCtrlAPI?.agent?.clearHistory?.();
+    set({ chatHistory: [], executionLogs: [], currentAction: null });
+  },
 
   clearWorkflow: () =>
     set({

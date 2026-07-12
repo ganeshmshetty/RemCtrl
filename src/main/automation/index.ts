@@ -32,6 +32,8 @@ export {
   moveCursorToLocator,
 };
 
+export { sessionHistory } from './agent-history.js';
+
 export interface AutomationOrchestrator {
   isBusy(): boolean;
   getActiveTaskType(): 'agent' | 'workflow' | null;

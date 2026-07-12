@@ -53,6 +53,11 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     sendSignal: (signal) => ipcRenderer.invoke('webrtc:sendSignal', signal),
   },
 
+  // ── Agent Session Management ──────────────────────────────────────────────
+  agent: {
+    clearHistory: () => ipcRenderer.invoke('agent:clearHistory'),
+  },
+
   // ── App / Diagnostics ─────────────────────────────────────────────────────
   app: {
     getDiagnostics: () => ipcRenderer.invoke('app:getDiagnostics'),
