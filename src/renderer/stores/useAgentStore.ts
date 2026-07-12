@@ -148,24 +148,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         payload.message.includes('browser-use') ||
         payload.message.includes('playwright');
 
+      const isNotify = payload.message.startsWith('Update: ');
       const isActionable = payload.level === 'info' && !isJsonOutput && !isEngineNoise;
 
-      // Surface stall warnings visibly without duplicating identical warnings
-      const isStallWarning =
-        payload.level === 'warn' &&
-        (payload.message.toLowerCase().includes('stall') ||
-          payload.message.toLowerCase().includes('stuck') ||
-          payload.message.toLowerCase().includes('recovery'));
-
       let newHistory = state.chatHistory;
-      if (isStallWarning && !state.chatHistory.some((m) => m.text === payload.message)) {
+      if (isNotify) {
         newHistory = [
           ...newHistory,
           {
-            id: `warn-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            id: `notify-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             sender: 'agent' as const,
-            type: 'warn' as const,
-            text: payload.message,
+            type: 'status' as const,
+            text: payload.message.replace(/^Update:\s*/, ''),
             timestamp: Date.now(),
           },
         ];
@@ -297,7 +291,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       state.archiveCurrentRun(lastStatus);
     }
     set({
-      chatHistory: [],
+      chatHistory: state.chatHistory,
       executionLogs: [],
       currentAction: null,
       lastOutcome: null,

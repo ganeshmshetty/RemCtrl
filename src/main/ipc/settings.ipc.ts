@@ -9,6 +9,7 @@ import {
   SetGlobalShortcutSchema,
 } from '../../shared/schemas.js';
 import {
+  getApiKey,
   hasApiKey,
   setApiKey,
   getSignalingUrl,

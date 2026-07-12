@@ -11,6 +11,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { Page } from 'playwright';
 import { ensureCursorOverlay, moveCursorToLocator } from './cursor-overlay.js';
+import { extractNumberedDOMSnapshot, extractDOMAsMarkdown } from './dom-snapshot.js';
 import { ask } from './human-checkpoint.js';
 
 export function createBrowserTools(
@@ -31,41 +32,70 @@ export function createBrowserTools(
 
     act: tool({
       description:
-        'Interact with an element on the page. Provide a selector (#id, [aria-label="..."], CSS selector, or visible button/link text) and the action (click, fill, press, select, check). E.g.: { selector: "Search", action: "fill", value: "despacito" }',
+        'Interact with an element on the page. Provide the index [1], [2] returned by observe() OR a selector (#id, [aria-label="..."], visible text) and the action (click, fill, press, select, check). E.g.: { index: 2, action: "fill", value: "despacito" }',
       inputSchema: z.object({
-        selector: z.string().describe('CSS selector, #id, aria label, or visible text of the element'),
+        index: z.number().optional().describe('Numbered element index [1], [2], [3] returned from observe tool (preferred if observe was called)'),
+        selector: z.string().optional().describe('CSS selector, #id, aria label, or visible text of the element'),
         action: z.enum(['click', 'fill', 'press', 'select', 'check', 'uncheck', 'focus', 'hover']),
         value: z.string().optional().describe('Value to fill/type/select (for fill, press, select actions)'),
       }),
-      execute: async ({ selector, action, value }) => {
-        // Multi-strategy locator resolution
-        const strategies = [
-          () => page.locator(selector).first(),
-          () => page.getByRole('button', { name: selector, exact: false }).first(),
-          () => page.getByRole('link', { name: selector, exact: false }).first(),
-          () => page.getByRole('textbox', { name: selector, exact: false }).first(),
-          () => page.getByRole('searchbox', { name: selector, exact: false }).first(),
-          () => page.getByLabel(selector, { exact: false }).first(),
-          () => page.getByPlaceholder(selector, { exact: false }).first(),
-          () => page.getByText(selector, { exact: false }).first(),
-        ];
+      execute: async ({ index, selector, action, value }) => {
+        if (index === undefined && !selector) {
+          throw new Error('Must specify either index or selector for act().');
+        }
 
         let locator: any = null;
-        for (const strategy of strategies) {
-          try {
-            const candidate = strategy();
-            await candidate.waitFor({ timeout: 2000, state: 'attached' });
-            locator = candidate;
-            break;
-          } catch {
-            continue;
+
+        // 1. First attempt: Search by index across all frames
+        if (index !== undefined) {
+          for (const frame of page.frames()) {
+            if (frame.isDetached()) continue;
+            try {
+              const candidate = frame.locator(`[data-remctrl-index="${index}"]`).first();
+              await candidate.waitFor({ timeout: 1500, state: 'attached' });
+              locator = candidate;
+              break;
+            } catch {
+              continue;
+            }
+          }
+        }
+
+        // 2. Fallback / Stale Reference Recovery: Search by selector or semantic roles across all frames
+        if (!locator && selector) {
+          for (const frame of page.frames()) {
+            if (frame.isDetached()) continue;
+            const strategies = [
+              () => frame.locator(selector).first(),
+              () => frame.getByRole('button', { name: selector, exact: false }).first(),
+              () => frame.getByRole('link', { name: selector, exact: false }).first(),
+              () => frame.getByRole('textbox', { name: selector, exact: false }).first(),
+              () => frame.getByRole('searchbox', { name: selector, exact: false }).first(),
+              () => frame.getByLabel(selector, { exact: false }).first(),
+              () => frame.getByPlaceholder(selector, { exact: false }).first(),
+              () => frame.getByText(selector, { exact: false }).first(),
+            ];
+
+            for (const strategy of strategies) {
+              try {
+                const candidate = strategy();
+                await candidate.waitFor({ timeout: 1000, state: 'attached' });
+                locator = candidate;
+                break;
+              } catch {
+                continue;
+              }
+            }
+            if (locator) break;
           }
         }
 
         if (!locator) {
-          throw new Error(`Element not found matching selector or name: "${selector}". Try calling observe() first to find exact selectors.`);
+          const identifier = index !== undefined ? `[index=${index}]` : `"${selector}"`;
+          throw new Error(`Element not found matching ${identifier} across any frame or shadow root. Try calling observe() first to refresh indices.`);
         }
 
+        // Glide cursor smoothly and fire ripple animation
         await moveCursorToLocator(page, locator);
 
         switch (action) {
@@ -73,7 +103,7 @@ export function createBrowserTools(
             await locator.click({ timeout: 8000 });
             break;
           case 'fill':
-            await locator.fill('', { timeout: 8000 }); // clear first (Stagehand pattern)
+            await locator.fill('', { timeout: 8000 });
             await locator.fill(value ?? '', { timeout: 8000 });
             break;
           case 'press':
@@ -103,130 +133,35 @@ export function createBrowserTools(
 
     observe: tool({
       description:
-        'Scan the page DOM for interactive elements (inputs, search boxes, buttons, links, selects). Returns structured elements with reliable selectors you can use with act(). Always call observe() on a new page.',
+        'Scan the page DOM for interactive elements (inputs, buttons, links, selects). Returns numbered elements [1], [2], [3] in browser-use format so you can pass their exact index to act(). Always call observe() before acting on a new page.',
       inputSchema: z.object({
         filter: z.string().optional().describe('Optional keyword to filter elements by label, text, or id'),
       }),
       execute: async ({ filter }) => {
-        const elements: any[] = await page.evaluate((filterKw: string | undefined) => {
-          const doc = (globalThis as any).document;
-          if (!doc) return [];
-          const results: any[] = [];
-          const seen = new Set<string>();
-
-          const selectors = [
-            'input:not([type="hidden"])',
-            'textarea',
-            'select',
-            'button',
-            'a[href]',
-            '[role="button"]',
-            '[role="link"]',
-            '[role="combobox"]',
-            '[role="searchbox"]',
-            '[contenteditable="true"]',
-          ];
-
-          for (const sel of selectors) {
-            const nodes = Array.from(doc.querySelectorAll(sel)).slice(0, 40);
-            for (const el of nodes) {
-              const e = el as any;
-              const text = (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-              const label =
-                e.getAttribute('aria-label') ||
-                e.getAttribute('placeholder') ||
-                e.getAttribute('name') ||
-                e.getAttribute('title') ||
-                '';
-              const id = e.id ? `#${e.id}` : '';
-              const type = e.type || e.tagName.toLowerCase();
-              const key = `${sel}:${id}:${label}:${text}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-
-              if (filterKw) {
-                const kw = filterKw.toLowerCase();
-                if (
-                  !text.toLowerCase().includes(kw) &&
-                  !label.toLowerCase().includes(kw) &&
-                  !id.toLowerCase().includes(kw)
-                ) {
-                  continue;
-                }
-              }
-
-              let selector = id;
-              if (!selector && label) {
-                // Prefix with tag to disambiguate (e.g. input[aria-label="Search"] vs button[aria-label="Search"])
-                selector = `${e.tagName.toLowerCase()}[aria-label="${label}"]`;
-              }
-              if (!selector && e.getAttribute('name')) {
-                selector = `${e.tagName.toLowerCase()}[name="${e.getAttribute('name')}"]`;
-              }
-              if (!selector && e.getAttribute('placeholder')) {
-                selector = `${e.tagName.toLowerCase()}[placeholder="${e.getAttribute('placeholder')}"]`;
-              }
-              if (!selector && text && text.length < 40) {
-                selector = text;
-              }
-              if (!selector) {
-                selector = sel;
-              }
-
-              results.push({
-                tag: e.tagName.toLowerCase(),
-                type,
-                id,
-                label,
-                text,
-                selector,
-              });
-            }
-          }
-          return results.slice(0, 40);
-        }, filter);
-
-        return { url: page.url(), elements };
+        const snapshot = await extractNumberedDOMSnapshot(page, filter);
+        return {
+          url: snapshot.url,
+          elementsCount: snapshot.elements.length,
+          domTree: snapshot.formattedDOM,
+          elements: snapshot.elements,
+        };
       },
     }),
 
     extract: tool({
-      description: 'Extract structured text content from the page or a specific element selector.',
+      description: 'Extract structured clean Markdown content from the page (or a specific element selector). Automatically strips scripts, styles, and SPA JSON blobs to save tokens.',
       inputSchema: z.object({
-        selector: z.string().optional().describe('CSS selector to scope extraction (defaults to entire body)'),
-        limit: z.number().optional().default(4000).describe('Max characters to return'),
+        selector: z.string().optional().describe('CSS selector to scope extraction (defaults to entire page)'),
+        includeIndices: z.boolean().optional().default(false).describe('Whether to embed [N] interactive element index markers inside markdown output'),
+        limit: z.number().optional().default(8000).describe('Max characters to return'),
       }),
-      execute: async ({ selector, limit = 4000 }) => {
-        const text: string = await page.evaluate(([sel, lim]: [string | undefined, number]) => {
-          const doc = (globalThis as any).document;
-          if (!doc) return '';
-          const root = sel ? doc.querySelector(sel) : doc.body;
-          if (!root) return '';
-          const lines: string[] = [];
-          const walk = (node: any) => {
-            if (node.nodeType === 3) { // TEXT_NODE
-              const val = node.nodeValue?.replace(/\s+/g, ' ').trim();
-              if (val) lines.push(val);
-            } else if (node.nodeType === 1) { // ELEMENT_NODE
-              const tag = node.tagName.toLowerCase();
-              if (['script', 'style', 'noscript', 'svg'].includes(tag)) return;
-              if (tag === 'input' || tag === 'textarea') {
-                const val = node.value?.trim();
-                if (val) lines.push(`[Input value: ${val}]`);
-              }
-              for (const child of Array.from(node.childNodes)) {
-                walk(child);
-              }
-              if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'li', 'tr', 'br'].includes(tag)) {
-                lines.push('\n');
-              }
-            }
-          };
-          walk(root);
-          return lines.join(' ').replace(/\n\s+/g, '\n').replace(/\s+/g, ' ').trim().slice(0, lim);
-        }, [selector, limit] as [string | undefined, number]);
-
-        return { url: page.url(), text };
+      execute: async ({ selector, includeIndices = false, limit = 8000 }) => {
+        const mdResult = await extractDOMAsMarkdown(page, { includeIndices, selector });
+        return {
+          url: mdResult.url,
+          markdown: mdResult.markdown.slice(0, limit),
+          totalChars: mdResult.charCount,
+        };
       },
     }),
 
@@ -320,6 +255,15 @@ export function createBrowserTools(
         'Reason about the task without taking a browser action. Use this to plan before acting.',
       inputSchema: z.object({ thought: z.string() }),
       execute: async ({ thought }) => ({ thought }),
+    }),
+
+    notifyUser: tool({
+      description:
+        'Send an informative progress update or status message to the user mid-task without pausing execution.',
+      inputSchema: z.object({
+        message: z.string().describe('Clear, helpful status message for the user (e.g. "Successfully logged in, now searching for flights...")'),
+      }),
+      execute: async ({ message }) => ({ success: true, message }),
     }),
 
     done: tool({

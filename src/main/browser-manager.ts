@@ -383,6 +383,10 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     }
   }
 
+  if (!context) {
+    throw new Error('Browser context failed to initialize');
+  }
+
   // Flag: true while launchBrowser is setting up the first page so that the
   // context.on('page') handler skips the fire-and-forget startScreencast call
   // for that initial page (it's explicitly awaited right after context.newPage()).

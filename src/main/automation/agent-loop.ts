@@ -2,10 +2,9 @@
  * Agent Loop — Single-tier tool-calling loop using Vercel AI SDK generateText
  */
 
-import { generateText, stepCountIs } from 'ai';
+import { generateText } from 'ai';
 import type { Page } from 'playwright';
 import { createBrowserTools } from './agent-tools.js';
-import { StallDetector, createPageFingerprint } from './stall-detector.js';
 import type { AgentLogCb, AgentStatusCb } from './execution-engine.js';
 import type { TaskSession } from './task-session.js';
 
@@ -37,9 +36,11 @@ function formatToolAction(toolName: string, input: any): string {
     }
     case 'act': {
       const action = input?.action || 'interact';
-      const selector = input?.selector || 'element';
+      const target = input?.index !== undefined
+        ? `[${input.index}]${input?.selector ? ` (${input.selector})` : ''}`
+        : (input?.selector || 'element');
       const value = input?.value ? ` "${input.value}"` : '';
-      return `Action: ${action}${value} on ${selector}`;
+      return `Action: ${action}${value} on ${target}`;
     }
     case 'observe': {
       const filter = input?.filter || '';
@@ -63,6 +64,9 @@ function formatToolAction(toolName: string, input: any): string {
     }
     case 'done': {
       return 'Task completed';
+    }
+    case 'notifyUser': {
+      return `Update: ${input?.message || ''}`;
     }
     default:
       return `Running ${toolName}`;
@@ -89,15 +93,8 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     taskProgress: `Step ${actions.length + 1} of agent run`,
     abortSignal: session.abortSignal,
   }));
-  const stallDetector = new StallDetector();
   let goalAchieved = false;
   let finalMessage: string | undefined;
-
-  try {
-    stallDetector.recordFingerprint(await createPageFingerprint(page as any));
-  } catch {
-    // ignore
-  }
 
   const result = await generateText({
     model,
@@ -105,17 +102,21 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     prompt: instruction,
     tools,
     toolChoice: 'auto',
-    stopWhen: ({ stepCount }) => session.isCancelled || stepCount >= maxSteps,
+    stopWhen: ({ steps }: any) => session.isCancelled || steps.length >= maxSteps,
     abortSignal: session.abortSignal,
 
     onStepFinish: async (event) => {
       if (session.isCancelled) return;
       const stepNum = actions.length + 1;
       const hasDone = event.toolCalls?.some((tc: any) => tc.toolName === 'done');
+      const hasToolCalls = (event.toolCalls?.length ?? 0) > 0;
 
-      if (event.text && event.text.trim() && !hasDone) {
+      if (event.text && event.text.trim()) {
         const trimmed = event.text.trim();
-        if (!trimmed.startsWith('{') && !trimmed.startsWith('["') && !trimmed.startsWith('```json')) {
+        if (!hasToolCalls && !hasDone) {
+          // Model outputted final answer directly without calling tools
+          finalMessage = trimmed;
+        } else if (!hasDone && !trimmed.startsWith('{') && !trimmed.startsWith('["') && !trimmed.startsWith('```json')) {
           onLog({ level: 'info', message: trimmed });
         }
       }
@@ -125,26 +126,9 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
         const cleanSummary = formatToolAction(tc.toolName, input);
         onLog({ level: 'info', message: cleanSummary });
         actions.push(cleanSummary);
-
-        stallDetector.recordAction(tc.toolName, JSON.stringify(input));
-
-        if (tc.toolName === 'done' && input.taskComplete) {
+        if (tc.toolName === 'done') {
           goalAchieved = true;
           finalMessage = input.message;
-        }
-      }
-
-      if (!goalAchieved && !hasDone) {
-        try {
-          stallDetector.recordFingerprint(await createPageFingerprint(page as any));
-        } catch {
-          // page may have navigated
-        }
-
-        const stall = stallDetector.isStuck();
-        if (stall.stuck) {
-          const nudge = stallDetector.getLoopNudgeMessage();
-          onLog({ level: 'warning', message: nudge });
         }
       }
 

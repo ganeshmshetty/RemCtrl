@@ -93,7 +93,6 @@ export function MiniWindow() {
         <div className="mini-window-actions no-drag">
           <button className="mini-header-btn" onClick={handleOpenMain} title="Open Full Window">
             <ExternalLink size={13} />
-            <span>View Browser</span>
           </button>
           <button className="mini-close-btn" onClick={handleHideMini} title="Hide">
             <X size={14} />

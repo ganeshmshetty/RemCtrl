@@ -18,8 +18,8 @@ export function buildAgentSystemPrompt(
 
 TOOLS:
 - getPageUrl()                              — get current URL and title
-- observe({ filter? })                      — scan page for interactive elements; returns precise selectors to pass to act()
-- act({ selector, action, value? })         — interact with an element. action = click | fill | press | select | hover
+- observe({ filter? })                      — scan page for interactive elements; returns numbered elements [1], [2], [3] in browser-use format
+- act({ index?, selector?, action, value? })— interact with an element using its index from observe() or selector. action = click | fill | press | select | hover
 - keys({ key })                             — press a keyboard key globally (Enter, Tab, Escape, ArrowDown)
 - goto({ url })                             — navigate to a URL
 - extract({ selector?, limit? })            — extract text content from the page or element
@@ -29,13 +29,17 @@ TOOLS:
 - done({ taskComplete, message })           — call ONLY when the goal is fully achieved
 
 CRITICAL RULES:
-1. ALWAYS call observe() first on any new page before acting — it returns the exact selectors you need.
+1. ALWAYS call observe() first on any new page before acting — it returns numbered elements [1], [2], [3]. Prefer passing index: N to act() (e.g. act({ index: 2, action: "click" })).
 2. To fill a search/text input: use act({ selector, action:"fill", value:"text" }) in ONE call — do NOT click first. fill already focuses the element.
 3. After filling a search input, press Enter with keys({ key:"Enter" }) OR act({ selector:"submit button", action:"click" }).
 4. When multiple elements share the same aria-label (e.g. YouTube has both a search INPUT and a search BUTTON with [aria-label="Search"]), use the more specific selector from observe() — e.g. input[aria-label="Search"] for the text field.
 5. NEVER repeat an action that already succeeded.
 6. Stay on the current site's own search/UI. Only goto() if the task explicitly requires a different URL.
-7. Be intentional — think() before acting on an unfamiliar page.`;
+7. Be intentional — think() before acting on an unfamiliar page.
+8. Handle popups, modals, cookie banners, and overlays immediately before attempting other actions (look for Dismiss, Accept, X, Close).
+9. For autocomplete/combobox fields: type search text, then wait for suggestions dropdown to appear in the next step. Click the suggestion instead of pressing Enter prematurely.
+10. When searching for items with specific filters (price, rating, category), ALWAYS apply filter/sort options first before scrolling results.
+11. Break out of unproductive loops — if the same action fails 2+ times or you remain on the same page without progress, try an alternative selector or approach.`;
 }
 
 /** For a bounded workflow do/collect step */
