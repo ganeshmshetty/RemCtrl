@@ -7,6 +7,7 @@ import type { Page } from 'playwright';
 import { createBrowserTools } from './agent-tools.js';
 import type { AgentLogCb, AgentStatusCb } from './execution-engine.js';
 import type { TaskSession } from './task-session.js';
+import type { RecordedAgentStep } from '../../shared/types.js';
 
 export interface AgentLoopResult {
   goalAchieved: boolean;
@@ -14,6 +15,8 @@ export interface AgentLoopResult {
   stepCount: number;
   actions: string[];
   finalMessage?: string;
+  /** Structured tool call data for converting agent runs into replayable workflows */
+  recordedSteps: RecordedAgentStep[];
 }
 
 export interface AgentLoopOptions {
@@ -68,6 +71,10 @@ function formatToolAction(toolName: string, input: any): string {
     case 'notifyUser': {
       return `Update: ${input?.message || ''}`;
     }
+    case 'runActionSequence': {
+      const count = Array.isArray(input?.actions) ? input.actions.length : 0;
+      return `Executing sequence of ${count} actions`;
+    }
     default:
       return `Running ${toolName}`;
   }
@@ -87,6 +94,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
   } = opts;
 
   const actions: string[] = [];
+  const recordedSteps: RecordedAgentStep[] = [];
   const tools = createBrowserTools(page, () => ({
     taskId: commandId,
     step: actions.length + 1,
@@ -123,9 +131,26 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
 
       for (const tc of event.toolCalls ?? []) {
         const input = (tc as any).input ?? (tc as any).args ?? {};
-        const cleanSummary = formatToolAction(tc.toolName, input);
+        
+        let finalInput = { ...input };
+        if (tc.toolName === 'act' && input.index !== undefined) {
+          const toolResult = (event.toolResults?.find((tr: any) => tr.toolCallId === tc.toolCallId) as any)?.result;
+          if (toolResult?.resolvedSelector) {
+            finalInput = {
+              action: input.action,
+              value: input.value,
+              selector: toolResult.resolvedSelector
+            };
+          }
+        }
+        
+        const cleanSummary = formatToolAction(tc.toolName, finalInput);
         onLog({ level: 'info', message: cleanSummary });
         actions.push(cleanSummary);
+        // Record structured step (skip meta-tools that don't replay)
+        if (!['think', 'notifyUser', 'done', 'askUser', 'wait'].includes(tc.toolName)) {
+          recordedSteps.push({ tool: tc.toolName, summary: cleanSummary, input: finalInput });
+        }
         if (tc.toolName === 'done') {
           goalAchieved = true;
           finalMessage = input.message;
@@ -146,5 +171,6 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     stepCount: result.steps?.length ?? actions.length,
     actions,
     finalMessage,
+    recordedSteps,
   };
 }

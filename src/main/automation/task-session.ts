@@ -57,7 +57,14 @@ export class TaskSession {
   async waitIfPaused(onPause?: () => void, onResume?: () => void): Promise<void> {
     if (this._status !== 'paused') return;
     onPause?.();
+    const timeoutMs = 15 * 60 * 1000; // 15 minutes
+    const start = Date.now();
     while (this._status === 'paused') {
+      if (Date.now() - start > timeoutMs) {
+        console.warn('[TaskSession] Paused for over 15 minutes. Auto-cancelling.');
+        this.cancel();
+        break;
+      }
       await sleep(500);
     }
     if (!this.isCancelled) onResume?.();

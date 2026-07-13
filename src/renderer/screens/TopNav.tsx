@@ -40,9 +40,11 @@ export function TopNav() {
       </div>
       <div className="top-nav-right no-drag">
         {role === 'local' ? (
-          <div className="connection-pill">
-            <div className="connection-pill-dot connected"></div>
-            <span style={{ fontWeight: 500 }}>Local Session</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.8 }}>
+              <div className="connection-pill-dot connected"></div>
+              <span style={{ fontWeight: 500, fontSize: 13 }}>Local Session</span>
+            </div>
             <button
               className="top-nav-mini-btn"
               onClick={() => window.RemoteCtrlAPI?.app.showMiniWindow(true)}
@@ -61,6 +63,7 @@ export function TopNav() {
         ) : isConnected ? (
           <div className="connection-pill">
             <div className="connection-pill-dot connected"></div>
+            <span style={{ fontWeight: 500, marginRight: 4 }}>Connected:</span>
             <span style={{ fontFamily: 'var(--font-mono)' }}>{pin}</span>
             <button 
               className="disconnect-btn"

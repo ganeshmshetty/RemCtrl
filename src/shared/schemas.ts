@@ -15,7 +15,7 @@ export const WorkflowStepSchema = z.object({
   onTrue: z.string().optional(),
   onFalse: z.string().optional(),
   // recovery policy
-  onFailure: z.enum(['stop', 'skip']).optional().default('stop'),
+  onFailure: z.enum(['stop', 'skip', 'retry']).optional().default('stop'),
 }).refine(
   (s) => {
     if (s.type === 'navigate') return !!s.url;
@@ -33,6 +33,8 @@ export const LocalWorkflowSchema = z.object({
   steps: z.array(WorkflowStepSchema).max(100),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive(),
+  variables: z.record(z.string(), z.string()).optional(),
+  source: z.enum(['ai_recorded', 'chrome_ext', 'manual']).optional(),
 });
 
 // ─── Settings Schemas ─────────────────────────────────────────────────────────

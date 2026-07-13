@@ -2,10 +2,10 @@
 
 /* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --bg-base: #141415;
-  --bg-surface: #1c1c1e;
-  --bg-elevated: #242426;
-  --bg-overlay: #2c2c2e;
+  --bg-base: #09090b;
+  --bg-surface: #18181b;
+  --bg-elevated: #27272a;
+  --bg-overlay: #3f3f46;
 
   --border: rgba(255, 255, 255, 0.08);
   --border-active: rgba(255, 255, 255, 0.16);
@@ -379,10 +379,24 @@ code, pre, kbd {
   z-index: 10;
 }
 
+.browser-video-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--bg-surface);
+}
+
 .browser-video {
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
 }
 
 .takeover-overlay {
@@ -498,14 +512,28 @@ code, pre, kbd {
 }
 
 /* ─── Browser Tabs ──────────────────────────────────────────────────────────── */
-.ctrl-tab-strip {
+.ctrl-toolbar {
   display: flex;
-  align-items: center;
-  height: 40px;
+  flex-direction: column;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
+}
+
+.ctrl-tabs-row {
+  display: flex;
+  align-items: center;
+  height: 38px;
   padding: 0 8px;
-  gap: 8px;
+  gap: 4px;
+}
+
+.ctrl-address-row {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 12px;
+  gap: 12px;
+  border-top: 1px solid var(--border);
 }
 
 .ctrl-nav-btns {
@@ -533,7 +561,7 @@ code, pre, kbd {
 
 .ctrl-address-bar {
   flex: 1;
-  max-width: 400px;
+  max-width: 600px;
 }
 
 .ctrl-url-input {
@@ -741,7 +769,7 @@ code, pre, kbd {
 }
 .agent-workflow-step-dot.completed { background: var(--success); }
 .agent-workflow-step-dot.failed { background: var(--danger); }
-.agent-workflow-step-dot.running { background: var(--warning); animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.agent-workflow-step-dot.running { background: var(--warning); }
 .agent-workflow-step-dot.skipped { background: var(--text-muted); }
 
 .agent-msg {
@@ -764,12 +792,14 @@ code, pre, kbd {
   background: rgba(124, 106, 247, 0.2);
   color: var(--text-primary);
   border: 1px solid rgba(124, 106, 247, 0.3);
+  border-right: 3px solid #7c6af7;
 }
 
 .agent-msg-bubble.agent {
   background: var(--bg-overlay);
   color: var(--text-primary);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
 }
 
 .agent-msg-log {
@@ -1162,6 +1192,7 @@ code, pre, kbd {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  flex: 1;
 }
 
 .wf-editor-fields-row {
@@ -1210,6 +1241,7 @@ code, pre, kbd {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
+  flex-shrink: 0;
 }
 
 .wf-editor-step-grip {
@@ -1385,6 +1417,358 @@ code, pre, kbd {
   border-top: 1px solid var(--border);
   background: var(--bg-overlay);
 }
+
+/* ─── Workflow Editor V2 Additions ──────────────────────────────────────────── */
+
+.wf-editor-modal-v2 {
+  max-width: 660px;
+}
+
+.wf-editor-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* AI-Recorded badge in modal header */
+.wf-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #c084fc;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* Meta fields row (name + url side by side) */
+.wf-editor-meta {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px 0;
+}
+
+/* Tabs (Steps / Variables) */
+.wf-editor-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  margin-top: 12px;
+}
+
+.wf-editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition);
+  margin-bottom: -1px;
+}
+.wf-editor-tab:hover { color: var(--text-primary); }
+.wf-editor-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.wf-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+.wf-tab-count.warn { background: rgba(245,158,11,0.2); color: #f59e0b; }
+
+/* Modal body padding override for v2 */
+.wf-editor-modal-v2 .wf-editor-body {
+  padding: 12px 16px;
+  gap: 8px;
+}
+
+/* Info banner (AI-recorded hint) */
+.wf-editor-info-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(168, 85, 247, 0.08);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  font-size: 12px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+/* Step row in v2 (restructured) */
+.wf-editor-modal-v2 .wf-editor-step {
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  align-items: stretch;
+}
+.wf-editor-modal-v2 .wf-editor-step.dragging {
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+
+.wf-editor-modal-v2 .wf-editor-step-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 0;
+  background: var(--bg-overlay);
+  cursor: default;
+}
+
+.wf-editor-step-grip {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Colored step-type badge */
+.wf-step-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Step preview text (collapsed) */
+.wf-editor-step-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-step-preview-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+/* Variable pill on step header */
+.wf-var-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(99,102,241,0.12);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Step body (expanded) */
+.wf-editor-modal-v2 .wf-editor-step-body {
+  padding: 10px 12px 10px 36px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Step textarea (replaces input for instruction steps) */
+.wf-editor-step-textarea {
+  width: 100%;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+  min-height: 52px;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+.wf-editor-step-textarea:focus { border-color: var(--accent); }
+
+/* Empty steps state */
+.wf-empty-steps {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ─── Variable Panel ──────────────────────────────────────────────────────────── */
+
+.wf-var-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 8px 2px 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.wf-var-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-overlay);
+  border: 1px dashed var(--border);
+}
+.wf-var-empty code {
+  font-family: var(--font-mono, monospace);
+  color: var(--accent);
+  background: rgba(99,102,241,0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.wf-var-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wf-var-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition);
+}
+.wf-var-row.used { border-color: rgba(99,102,241,0.25); }
+.wf-var-row.unused { opacity: 0.65; }
+
+.wf-var-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 130px;
+  flex-shrink: 0;
+}
+
+.wf-var-token {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(99,102,241,0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.wf-var-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 10px;
+}
+.wf-var-badge.unused {
+  background: rgba(245,158,11,0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,0.25);
+}
+
+.wf-var-input {
+  flex: 1;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+}
+.wf-var-input:focus { border-color: var(--accent); }
+
+.wf-var-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px dashed var(--border-active);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition);
+  margin-top: 4px;
+  align-self: flex-start;
+}
+.wf-var-add-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ─── Workflow Card Badges ─────────────────────────────────────────────────────── */
+
+.wf-card-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  flex-shrink: 0;
+}
+
+.wf-card-var-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: rgba(99,102,241,0.08);
+  border: 1px solid rgba(99,102,241,0.15);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
 
 /* ─── Buttons ───────────────────────────────────────────────────────────────── */
 .btn {

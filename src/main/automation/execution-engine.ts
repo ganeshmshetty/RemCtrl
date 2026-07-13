@@ -158,6 +158,8 @@ export async function runAgent(
       summary.actions = loopResult.actions;
       summary.finishReason = loopResult.finishReason;
       summary.goalAchieved = loopResult.goalAchieved;
+      summary.recordedSteps = loopResult.recordedSteps;
+      summary.originalInstruction = instruction;
       if (loopResult.finalMessage) {
         summary.finalMessage = loopResult.finalMessage;
       }

@@ -291,23 +291,27 @@ export function BrowserPanel() {
     <div className="browser-panel">
       {/* Browser Nav / Tabs */}
       {isConnected && tabs.length > 0 && (
-        <div className="ctrl-tab-strip">
-          <div className="ctrl-nav-btns">
-            <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('goBack')}><ChevronLeft size={14} /></button>
-            <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('goForward')}><ChevronRight size={14} /></button>
-            <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('reload')}><RotateCw size={12} /></button>
+        <div className="ctrl-toolbar">
+          <div className="ctrl-tabs-row">
+            <div className="ctrl-tabs">
+              {tabs.map((tab) => (
+                <div key={tab.id} className={`ctrl-tab ${tab.active ? 'ctrl-tab-active' : ''}`} onClick={() => handleSwitchTab(tab.id)}>
+                  <span className="ctrl-tab-title truncate">{tab.title}</span>
+                  <button className="ctrl-tab-close" onClick={(e) => { e.stopPropagation(); handleBrowserAction('closeTab', tab.id); }}><X size={10} /></button>
+                </div>
+              ))}
+              <button className="ctrl-tab-new" onClick={() => handleBrowserAction('newTab')}><Plus size={14} /></button>
+            </div>
           </div>
-          <form className="ctrl-address-bar" onSubmit={(e) => { e.preventDefault(); handleBrowserAction('navigate'); }}>
-            <input type="text" value={urlInput} onChange={e => setUrlInput(e.target.value)} className="ctrl-url-input" />
-          </form>
-          <div className="ctrl-tabs">
-            {tabs.map((tab) => (
-              <div key={tab.id} className={`ctrl-tab ${tab.active ? 'ctrl-tab-active' : ''}`} onClick={() => handleSwitchTab(tab.id)}>
-                <span className="ctrl-tab-title truncate">{tab.title}</span>
-                <button className="ctrl-tab-close" onClick={(e) => { e.stopPropagation(); handleBrowserAction('closeTab', tab.id); }}><X size={10} /></button>
-              </div>
-            ))}
-            <button className="ctrl-tab-new" onClick={() => handleBrowserAction('newTab')}><Plus size={14} /></button>
+          <div className="ctrl-address-row">
+            <div className="ctrl-nav-btns">
+              <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('goBack')}><ChevronLeft size={14} /></button>
+              <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('goForward')}><ChevronRight size={14} /></button>
+              <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('reload')}><RotateCw size={12} /></button>
+            </div>
+            <form className="ctrl-address-bar" onSubmit={(e) => { e.preventDefault(); handleBrowserAction('navigate'); }}>
+              <input type="text" value={urlInput} onChange={e => setUrlInput(e.target.value)} className="ctrl-url-input" />
+            </form>
           </div>
         </div>
       )}

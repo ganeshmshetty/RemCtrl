@@ -6,6 +6,7 @@ import type {
   WorkflowStepStatus,
   AgentCheckpointPayload,
   AutomationRunHistoryItem,
+  RecordedAgentStep,
 } from '../../shared/types';
 
 export interface ChatMessage {
@@ -39,6 +40,14 @@ interface AgentState {
   currentRunTitle: string | null;
   currentRunStartTime: number | null;
   lastOutcome: 'completed' | 'error' | 'cancelled' | null;
+
+  /** Structured steps recorded from the last successful agent run (for Save as Workflow) */
+  lastRecordedSteps: RecordedAgentStep[];
+  /** The original user prompt from the last agent run */
+  lastCompletedPrompt: string | null;
+  /** Set recorded steps from agent-loop (called by execution-engine after run completes) */
+  setLastRecordedSteps: (steps: RecordedAgentStep[], prompt: string) => void;
+
   archiveCurrentRun: (finalStatus?: 'completed' | 'error' | 'cancelled', error?: string) => void;
   startNewExecution: (type: 'agent' | 'workflow', id: string, title: string) => void;
 
@@ -54,6 +63,7 @@ interface AgentState {
   handleAgentCheckpoint: (payload: AgentCheckpointPayload) => void;
   clearHistory: () => void;
   clearWorkflow: () => void;
+  startNewChat: () => void;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -73,6 +83,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   currentRunTitle: null,
   currentRunStartTime: null,
   lastOutcome: null,
+
+  lastRecordedSteps: [],
+  lastCompletedPrompt: null,
+
+  setLastRecordedSteps: (steps, prompt) => set({ lastRecordedSteps: steps, lastCompletedPrompt: prompt }),
 
   setTakeoverActive: (active) => set({ isTakeoverActive: active }),
   setAgentStatus: (agentStatus) => set({ agentStatus }),
@@ -115,6 +130,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set(updates);
     
     if (payload.state === 'completed') {
+      const result = payload.result as any;
+      // Store recorded steps for Save as Workflow
+      if (result?.recordedSteps?.length) {
+        get().setLastRecordedSteps(result.recordedSteps, result.originalInstruction ?? '');
+      }
       const formattedResult = formatAgentResult(payload.result);
       get().appendMessage({
         id: `status-${payload.commandId}-${Date.now()}`,
@@ -133,6 +153,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
     }
   },
+
 
   handleAgentLog: (payload) => {
     set((state) => {
@@ -261,6 +282,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       timestamp: Date.now(),
       checkpointPayload: payload,
     });
+    if (typeof window !== 'undefined' && window.Notification) {
+      if (window.Notification.permission === 'granted') {
+        new window.Notification('RemoteCtrl: Agent Needs Input', { body: payload.question });
+      } else if (window.Notification.permission !== 'denied') {
+        window.Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            new window.Notification('RemoteCtrl: Agent Needs Input', { body: payload.question });
+          }
+        }).catch(() => { /* permission request failed; ignore */ });
+      }
+    }
   },
 
   archiveCurrentRun: (finalStatus = 'completed', error) => {
@@ -287,13 +319,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   startNewExecution: (type, id, title) => {
     const state = get();
-    if (state.chatHistory.length > 0 || state.executionLogs.length > 0) {
-      const lastStatus = state.lastOutcome ||
-        (state.agentStatus === 'error' || state.workflowRunState === 'failed'
-          ? 'error'
-          : 'completed');
-      state.archiveCurrentRun(lastStatus);
-    }
     set({
       chatHistory: state.chatHistory,
       executionLogs: [],
@@ -305,8 +330,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       workflowRunId: type === 'workflow' ? id : null,
       workflowStepStatuses: [],
       currentStepIndex: null,
-      currentRunTitle: title,
-      currentRunStartTime: Date.now(),
+      currentRunTitle: state.currentRunTitle || title,
+      currentRunStartTime: state.currentRunStartTime || Date.now(),
     });
   },
 
@@ -322,6 +347,31 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       workflowStepStatuses: [],
       currentStepIndex: null,
     }),
+
+  startNewChat: () => {
+    const state = get();
+    if (state.chatHistory.length > 0 || state.executionLogs.length > 0) {
+      const lastStatus = state.lastOutcome ||
+        (state.agentStatus === 'error' || state.workflowRunState === 'failed'
+          ? 'error'
+          : 'completed');
+      state.archiveCurrentRun(lastStatus);
+    }
+    set({
+      chatHistory: [],
+      executionLogs: [],
+      currentAction: null,
+      lastOutcome: null,
+      agentStatus: 'idle',
+      activeCommandId: null,
+      workflowRunState: 'idle',
+      workflowRunId: null,
+      workflowStepStatuses: [],
+      currentStepIndex: null,
+      currentRunTitle: null,
+      currentRunStartTime: null,
+    });
+  },
 }));
 
 function formatAgentResult(result: any): string {

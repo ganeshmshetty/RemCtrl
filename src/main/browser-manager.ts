@@ -50,26 +50,44 @@ export function setBrowserNotifyWindow(win: BrowserWindow) {
   notifyWindow = win;
 }
 
+let tabsChangeTimeout: NodeJS.Timeout | null = null;
 function emitTabsChange() {
+  if (tabsChangeTimeout) clearTimeout(tabsChangeTimeout);
+  tabsChangeTimeout = setTimeout(() => {
+    if (notifyWindow && !notifyWindow.isDestroyed()) {
+      notifyWindow.webContents.send('browser:tabsChange', getTabs());
+    }
+  }, 100);
+}
+
+async function forceTabActivation(page: Page) {
+  // 1. Steal OS focus to un-throttle Chromium's rendering pipeline
+  await page.bringToFront().catch(() => {});
+  // 2. Instantly reclaim focus for our Electron app
   if (notifyWindow && !notifyWindow.isDestroyed()) {
-    notifyWindow.webContents.send('browser:tabsChange', getTabs());
+    notifyWindow.show();
+    notifyWindow.focus();
   }
 }
 
 export function getTabs(): TabInfo[] {
-  return pages.map(entry => ({
-    id: entry.id,
-    url: entry.page.url(),
-    title: entry.title || 'Loading...',
-    active: entry === activePageEntry,
-  }));
+  return pages.map(entry => {
+    const url = entry.page.url();
+    const isBlank = url === 'about:blank';
+    return {
+      id: entry.id,
+      url,
+      title: isBlank ? 'New Tab' : (entry.title || 'Loading...'),
+      active: entry === activePageEntry,
+    };
+  });
 }
 
 export async function switchTab(tabId: string): Promise<void> {
   const targetEntry = pages.find(p => p.id === tabId);
   if (targetEntry && targetEntry !== activePageEntry) {
     activePageEntry = targetEntry;
-    targetEntry.page.bringToFront().catch(() => {});
+    await forceTabActivation(activePageEntry.page);
     await startScreencast(activePageEntry.page);
     emitTabsChange();
   }
@@ -130,7 +148,7 @@ function registerPage(p: Page) {
     if (activePageEntry === entry) {
       activePageEntry = pages[pages.length - 1] || null;
       if (activePageEntry) {
-        activePageEntry.page.bringToFront().catch(() => {});
+        await forceTabActivation(activePageEntry.page);
         await startScreencast(activePageEntry.page);
       } else {
         await stopScreencast();
@@ -398,7 +416,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     // Skip auto-start for the very first page — launchBrowser() awaits it
     // explicitly below to avoid a double-start race.
     if (!launchingInitialPage) {
-      startScreencast(p).then(() => emitTabsChange());
+      forceTabActivation(p).then(() => startScreencast(p)).then(() => emitTabsChange()).catch(() => {});
     }
   });
 
@@ -429,7 +447,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     }
   } else {
     activePageEntry = pages[0];
-    activePageEntry.page.bringToFront().catch(() => {});
+    await forceTabActivation(activePageEntry.page);
     await startScreencast(activePageEntry.page);
     emitTabsChange();
   }

@@ -14,6 +14,8 @@
 ## Active & Upcoming Roadmap
 
 ### Milestone 1: Multi-Mode Connection & Core UI
+- [ ] **Floating Chat Input & Right Panel Cleanup** `[High Impact, Medium Complexity]`
+  Extract the `.agent-input-area` from the `AgentPanel` into a new `ChatInputBar` component and place it floating at the bottom center of the screen (overlapping the browser video letterboxing). Style it with a glassmorphic background (`backdrop-filter`) and heavy shadow to resemble a Raycast/Linear command bar. Update the `AgentPanel` to utilize 100% of its vertical height exclusively for scrolling chat history and workflow logs.
 - [ ] **Multi-Mode Browser Onboarding & Settings UI** `[High Impact, Medium Complexity]`
   Present a beautiful first-launch onboarding selector (and configurable Settings toggle) allowing users to choose their preferred browser automation mode:
   - **Seamless Extension Bridge**: Control active daily Chrome tabs via local WebSocket bridge (`ext-server.ts`) with zero restarts.
@@ -27,7 +29,7 @@
   - **Set-of-Mark Overlay**: Inject numbered visual boxes (`[1]`, `[2]`) around interactive elements prior to taking screenshots so vision models (like Gemini 3.5 Flash) select elements by multiple-choice ID with 96%+ accuracy rather than guessing spatial pixels.
   - **Normalized Axis Grid Overlay**: When interacting with unlabelled canvas surfaces (e.g., Google Maps, Figma, WebGL games), overlay translucent coordinate grid lines and ruler tick marks so vision models can output accurate normalized `(x, y)` coordinates paired with CDP hardware mouse dispatch (`Input.dispatchMouseEvent`).
   - **Safe Visual Overlays Container & Self-Exclusion (`data-remctrl-exclude`)**: Tag all visual overlays (Set-of-Mark boxes, coordinate grids, cursor overlay) with `data-remctrl-exclude="true"` and `pointer-events: none` inside a single unified `#remctrl-overlay-root` container so the DOM serializer never hallucinates about its own UI or intercepts mouse clicks. Inject SoM boxes strictly for the instant of screenshot capture before any action executes.
-- [ ] **Cross-Frame & Shadow DOM Element Discovery (`dom-snapshot.ts`)** `[High Impact, Medium Complexity]`
+- [x] **Cross-Frame & Shadow DOM Element Discovery (`dom-snapshot.ts`)** `[High Impact, Medium Complexity]`
   - **Frame-Scoped Heuristic Scanning**: Walk every active frame (`page.frames()`) and namespace `data-remctrl-index` by frame URL/ID so interactive elements inside embedded iframes (auth widgets, checkout boxes) are discovered.
   - **Shadow DOM Piercing & Accessibility Tree**: Recurse into open `shadowRoot` trees and combine heuristic scanning with Playwright's native accessibility tree (`page.accessibility.snapshot()` / `ariaSnapshot()`) to capture custom Web Components.
   - **Lazy Locator Resolution & Stale Reference Recovery (`agent-tools.ts`)**: Resolve element targets lazily at action execution time (`getByTestId`, `getByRole`, semantic locators) and use a lightweight `MutationObserver` watchdog to detect stale DOM subtrees before acting.
@@ -53,13 +55,33 @@
   - **Playwright State Snapshotting**: Persist Playwright context storage state (`context.storageState()`) for cookies/localStorage/sessionStorage plus current URL and step index.
   - **Chat History & Token Compaction**: Key chat message arrays by run ID on disk. Implement token compaction (`_maybe_compact_messages`) to summarize older tool results while keeping recent turns verbatim.
   - **Synthetic `askUser()` Breakpoint**: Leverage the existing `askUser` checkpoint primitive to pause execution cleanly on user request or error, allowing the user to type a correction and resume seamlessly without restarting the run.
-- [ ] **Editable AI-Recorded Workflows with Parameterized Variables** `[High Impact, High Complexity]`
+- [x] **Editable AI-Recorded Workflows with Parameterized Variables** `[High Impact, High Complexity]`
   Allow saving completed AI agent runs into visual drag-and-drop workflow cards (`WorkflowEditorModal.tsx`). Support converting typed inputs into parameterized variables (`{{variable_name}}`) so users can replay recorded clicks deterministically at 10x speed while injecting custom input values and selective AI extraction steps.
-- [ ] **Workflow Creation UX Refactor** `[Medium Impact, Medium Complexity]`
+- [x] **Workflow Creation UX Refactor** `[Medium Impact, Medium Complexity]`
   Deprecate manual "from-scratch" step selector creation. Streamline `WorkflowsPanel.tsx` and `WorkflowEditorModal.tsx` so workflows originate purely from AI-Recorded Runs or Chrome Extension live recordings, keeping the modal focused on editing variables (`{{var}}`), reordering steps, and adding AI evaluation checkpoints.
+- [ ] **Deterministic Workflow Execution & Self-Healing** `[High Impact, High Complexity]`
+  Refactor the workflow engine to a two-layer deterministic architecture per the detailed overview in [WORKFLOW_OVERHAUL.md](WORKFLOW_OVERHAUL.md).
+  - **Selector Priority Chain**: Replace ephemeral indices with stable locators generated at record-time (id → stable attributes → role/name → text → relative XPath).
+  - **Pure Playwright Executor**: Bypass the LLM for standard UI steps (`click`, `fill`, `keypress`, `navigate`) to dramatically increase execution speed and eliminate token cost.
+  - **AI Self-Healing Fallback**: If a fast-path selector fails due to layout drift, gracefully degrade into a single-step AI repair pass using the step's semantic `description` to find the target and auto-update the stored selector.
+  - **Schema Migration**: Update `WorkflowStep` schemas (including the `check` branching primitive) and gracefully migrate existing v1 `workflows.json` files.
 
 ### Milestone 5: Execution Robustness & Resource Management
 - [ ] **Execution Robustness, Timeout Wrappers & Memory Cleanup** `[High Impact, Medium Complexity]`
   - **Safe Tool Wrappers (`safeAct`)**: Wrap every Playwright tool call with explicit target liveness checks (`isTargetAlive`) and timeouts so interrupted navigations or destroyed execution contexts return clean error strings to the LLM instead of crashing the run.
   - **Loop Detection & Nudge Watchdog**: Detect when the agent repeats the same action or URL 3+ times consecutively without progress and inject an automatic system warning to break unproductive loops.
   - **Memory & Listener Cleanup**: Evict old screenshot blobs to disk-by-reference after N steps, guard `addInitScript` against duplicate `addEventListener` piling across navigations, and properly close dead WebSocket recording clients in `ext-server.ts`.
+
+### Milestone 6: WebRTC Connection Stability & Security
+- [ ] **No TURN Server** `[Critical]`
+  STUN-only means anyone behind a symmetric NAT (most enterprise networks and cellular carriers) will silently hang at the ICE checking state.
+- [ ] **Lossy Channel for Discrete Inputs** `[High Impact]`
+  Sending mouse clicks and keyboard strokes over the `RemoteCtrl-input` channel (`maxRetransmits: 0`) is a fundamental protocol mistake. If a click drops, it's gone forever.
+- [ ] **No PIN Rate Limiting** `[High Security Risk]`
+  A 9-digit PIN has ~1 billion combinations. With a 10-minute TTL, an attacker could theoretically script connection attempts to brute-force a session. `server/signaling.ts` lacks any rate-limiting middleware.
+- [ ] **Host Approves Blind** `[Security Risk]`
+  The host just sees "Controller requesting access." The approval modal lacks the requester's IP, geolocation, or User-Agent to make an informed security decision.
+- [ ] **No Reconnection Path** `[High Impact, High Complexity]`
+  The lack of `iceRestart: true` means a brief network drop forces the user to manually text their colleague a new 9-digit PIN and start completely from scratch.
+- [ ] **Double Encode / Fixed 1080p** `[Performance]`
+  Passing CDP JPEG buffers into a `<canvas>` just to capture them back out into a WebRTC MediaStream is a massive CPU tax on the host.

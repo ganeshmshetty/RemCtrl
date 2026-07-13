@@ -10,15 +10,24 @@ export interface WorkflowStep {
   // navigate
   url?: string;
 
-  // do, collect, check
+  // do, collect, check — supports {{variable_name}} template syntax
   instruction?: string;
 
   // check — step IDs to jump to
   onTrue?: string;
   onFalse?: string;
 
-  // recovery
-  onFailure: 'stop' | 'skip';
+  onFailure: 'stop' | 'skip' | 'retry';
+}
+
+/** A single structured step recorded from an AI agent run */
+export interface RecordedAgentStep {
+  /** Tool used: goto, act, scroll, keys, type, etc. */
+  tool: string;
+  /** Summary shown to the user (e.g. 'Navigating to https://...') */
+  summary: string;
+  /** Raw tool input arguments */
+  input: Record<string, unknown>;
 }
 
 export interface LocalWorkflow {
@@ -29,6 +38,10 @@ export interface LocalWorkflow {
   steps: WorkflowStep[];
   createdAt: number;
   updatedAt: number;
+  /** Template variable name → default value map used in {{variable}} substitution */
+  variables?: Record<string, string>;
+  /** How this workflow was originally created */
+  source?: 'ai_recorded' | 'chrome_ext' | 'manual';
 }
 
 // Future-compatible cloud record shape (deferred, kept for type compatibility)
@@ -299,6 +312,7 @@ export interface RemoteCtrlAPI {
     cancelAgent: () => Promise<{ ok: boolean }>;
     startWorkflow: (payload: AgentWorkflowBatchPayload) => Promise<{ ok: boolean; error?: string }>;
     cancelWorkflow: () => Promise<{ ok: boolean }>;
+    setTakeoverActive: (active: boolean) => Promise<{ ok: boolean }>;
     getTabs: () => Promise<TabInfo[]>;
     switchTab: (tabId: string) => Promise<void>;
     goBack: () => Promise<void>;

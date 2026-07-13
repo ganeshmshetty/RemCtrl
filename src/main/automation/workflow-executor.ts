@@ -47,6 +47,28 @@ const CHECK_POLL_INTERVAL_MS = 500;
 const CHECK_POLL_MAX_MS = 3_000;
 const WORKFLOW_MAX_TRANSITIONS = 100;
 
+/**
+ * Replace {{variable_name}} placeholders in a string with values from the variables map.
+ * Unresolved placeholders are left as-is so steps still show their template form in logs.
+ */
+function substituteVariables(text: string, variables: Record<string, string>): string {
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    const trimmed = key.trim();
+    return Object.prototype.hasOwnProperty.call(variables, trimmed) ? variables[trimmed] : match;
+  });
+}
+
+function substituteUrlVariables(text: string, variables: Record<string, string>): string {
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    const trimmed = key.trim();
+    if (!Object.prototype.hasOwnProperty.call(variables, trimmed)) return match;
+    const value = variables[trimmed];
+    // Don't encode if the variable contains a full domain/URL
+    if (/^https?:\/\//i.test(value)) return value;
+    return encodeURIComponent(value);
+  });
+}
+
 let activeSession: TaskSession | null = null;
 
 export function isWorkflowRunning(): boolean {
@@ -144,17 +166,27 @@ export async function runWorkflow(
       }
 
       const step = steps[index];
-      const stepLabel = `Step ${index + 1}/${steps.length} [${step.type.toUpperCase()}]`;
+
+      // Apply {{variable}} substitution for parameterized replay
+      payload.variables = payload.variables ?? {};
+      const vars = payload.variables;
+      const resolvedStep: WorkflowStep = {
+        ...step,
+        url: step.url ? substituteUrlVariables(step.url, vars) : step.url,
+        instruction: step.instruction ? substituteVariables(step.instruction, vars) : step.instruction,
+      };
+
+      const stepLabel = `Step ${index + 1}/${steps.length} [${resolvedStep.type.toUpperCase()}]`;
 
       onRunStatus({ workflowRunId, state: 'running', currentStepIndex: index });
       onStepStatus({ workflowRunId, stepId: step.id, index, state: 'running' });
       emitLog(onLog, 'info', `▶ ${stepLabel}`, '[Workflow]');
 
       try {
-        const result = await executeStepWithRetry(localPage, step, onLog);
+        const result = await executeStepWithRetry(localPage, resolvedStep, onLog);
 
         let jumpToStepId: string | null = null;
-        if (step.type === 'check') {
+        if (resolvedStep.type === 'check') {
           const checkPassed = Boolean((result as { passed: boolean }).passed);
           onStepStatus({
             workflowRunId,
@@ -171,10 +203,14 @@ export async function runWorkflow(
           }
         } else {
           onStepStatus({ workflowRunId, stepId: step.id, index, state: 'completed', result });
+          if (resolvedStep.type === 'collect') {
+            vars[`step_${index + 1}_output`] = String((result as any).message || '');
+          }
           jumpToStepId = steps[index + 1]?.id ?? null;
         }
 
         currentStepId = jumpToStepId;
+
       } catch (stepErr) {
         const errorInfo = extractError(stepErr);
         emitLog(onLog, 'error', `✗ ${stepLabel} failed: ${errorInfo.message}`, '[Workflow]');
@@ -217,9 +253,11 @@ async function executeStepWithRetry(
   let lastError: Error | null = null;
   let attempt = 0;
   const maxAttempts =
-    step.type === 'navigate' || step.type === 'check'
+    step.onFailure === 'retry'
       ? RETRY_MAX_ATTEMPTS
-      : 1;
+      : (step.type === 'navigate' || step.type === 'check'
+          ? RETRY_MAX_ATTEMPTS
+          : 1);
 
   while (attempt < maxAttempts) {
     attempt++;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Play, Edit2, Trash2, Plus, Zap } from 'lucide-react';
+import { Play, Edit2, Trash2, Plus, Wand2, Variable, Bot } from 'lucide-react';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
@@ -24,9 +24,10 @@ export function WorkflowsPanel() {
     <div className="workflows-panel">
       <div className="workflows-header">
         <h2 className="workflows-header-title">Workflows</h2>
-        <button 
+        <button
           className="btn btn-sm btn-ghost"
           onClick={() => openWorkflowEditor()}
+          title="Create workflow manually"
         >
           <Plus size={14} /> New
         </button>
@@ -34,20 +35,23 @@ export function WorkflowsPanel() {
 
       <div className="workflows-list">
         {isLoading && <div className="workflows-empty">Loading workflows...</div>}
-        {error && <div className="workflows-empty" style={{color: 'var(--danger)'}}>{error}</div>}
-        
+        {error && <div className="workflows-empty" style={{ color: 'var(--danger)' }}>{error}</div>}
+
         {!isLoading && !error && workflows.length === 0 && (
           <div className="workflows-empty">
             <div className="workflows-empty-icon">
-              <Zap size={24} />
+              <Bot size={24} />
             </div>
-            <p>No workflows created yet.</p>
-            <p style={{fontSize: 12, marginTop: 8}}>Create one to automate repetitive tasks.</p>
+            <p>No workflows yet.</p>
+            <p style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              Run an agent task, then click<br />
+              <strong style={{ color: 'var(--text-secondary)' }}>"Save as Workflow"</strong> to record it.
+            </p>
           </div>
         )}
 
-        {workflows.map(wf => (
-          <WorkflowCard 
+        {workflows.map((wf) => (
+          <WorkflowCard
             key={wf.id}
             workflow={wf}
             confirmingDelete={confirmingDelete === wf.id}
@@ -62,52 +66,90 @@ export function WorkflowsPanel() {
   );
 }
 
-function WorkflowCard({ workflow, confirmingDelete, onEdit, onDelete, onConfirmDelete, onCancelDelete }: any) {
+function WorkflowCard({
+  workflow,
+  confirmingDelete,
+  onEdit,
+  onDelete,
+  onConfirmDelete,
+  onCancelDelete,
+}: any) {
   const { role, controllerState, hostState, sendData } = useConnectionStore();
-  const isConnected = 
+  const isConnected =
     role === 'local' ||
-    hostState === 'SESSION_ACTIVE' || hostState === 'AGENT_EXECUTING' || hostState === 'HUMAN_TAKEOVER' ||
-    controllerState === 'SESSION_ACTIVE' || controllerState === 'CONTROLLING_REMOTELY';
-  
+    hostState === 'SESSION_ACTIVE' ||
+    hostState === 'AGENT_EXECUTING' ||
+    hostState === 'HUMAN_TAKEOVER' ||
+    controllerState === 'SESSION_ACTIVE' ||
+    controllerState === 'CONTROLLING_REMOTELY';
+
   const { setRightPanelTab } = useUIStore();
-  
+  const varCount = workflow.variables ? Object.keys(workflow.variables).length : 0;
+  const isAiRecorded = workflow.source === 'ai_recorded';
+
   function handleRun() {
     if (!isConnected) return;
     const workflowRunId = crypto.randomUUID();
     useAgentStore.getState().startNewExecution('workflow', workflowRunId, workflow.name);
-    
+
+    const vars: Record<string, string> = workflow.variables ?? {};
+    const resolve = (text: string) =>
+      text.replace(/\{\{([^}]+)\}\}/g, (_: string, key: string) => vars[key.trim()] ?? `{{${key.trim()}}}`);
+
+    const resolvedSteps = workflow.steps.map((step: any) => {
+      return {
+        ...step,
+        url: step.url ? resolve(step.url) : step.url,
+        instruction: step.instruction ? resolve(step.instruction) : step.instruction,
+      };
+    });
+
     const payload = {
       workflowRunId,
       workflowId: workflow.id,
       name: workflow.name,
-      startUrl: workflow.startUrl,
-      steps: workflow.steps,
+      startUrl: workflow.startUrl ? resolve(workflow.startUrl) : workflow.startUrl,
+      steps: resolvedSteps,
+      variables: workflow.variables,
     };
 
     if (controllerState !== 'IDLE' && sendData) {
-      sendData({
-        type: 'AGENT_WORKFLOW_BATCH',
-        version: '1.0',
-        timestamp: Date.now(),
-        payload,
-      }, true);
+      sendData(
+        { type: 'AGENT_WORKFLOW_BATCH', version: '1.0', timestamp: Date.now(), payload },
+        true
+      );
     } else if (hostState !== 'IDLE' || role === 'local') {
       window.RemoteCtrlAPI?.browser.startWorkflow(payload);
     }
-    
+
     setRightPanelTab('agent');
   }
 
   return (
     <div className="workflow-card">
       <div className="workflow-card-header">
-        <h3 className="workflow-card-name">{workflow.name}</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isAiRecorded && (
+              <span className="wf-card-ai-badge" title="Auto-recorded from AI agent run">
+                <Wand2 size={10} />
+              </span>
+            )}
+            <h3 className="workflow-card-name">{workflow.name}</h3>
+          </div>
+          {varCount > 0 && (
+            <span className="wf-card-var-count">
+              <Variable size={9} />
+              {varCount} variable{varCount !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
         <div className="workflow-card-actions">
           <button className="workflow-card-action-btn" onClick={onEdit} title="Edit">
             <Edit2 size={14} />
           </button>
           {confirmingDelete ? (
-            <div style={{display: 'flex', gap: 4}}>
+            <div style={{ display: 'flex', gap: 4 }}>
               <button className="workflow-card-action-btn danger" onClick={onConfirmDelete}>✓</button>
               <button className="workflow-card-action-btn" onClick={onCancelDelete}>✗</button>
             </div>
@@ -118,16 +160,25 @@ function WorkflowCard({ workflow, confirmingDelete, onEdit, onDelete, onConfirmD
           )}
         </div>
       </div>
-      
+
       {workflow.description && (
-        <p style={{fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12}}>{workflow.description}</p>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.4 }}>
+          {workflow.description.length > 80
+            ? workflow.description.slice(0, 80) + '…'
+            : workflow.description}
+        </p>
       )}
-      
-      <div className="workflow-card-meta">
-        {workflow.steps.length} step{workflow.steps.length === 1 ? '' : 's'}
+
+      <div className="workflow-card-meta" style={{ display: 'flex', gap: 10 }}>
+        <span>{workflow.steps.length} step{workflow.steps.length === 1 ? '' : 's'}</span>
+        {workflow.startUrl && (
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+            {workflow.startUrl.replace(/^https?:\/\//, '')}
+          </span>
+        )}
       </div>
 
-      <button 
+      <button
         className="workflow-card-run-btn"
         onClick={handleRun}
         disabled={!isConnected}

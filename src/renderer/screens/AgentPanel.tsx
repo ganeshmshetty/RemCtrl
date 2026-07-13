@@ -1,11 +1,62 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2, ChevronDown, Plus, Edit3, Keyboard, ArrowUpDown } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 import type { ChatMessage } from '../stores/useAgentStore';
-import type { AgentCheckpointPayload } from '../../shared/types';
+import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+
+/** Convert recorded agent steps into workflow steps with {{variable}} placeholders */
+function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[]; variables: Record<string, string>; startUrl: string } {
+  const workflowSteps: WorkflowStep[] = [];
+  const variables: Record<string, string> = {};
+  let startUrl = '';
+  let varCount = 0;
+
+  for (const step of steps) {
+    if (step.tool === 'goto') {
+      const url = String(step.input.url ?? '');
+      if (!startUrl) startUrl = url;
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'navigate', url, onFailure: 'stop' });
+    } else if (step.tool === 'act') {
+      const action = String(step.input.action ?? 'click');
+      const value = step.input.value != null ? String(step.input.value) : undefined;
+      let instruction = '';
+
+      if (action === 'fill' && value !== undefined && value.trim()) {
+        // Convert typed values to {{variable}} placeholders
+        varCount++;
+        const varName = `input_${varCount}`;
+        variables[varName] = value;
+        instruction = `${step.summary.replace(/"[^"]*"/, `"{{${varName}}}"`)}`.replace(/^Action: fill/, 'Fill');
+        if (!instruction.includes(`{{${varName}}}`)) {
+          instruction = `Fill the field with {{${varName}}}`;
+        }
+      } else {
+        instruction = step.summary.replace(/^Action: /, '');
+      }
+
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction, onFailure: 'stop' });
+    } else if (step.tool === 'scroll') {
+      const dir = String(step.input.direction ?? 'down');
+      const px = Number(step.input.pixels ?? 500);
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: `Scroll ${dir} ${px}px`, onFailure: 'skip' });
+    } else if (step.tool === 'keys') {
+      const key = String(step.input.key ?? '');
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: `Press the ${key} key`, onFailure: 'skip' });
+    } else if (step.tool === 'extract') {
+      const sel = step.input.selector ? ` from "${step.input.selector}"` : '';
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'collect', instruction: `Extract content${sel}`, onFailure: 'skip' });
+    } else if (step.tool === 'observe') {
+      // observe is transient — skip it (the DO step that follows handles the action)
+    } else {
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: step.summary, onFailure: 'skip' });
+    }
+  }
+
+  return { steps: workflowSteps, variables, startUrl };
+}
 
 export function AgentPanel() {
   const { 
@@ -85,6 +136,7 @@ export function AgentPanel() {
 
   function handleTakeover() {
     setTakeoverActive(true);
+    window.RemoteCtrlAPI?.browser.setTakeoverActive?.(true);
   }
 
   const renderChatHistory = () => {
@@ -145,8 +197,32 @@ export function AgentPanel() {
         {chatHistory.length === 0 && workflowRunState === 'idle' && (
           <div className="agent-chat-empty">
             <Bot size={32} strokeWidth={1} style={{ opacity: 0.3, marginBottom: 12 }} />
-            <div>Agent is ready.</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Ask it to do something!</div>
+            <div style={{ fontWeight: 500, fontSize: 16 }}>Agent is ready</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, marginBottom: 24 }}>What would you like to do?</div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 300 }}>
+              <button 
+                className="btn btn-ghost" 
+                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)' }}
+                onClick={() => setPrompt('Go to hackernews and find the top story about AI')}
+              >
+                Find top AI story on HackerNews
+              </button>
+              <button 
+                className="btn btn-ghost" 
+                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)' }}
+                onClick={() => setPrompt('Go to google flights and find a weekend trip from NYC to MIA')}
+              >
+                Search flights to Miami
+              </button>
+              <button 
+                className="btn btn-ghost" 
+                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)' }}
+                onClick={() => setPrompt('Extract the main article text from this page')}
+              >
+                Extract article text
+              </button>
+            </div>
           </div>
         )}
 
@@ -175,7 +251,25 @@ export function AgentPanel() {
         )}
         
         {chatHistory.length > 0 && chatHistory[chatHistory.length - 1].type === 'status' && (
-          <button className="btn btn-ghost agent-save-workflow-btn" onClick={() => useUIStore.getState().openWorkflowEditor()}>
+          <button 
+            className="btn btn-ghost agent-save-workflow-btn" 
+            onClick={() => {
+              const { lastRecordedSteps, lastCompletedPrompt } = useAgentStore.getState();
+              const { openWorkflowEditorWithData } = useUIStore.getState();
+              const { steps, variables, startUrl } = convertAgentRunToWorkflow(lastRecordedSteps);
+              const defaultName = lastCompletedPrompt
+                ? lastCompletedPrompt.slice(0, 60) + (lastCompletedPrompt.length > 60 ? '…' : '')
+                : 'AI-Recorded Workflow';
+              openWorkflowEditorWithData({
+                name: defaultName,
+                description: lastCompletedPrompt ?? '',
+                startUrl,
+                steps,
+                variables,
+                source: 'ai_recorded',
+              });
+            }}
+          >
             <Save size={14} style={{ marginRight: 4 }} /> Save as Workflow
           </button>
         )}
@@ -186,8 +280,19 @@ export function AgentPanel() {
       <div className="agent-input-area">
         <div className="agent-controls">
           <button 
+            className="agent-control-btn"
+            onClick={() => useAgentStore.getState().startNewChat()}
+            title="Start New Chat"
+          >
+            <Plus size={14} /> New
+          </button>
+          <button 
             className={`agent-control-btn ${isTakeoverActive ? 'active' : ''}`}
-            onClick={() => setTakeoverActive(!isTakeoverActive)}
+            onClick={() => {
+              const newActive = !isTakeoverActive;
+              setTakeoverActive(newActive);
+              window.RemoteCtrlAPI?.browser.setTakeoverActive?.(newActive);
+            }}
             disabled={!isConnected}
           >
             {isTakeoverActive ? <Hand size={14} /> : <MousePointer size={14} />}
@@ -303,13 +408,22 @@ function ChatBubble({
   // Log message (clean step pill)
   if (msg.type === 'log') {
     const isNav = msg.text.startsWith('Navigating');
-    const isAct = msg.text.startsWith('Action:');
     const isObs = msg.text.startsWith('Observing');
     const isExt = msg.text.startsWith('Extracting');
     const isDone = msg.text.startsWith('Completing');
+    const isFill = msg.text.startsWith('Action: fill') || msg.text.startsWith('Action: type');
+    const isPress = msg.text.startsWith('Action: press') || msg.text.startsWith('Action: keys');
+    const isScroll = msg.text.startsWith('Action: scroll');
+    const isAct = msg.text.startsWith('Action:');
 
     const icon = isNav ? (
       <Globe size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+    ) : isFill ? (
+      <Edit3 size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+    ) : isPress ? (
+      <Keyboard size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+    ) : isScroll ? (
+      <ArrowUpDown size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
     ) : isAct ? (
       <MousePointer size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
     ) : isObs ? (
@@ -376,7 +490,7 @@ function CollapsableLogs({ logs, agentStatus }: { logs: ChatMessage[]; agentStat
     if (agentStatus === 'running') {
       setIsOpen(true);
     }
-  }, [agentStatus, logs.length]);
+  }, [agentStatus]);
 
   return (
     <div className="agent-msg-logs-collapsable animate-fade-in" style={{ margin: '6px 0', width: '100%' }}>
