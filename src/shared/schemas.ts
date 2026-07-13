@@ -2,28 +2,23 @@ import { z } from 'zod';
 
 // ─── Workflow Schemas ──────────────────────────────────────────────────────────
 
-export const StepTypeSchema = z.enum(['navigate', 'do', 'collect', 'check']);
+export const StepTypeSchema = z.enum(['navigate', 'click', 'fill', 'select', 'keypress', 'wait', 'extract', 'check']);
 
-export const WorkflowStepSchema = z.object({
+const BaseStepSchema = z.object({
   id: z.string().min(1),
-  type: StepTypeSchema,
-  // navigate
-  url: z.string().optional(),
-  // do, collect, check
-  instruction: z.string().optional(),
-  // check branching — step IDs
-  onTrue: z.string().optional(),
-  onFalse: z.string().optional(),
-  // recovery policy
-  onFailure: z.enum(['stop', 'skip', 'retry']).optional().default('stop'),
-}).refine(
-  (s) => {
-    if (s.type === 'navigate') return !!s.url;
-    if (s.type === 'do' || s.type === 'collect' || s.type === 'check') return !!s.instruction;
-    return true;
-  },
-  { message: 'navigate requires url; do/collect/check require instruction' },
-);
+  onFailure: z.enum(['stop', 'skip', 'retry', 'self_heal']).optional().default('self_heal'),
+});
+
+export const WorkflowStepSchema = z.discriminatedUnion('type', [
+  BaseStepSchema.extend({ type: z.literal('navigate'), url: z.string() }),
+  BaseStepSchema.extend({ type: z.literal('click'), selector: z.string(), description: z.string().optional() }),
+  BaseStepSchema.extend({ type: z.literal('fill'), selector: z.string(), value: z.string(), description: z.string().optional() }),
+  BaseStepSchema.extend({ type: z.literal('select'), selector: z.string(), value: z.string(), description: z.string().optional() }),
+  BaseStepSchema.extend({ type: z.literal('keypress'), key: z.string() }),
+  BaseStepSchema.extend({ type: z.literal('wait'), ms: z.number() }),
+  BaseStepSchema.extend({ type: z.literal('extract'), instruction: z.string(), variableName: z.string() }),
+  BaseStepSchema.extend({ type: z.literal('check'), condition: z.string(), onTrue: z.string().optional(), onFalse: z.string().optional() }),
+]);
 
 export const LocalWorkflowSchema = z.object({
   id: z.string().min(1),

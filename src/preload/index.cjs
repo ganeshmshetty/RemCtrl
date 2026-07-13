@@ -141,6 +141,11 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       ipcRenderer.on('agent:log', listener);
       return () => ipcRenderer.removeListener('agent:log', listener);
     },
+    workflowRecordedStep: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on('workflow:recordedStep', listener);
+      return () => ipcRenderer.removeListener('workflow:recordedStep', listener);
+    },
     error: (cb) => {
       const listener = (_event, message) => cb(message);
       ipcRenderer.on('app:error', listener);

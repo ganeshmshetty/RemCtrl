@@ -7,7 +7,6 @@ import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 
-/** Convert recorded agent steps into workflow steps with {{variable}} placeholders */
 function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[]; variables: Record<string, string>; startUrl: string } {
   const workflowSteps: WorkflowStep[] = [];
   const variables: Record<string, string> = {};
@@ -21,37 +20,29 @@ function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: Workflo
       workflowSteps.push({ id: crypto.randomUUID(), type: 'navigate', url, onFailure: 'stop' });
     } else if (step.tool === 'act') {
       const action = String(step.input.action ?? 'click');
+      const selector = String(step.input.selector ?? '');
       const value = step.input.value != null ? String(step.input.value) : undefined;
-      let instruction = '';
+      const description = step.summary;
 
       if (action === 'fill' && value !== undefined && value.trim()) {
-        // Convert typed values to {{variable}} placeholders
         varCount++;
         const varName = `input_${varCount}`;
         variables[varName] = value;
-        instruction = `${step.summary.replace(/"[^"]*"/, `"{{${varName}}}"`)}`.replace(/^Action: fill/, 'Fill');
-        if (!instruction.includes(`{{${varName}}}`)) {
-          instruction = `Fill the field with {{${varName}}}`;
-        }
+        workflowSteps.push({ id: crypto.randomUUID(), type: 'fill', selector, value: `{{${varName}}}`, description, onFailure: 'stop' });
+      } else if (action === 'fill' || action === 'select') {
+        workflowSteps.push({ id: crypto.randomUUID(), type: action, selector, value: value ?? '', description, onFailure: 'stop' });
+      } else if (action === 'check') {
+         workflowSteps.push({ id: crypto.randomUUID(), type: 'click', selector, description: `Check ${selector}`, onFailure: 'stop' });
       } else {
-        instruction = step.summary.replace(/^Action: /, '');
+        workflowSteps.push({ id: crypto.randomUUID(), type: 'click', selector, description, onFailure: 'stop' });
       }
-
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction, onFailure: 'stop' });
-    } else if (step.tool === 'scroll') {
-      const dir = String(step.input.direction ?? 'down');
-      const px = Number(step.input.pixels ?? 500);
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: `Scroll ${dir} ${px}px`, onFailure: 'skip' });
     } else if (step.tool === 'keys') {
       const key = String(step.input.key ?? '');
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: `Press the ${key} key`, onFailure: 'skip' });
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'keypress', key, onFailure: 'skip' });
     } else if (step.tool === 'extract') {
-      const sel = step.input.selector ? ` from "${step.input.selector}"` : '';
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'collect', instruction: `Extract content${sel}`, onFailure: 'skip' });
-    } else if (step.tool === 'observe') {
-      // observe is transient — skip it (the DO step that follows handles the action)
-    } else {
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: step.summary, onFailure: 'skip' });
+      const instruction = step.input.instruction ? String(step.input.instruction) : 'Extract content';
+      const variableName = `extracted_${crypto.randomUUID().split('-')[0]}`;
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'extract', instruction, variableName, onFailure: 'skip' });
     }
   }
 

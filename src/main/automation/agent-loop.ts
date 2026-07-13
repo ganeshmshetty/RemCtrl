@@ -8,6 +8,7 @@ import { createBrowserTools } from './agent-tools.js';
 import type { AgentLogCb, AgentStatusCb } from './execution-engine.js';
 import type { TaskSession } from './task-session.js';
 import type { RecordedAgentStep } from '../../shared/types.js';
+import { randomUUID } from 'crypto';
 
 export interface AgentLoopResult {
   goalAchieved: boolean;
@@ -15,7 +16,7 @@ export interface AgentLoopResult {
   stepCount: number;
   actions: string[];
   finalMessage?: string;
-  /** Structured tool call data for converting agent runs into replayable workflows */
+  /** Legacy structured tool call data */
   recordedSteps: RecordedAgentStep[];
 }
 
@@ -29,6 +30,7 @@ export interface AgentLoopOptions {
   maxSteps: number;
   onStatus?: AgentStatusCb;
   onLog: AgentLogCb;
+  onRecordStep?: (step: any) => void;
 }
 
 function formatToolAction(toolName: string, input: any): string {
@@ -91,6 +93,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     maxSteps,
     onStatus,
     onLog,
+    onRecordStep,
   } = opts;
 
   const actions: string[] = [];
@@ -147,9 +150,44 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
         const cleanSummary = formatToolAction(tc.toolName, finalInput);
         onLog({ level: 'info', message: cleanSummary });
         actions.push(cleanSummary);
+        
         // Record structured step (skip meta-tools that don't replay)
         if (!['think', 'notifyUser', 'done', 'askUser', 'wait'].includes(tc.toolName)) {
           recordedSteps.push({ tool: tc.toolName, summary: cleanSummary, input: finalInput });
+          
+          // Emit deterministic workflow primitive hook
+          if (onRecordStep) {
+            let workflowStep: any = null;
+            const id = randomUUID();
+            const description = finalInput.description || cleanSummary;
+            
+            if (tc.toolName === 'goto' && finalInput.url) {
+              workflowStep = { id, type: 'navigate', url: finalInput.url };
+            } else if (tc.toolName === 'act' && finalInput.selector) {
+              const action = finalInput.action;
+              if (action === 'click') {
+                workflowStep = { id, type: 'click', selector: finalInput.selector, description };
+              } else if (action === 'fill') {
+                workflowStep = { id, type: 'fill', selector: finalInput.selector, value: finalInput.value || '', description };
+              } else if (action === 'select') {
+                workflowStep = { id, type: 'select', selector: finalInput.selector, value: finalInput.value || '', description };
+              } else if (action === 'check') {
+                workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `Check ${finalInput.selector}` };
+              } else if (action === 'press') {
+                workflowStep = { id, type: 'keypress', key: finalInput.value || 'Enter' };
+              } else if (action === 'uncheck' || action === 'focus' || action === 'hover') {
+                workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `${action} on ${finalInput.selector}` };
+              }
+            } else if (tc.toolName === 'keys' && finalInput.key) {
+              workflowStep = { id, type: 'keypress', key: finalInput.key };
+            } else if (tc.toolName === 'extract' && finalInput.instruction) {
+              workflowStep = { id, type: 'extract', instruction: finalInput.instruction, variableName: `extracted_${id.split('-')[0]}` };
+            }
+            
+            if (workflowStep) {
+              onRecordStep(workflowStep);
+            }
+          }
         }
         if (tc.toolName === 'done') {
           goalAchieved = true;

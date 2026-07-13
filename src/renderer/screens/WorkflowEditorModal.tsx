@@ -31,40 +31,54 @@ const STEP_TYPES: {
   type: StepType;
   icon: React.ReactNode;
   label: string;
-  placeholder: string;
-  field: 'url' | 'instruction';
   color: string;
 }[] = [
   {
     type: 'navigate',
     icon: <Globe size={12} />,
     label: 'Go to',
-    placeholder: 'https://example.com or {{start_url}}',
-    field: 'url',
     color: '#3b82f6',
   },
   {
-    type: 'do',
+    type: 'click',
     icon: <MousePointerClick size={12} />,
-    label: 'Do',
-    placeholder: 'e.g., Click the login button and fill "{{username}}"',
-    field: 'instruction',
+    label: 'Click',
     color: '#10b981',
   },
   {
-    type: 'collect',
+    type: 'fill',
+    icon: <Wand2 size={12} />,
+    label: 'Fill',
+    color: '#10b981',
+  },
+  {
+    type: 'select',
     icon: <ClipboardList size={12} />,
-    label: 'Collect',
-    placeholder: 'e.g., Get all product names and prices',
-    field: 'instruction',
+    label: 'Select',
+    color: '#10b981',
+  },
+  {
+    type: 'keypress',
+    icon: <Variable size={12} />,
+    label: 'Key',
+    color: '#6366f1',
+  },
+  {
+    type: 'wait',
+    icon: <Info size={12} />,
+    label: 'Wait',
+    color: '#94a3b8',
+  },
+  {
+    type: 'extract',
+    icon: <ClipboardList size={12} />,
+    label: 'Extract',
     color: '#a855f7',
   },
   {
     type: 'check',
     icon: <GitBranch size={12} />,
     label: 'Check',
-    placeholder: 'e.g., Is there a cookie consent banner?',
-    field: 'instruction',
     color: '#f59e0b',
   },
 ];
@@ -72,11 +86,28 @@ const STEP_TYPES: {
 function defaultStep(): WorkflowStep {
   return {
     id: crypto.randomUUID(),
-    type: 'do',
-    instruction: '',
+    type: 'click',
+    selector: '',
+    description: '',
     onFailure: 'stop',
-  };
+  } as any; // Typecast because of discriminated union
 }
+
+export type WorkflowStepFields = Partial<{
+  type: StepType;
+  url: string;
+  selector: string;
+  value: string;
+  key: string;
+  ms: number;
+  instruction: string;
+  variableName: string;
+  condition: string;
+  onTrue: string;
+  onFalse: string;
+  description: string;
+  onFailure: 'stop' | 'skip' | 'retry' | 'self_heal';
+}>;
 
 /** Extract {{variable_name}} tokens from a string */
 function extractVarTokens(text: string): string[] {
@@ -191,8 +222,21 @@ function SortableStepRow({
   };
 
   const meta = STEP_TYPES.find((t) => t.type === step.type) ?? STEP_TYPES[1];
-  const fieldValue = meta.field === 'url' ? (step.url ?? '') : (step.instruction ?? '');
-  const hasVars = /\{\{[^}]+\}\}/.test(fieldValue);
+  
+  // Extract all string values from the step for the preview & variable check
+  const allText = Object.values(step).filter(v => typeof v === 'string').join(' ');
+  const hasVars = /\{\{[^}]+\}\}/.test(allText);
+
+  let previewText = '';
+  if (step.type === 'navigate') previewText = step.url || 'Empty URL';
+  else if (step.type === 'click' || step.type === 'fill' || step.type === 'select') previewText = (step as any).description || (step as any).selector || 'Empty selector';
+  else if (step.type === 'keypress') previewText = (step as any).key || 'Empty key';
+  else if (step.type === 'wait') previewText = `${(step as any).ms || 0}ms`;
+  else if (step.type === 'extract') previewText = (step as any).instruction || 'Empty instruction';
+  else if (step.type === 'check') previewText = (step as any).condition || 'Empty condition';
+
+  const isFragileSelector = (step.type === 'click' || step.type === 'fill' || step.type === 'select') && 
+    ((step as any).selector?.includes('nth-child') || (step as any).selector?.includes('nth-of-type') || (step as any).selector?.includes('[index=]'));
 
   return (
     <div ref={setNodeRef} style={style} className={`wf-editor-step ${isDragging ? 'dragging' : ''}`}>
@@ -222,16 +266,17 @@ function SortableStepRow({
         <div
           className="wf-editor-step-preview"
           onClick={() => setExpanded(!expanded)}
-          style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+          style={{ flex: 1, minWidth: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
         >
-          {fieldValue ? (
-            <span className="wf-step-preview-text">
-              {fieldValue.length > 55 ? fieldValue.slice(0, 55) + '…' : fieldValue}
-            </span>
-          ) : (
-            <span style={{ opacity: 0.4, fontStyle: 'italic', fontSize: 12 }}>Empty step</span>
-          )}
+          <span className="wf-step-preview-text">
+            {previewText.length > 55 ? previewText.slice(0, 55) + '…' : previewText}
+          </span>
           {hasVars && <span className="wf-var-pill">has variables</span>}
+          {isFragileSelector && (
+            <span className="wf-var-pill" style={{ background: '#fef2f2', color: '#ef4444', borderColor: '#f87171' }} title="Selector relies on layout position and may break if layout changes.">
+              ⚠️ Fragile Selector
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
@@ -276,23 +321,95 @@ function SortableStepRow({
             ))}
           </div>
 
-          {/* Main input */}
-          {meta.field === 'url' ? (
-            <input
-              className="wf-editor-step-input"
-              value={step.url ?? ''}
-              onChange={(e) => updateStep(idx, { url: e.target.value })}
-              placeholder={meta.placeholder}
-            />
-          ) : (
-            <textarea
-              className="wf-editor-step-textarea"
-              value={step.instruction ?? ''}
-              onChange={(e) => updateStep(idx, { instruction: e.target.value })}
-              placeholder={meta.placeholder}
-              rows={2}
-            />
-          )}
+          {/* Main input fields based on type */}
+          <div className="wf-editor-step-fields" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {step.type === 'navigate' && (
+              <input
+                className="wf-editor-step-input"
+                value={step.url ?? ''}
+                onChange={(e) => updateStep(idx, { url: e.target.value })}
+                placeholder="https://example.com or {{url}}"
+              />
+            )}
+            
+            {(step.type === 'click' || step.type === 'fill' || step.type === 'select') && (
+              <>
+                <input
+                  className="wf-editor-step-input"
+                  value={(step as any).selector ?? ''}
+                  onChange={(e) => updateStep(idx, { selector: e.target.value })}
+                  placeholder="CSS Selector (e.g. #submit-btn)"
+                  style={{ fontFamily: 'monospace', fontSize: 11 }}
+                />
+                <input
+                  className="wf-editor-step-input"
+                  value={(step as any).description ?? ''}
+                  onChange={(e) => updateStep(idx, { description: e.target.value })}
+                  placeholder="Semantic description for AI self-healing (e.g. The submit button)"
+                />
+              </>
+            )}
+
+            {(step.type === 'fill' || step.type === 'select') && (
+              <input
+                className="wf-editor-step-input"
+                value={(step as any).value ?? ''}
+                onChange={(e) => updateStep(idx, { value: e.target.value })}
+                placeholder={step.type === 'fill' ? 'Value to fill or {{variable}}' : 'Value to select'}
+              />
+            )}
+
+            {step.type === 'keypress' && (
+              <input
+                className="wf-editor-step-input"
+                value={(step as any).key ?? ''}
+                onChange={(e) => updateStep(idx, { key: e.target.value })}
+                placeholder="Key (e.g. Enter, Escape, Tab)"
+              />
+            )}
+
+            {step.type === 'wait' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  className="wf-editor-step-input"
+                  type="number"
+                  value={(step as any).ms ?? 0}
+                  onChange={(e) => updateStep(idx, { ms: parseInt(e.target.value, 10) || 0 })}
+                  placeholder="Milliseconds"
+                  style={{ width: '120px' }}
+                />
+                <span style={{ fontSize: 12, opacity: 0.6 }}>ms</span>
+              </div>
+            )}
+
+            {step.type === 'extract' && (
+              <>
+                <textarea
+                  className="wf-editor-step-textarea"
+                  value={(step as any).instruction ?? ''}
+                  onChange={(e) => updateStep(idx, { instruction: e.target.value })}
+                  placeholder="What data to extract?"
+                  rows={2}
+                />
+                <input
+                  className="wf-editor-step-input"
+                  value={(step as any).variableName ?? ''}
+                  onChange={(e) => updateStep(idx, { variableName: e.target.value })}
+                  placeholder="Store in variable (e.g. extracted_price)"
+                />
+              </>
+            )}
+
+            {step.type === 'check' && (
+              <textarea
+                className="wf-editor-step-textarea"
+                value={(step as any).condition ?? ''}
+                onChange={(e) => updateStep(idx, { condition: e.target.value })}
+                placeholder="Text or label to verify (e.g. 'Success')"
+                rows={1}
+              />
+            )}
+          </div>
 
           {/* Check step: branch selectors */}
           {step.type === 'check' && (
@@ -426,7 +543,7 @@ export function WorkflowEditorModal() {
   // Compute which variable names are actually referenced in steps
   const usedVarNames = new Set<string>();
   for (const step of steps) {
-    const text = step.url ?? step.instruction ?? '';
+    const text = Object.values(step).filter(v => typeof v === 'string').join(' ');
     for (const v of extractVarTokens(text)) usedVarNames.add(v);
   }
 
@@ -441,13 +558,13 @@ export function WorkflowEditorModal() {
     }
   }
 
-  function updateStep(index: number, updates: Partial<WorkflowStep>) {
+  function updateStep(index: number, updates: WorkflowStepFields) {
     const newSteps = [...steps];
-    newSteps[index] = { ...newSteps[index], ...updates };
+    newSteps[index] = { ...newSteps[index], ...updates } as WorkflowStep;
     setSteps(newSteps);
 
     // Auto-discover new {{vars}} typed into steps
-    const updatedText = updates.url ?? updates.instruction ?? '';
+    const updatedText = Object.values(updates).filter(v => typeof v === 'string').join(' ');
     if (updatedText) {
       const newVars = extractVarTokens(updatedText);
       const updated = { ...variables };
@@ -463,20 +580,38 @@ export function WorkflowEditorModal() {
   }
 
   function changeStepType(index: number, type: StepType) {
-    const base: WorkflowStep = {
-      id: steps[index].id,
-      type,
-      onFailure: steps[index].onFailure,
-    };
-    if (type === 'navigate') {
-      base.url = steps[index].url || '';
-    } else {
-      base.instruction = steps[index].instruction || '';
+    const old = steps[index] as any;
+    let base: WorkflowStep;
+    
+    switch (type) {
+      case 'navigate':
+        base = { id: old.id, onFailure: old.onFailure, type: 'navigate', url: old.url || '' };
+        break;
+      case 'click':
+        base = { id: old.id, onFailure: old.onFailure, type: 'click', selector: old.selector || '', description: old.description || '' };
+        break;
+      case 'fill':
+        base = { id: old.id, onFailure: old.onFailure, type: 'fill', selector: old.selector || '', value: old.value || '', description: old.description || '' };
+        break;
+      case 'select':
+        base = { id: old.id, onFailure: old.onFailure, type: 'select', selector: old.selector || '', value: old.value || '', description: old.description || '' };
+        break;
+      case 'keypress':
+        base = { id: old.id, onFailure: old.onFailure, type: 'keypress', key: old.key || '' };
+        break;
+      case 'wait':
+        base = { id: old.id, onFailure: old.onFailure, type: 'wait', ms: old.ms || 1000 };
+        break;
+      case 'extract':
+        base = { id: old.id, onFailure: old.onFailure, type: 'extract', instruction: old.instruction || '', variableName: old.variableName || '' };
+        break;
+      case 'check':
+        base = { id: old.id, onFailure: old.onFailure, type: 'check', condition: old.condition || '', onTrue: old.onTrue, onFalse: old.onFalse };
+        break;
+      default:
+        throw new Error("unsupported type");
     }
-    if (type === 'check') {
-      base.onTrue = steps[index].onTrue;
-      base.onFalse = steps[index].onFalse;
-    }
+
     const newSteps = [...steps];
     newSteps[index] = base;
     setSteps(newSteps);
@@ -495,12 +630,22 @@ export function WorkflowEditorModal() {
     setIsSaving(true);
     try {
       const validSteps = steps
-        .filter((s) => (s.type === 'navigate' ? !!s.url?.trim() : !!s.instruction?.trim()))
+        .filter((s) => {
+          if (s.type === 'navigate') return !!s.url?.trim();
+          if (s.type === 'click' || s.type === 'fill' || s.type === 'select') return !!s.selector?.trim();
+          if (s.type === 'keypress') return !!s.key?.trim();
+          if (s.type === 'wait') return !!s.ms;
+          if (s.type === 'extract') return !!s.instruction?.trim();
+          if (s.type === 'check') return !!s.condition?.trim();
+          return false;
+        })
         .map((s) => ({ ...s }));
       const validStepIds = new Set(validSteps.map((s) => s.id));
       for (const step of validSteps) {
-        if (step.onTrue && !validStepIds.has(step.onTrue)) delete step.onTrue;
-        if (step.onFalse && !validStepIds.has(step.onFalse)) delete step.onFalse;
+        if (step.type === 'check') {
+          if (step.onTrue && !validStepIds.has(step.onTrue)) delete step.onTrue;
+          if (step.onFalse && !validStepIds.has(step.onFalse)) delete step.onFalse;
+        }
       }
       const existing = editingWorkflowId ? workflows.find((w) => w.id === editingWorkflowId) : undefined;
       const now = Date.now();

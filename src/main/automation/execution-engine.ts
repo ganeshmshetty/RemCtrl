@@ -65,6 +65,7 @@ export async function runAgent(
   provider: ApiProvider,
   onStatus: AgentStatusCb,
   onLog: AgentLogCb,
+  onRecordStep?: (step: any) => void,
   variables?: Record<string, string>,
 ): Promise<void> {
   if (activeSession?.isActive) {
@@ -138,6 +139,7 @@ export async function runAgent(
         maxSteps: MAX_STEPS,
         onStatus: guardedStatus,
         onLog,
+        onRecordStep,
       });
     };
 

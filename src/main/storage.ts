@@ -326,7 +326,17 @@ let _workflowsCache: WorkflowStore | null = null;
 
 function loadWorkflowStore(): WorkflowStore {
   if (!_workflowsCache) {
-    _workflowsCache = readJson<WorkflowStore>(WORKFLOWS_FILE, { workflows: [] });
+    const raw = readJson<any>(WORKFLOWS_FILE, { workflows: [] });
+    const workflows: LocalWorkflow[] = [];
+    for (const w of raw.workflows || []) {
+      const parsed = LocalWorkflowSchema.safeParse(w);
+      if (parsed.success) {
+        workflows.push(parsed.data as any);
+      } else {
+        console.error('Skipping unparseable workflow:', w?.id, parsed.error);
+      }
+    }
+    _workflowsCache = { workflows };
   }
   return _workflowsCache;
 }
@@ -359,4 +369,24 @@ export function deleteWorkflow(workflowId: string): void {
   };
   writeJson(WORKFLOWS_FILE, nextStore);
   _workflowsCache = nextStore;
+}
+
+export function updateWorkflowStepSelector(workflowId: string, stepId: string, selector: string): void {
+  const store = loadWorkflowStore();
+  const nextWorkflows = [...store.workflows];
+  const idx = nextWorkflows.findIndex((w) => w.id === workflowId);
+  if (idx >= 0) {
+    const wf = { ...nextWorkflows[idx] };
+    const stepIdx = wf.steps.findIndex((s) => s.id === stepId);
+    if (stepIdx >= 0) {
+      const step = { ...wf.steps[stepIdx] } as any;
+      step.selector = selector;
+      wf.steps = [...wf.steps];
+      wf.steps[stepIdx] = step;
+      nextWorkflows[idx] = wf;
+      const nextStore = { ...store, workflows: nextWorkflows };
+      writeJson(WORKFLOWS_FILE, nextStore);
+      _workflowsCache = nextStore;
+    }
+  }
 }

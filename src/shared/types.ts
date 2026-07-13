@@ -1,24 +1,21 @@
 // ─── Workflow Types ────────────────────────────────────────────────────────────
 
-/** Intent-based step types per Smart Workflow architecture */
-export type StepType = 'navigate' | 'do' | 'collect' | 'check';
+export type StepType = 'navigate' | 'click' | 'fill' | 'select' | 'keypress' | 'wait' | 'extract' | 'check';
 
-export interface WorkflowStep {
+export type BaseStep = {
   id: string;
-  type: StepType;
+  onFailure: 'stop' | 'skip' | 'retry' | 'self_heal';
+};
 
-  // navigate
-  url?: string;
-
-  // do, collect, check — supports {{variable_name}} template syntax
-  instruction?: string;
-
-  // check — step IDs to jump to
-  onTrue?: string;
-  onFalse?: string;
-
-  onFailure: 'stop' | 'skip' | 'retry';
-}
+export type WorkflowStep =
+  | (BaseStep & { type: 'navigate'; url: string })
+  | (BaseStep & { type: 'click'; selector: string; description?: string })
+  | (BaseStep & { type: 'fill'; selector: string; value: string; description?: string })
+  | (BaseStep & { type: 'select'; selector: string; value: string; description?: string })
+  | (BaseStep & { type: 'keypress'; key: string })
+  | (BaseStep & { type: 'wait'; ms: number })
+  | (BaseStep & { type: 'extract'; instruction: string; variableName: string })
+  | (BaseStep & { type: 'check'; condition: string; onTrue?: string; onFalse?: string });
 
 /** A single structured step recorded from an AI agent run */
 export interface RecordedAgentStep {
@@ -370,6 +367,7 @@ export interface RemoteCtrlAPI {
     agentStatus: (cb: (payload: AgentStatusPayload) => void) => () => void;
     agentLog: (cb: (payload: AgentLogPayload) => void) => () => void;
     pin: (cb: (pin: string) => void) => () => void;
+    workflowRecordedStep: (cb: (step: any) => void) => () => void;
     error: (cb: (message: string) => void) => () => void;
     webrtcSignal: (cb: (signal: unknown) => void) => () => void;
     captureMetadata: (cb: (meta: CaptureMetadata) => void) => () => void;

@@ -11,6 +11,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { Page } from 'playwright';
 import { ensureCursorOverlay, moveCursorToLocator } from './cursor-overlay.js';
+import { computeStableSelector } from './selector-generator.js';
 import { extractNumberedDOMSnapshot, extractDOMAsMarkdown } from './dom-snapshot.js';
 import { ask } from './human-checkpoint.js';
 
@@ -86,6 +87,7 @@ export function createBrowserTools(
         selector: z.string().optional().describe('CSS selector, #id, aria label, or visible text of the element'),
         action: z.enum(['click', 'fill', 'press', 'select', 'check', 'uncheck', 'focus', 'hover']),
         value: z.string().optional().describe('Value to fill/type/select (for fill, press, select actions)'),
+        description: z.string().optional().describe('A clear, user-friendly semantic description of the element and the interaction (e.g., "Click the login button", "Fill the username field")'),
       }),
       execute: wrap(async ({ index, selector, action, value }) => {
         if (index === undefined && !selector) {
@@ -143,7 +145,17 @@ export function createBrowserTools(
           throw new Error(`Element not found matching ${identifier} across any frame or shadow root. Try calling observe() first to refresh indices.`);
         }
 
-        // Glide cursor smoothly and fire ripple animation
+        // 3. Compute Stable Selector (BEFORE action, in case action destroys the element/navigates)
+        let resolvedSelector = selector;
+        if (!resolvedSelector && locator) {
+          try {
+            resolvedSelector = await computeStableSelector(locator);
+          } catch (e) {
+            resolvedSelector = index !== undefined ? `[index=${index}]` : 'unknown';
+          }
+        }
+
+        // 4. Glide cursor smoothly and fire ripple animation
         await moveCursorToLocator(page, locator);
 
         switch (action) {
@@ -172,25 +184,6 @@ export function createBrowserTools(
           case 'hover':
             await locator.hover({ timeout: 8000 });
             break;
-        }
-
-        let resolvedSelector = selector;
-        if (!resolvedSelector && locator) {
-          try {
-            resolvedSelector = await locator.evaluate((el: any) => {
-              let sel = el.tagName.toLowerCase();
-              if (el.id) sel += '#' + el.id;
-              if (el.getAttribute('aria-label')) sel += `[aria-label="${el.getAttribute('aria-label')}"]`;
-              if (el.getAttribute('name')) sel += `[name="${el.getAttribute('name')}"]`;
-              if (el.textContent && el.textContent.trim().length > 0) {
-                const text = el.textContent.trim().substring(0, 30).replace(/"/g, '\\"').replace(/\n/g, ' ');
-                sel += ` (text: "${text}")`;
-              }
-              return sel;
-            });
-          } catch (e) {
-            resolvedSelector = index !== undefined ? `[index=${index}]` : 'unknown';
-          }
         }
 
         await page.waitForLoadState('networkidle').catch(() => {});

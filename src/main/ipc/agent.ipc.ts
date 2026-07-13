@@ -53,6 +53,7 @@ export function registerAgentIpc(_win: BrowserWindow) {
         provider,
         (status) => broadcast('agent:status', status),
         (log) => broadcast('agent:log', log),
+        (step) => broadcast('workflow:recordedStep', step),
         payload.variables,
       );
       return { ok: true };
