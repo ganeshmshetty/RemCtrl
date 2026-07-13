@@ -1,8 +1,10 @@
 /**
- * Shared AI Model Resolver for Automation Modules
- *
- * Uses the static Provider Profile Registry to resolve Vercel AI SDK instances
- * and generate Stagehand v3 model configurations without arbitrary flavor tiers.
+ * @file model-resolver.ts
+ * @description Model factory and resolver that returns the correct Vercel AI SDK model instance configured for a specific provider.
+ * Key Exported APIs: `resolveModel` to dynamically instantiate model configurations.
+ * Internal Mechanics: Resolves configured models based on user preference, custom base URLs, and environment configuration.
+ * Authentication & Providers: Supports OpenAI, Anthropic, Gemini, Vertex AI, Groq, DeepSeek, Nebius, and OpenRouter. Handles Google Application Default Credentials (ADC) for local developer environments or Vertex AI without explicit keys.
+ * Relations: Coordinates with `PROVIDER_PROFILES` to fallback on default model versions and endpoints, and reads preferences from `storage.ts`.
  */
 
 import { createOpenAI } from '@ai-sdk/openai';

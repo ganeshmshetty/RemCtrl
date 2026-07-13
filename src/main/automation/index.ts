@@ -1,11 +1,9 @@
 /**
- * Automation Orchestrator — Deep module seam for browser automation
- *
- * Encapsulates:
- * - Direct Playwright CDP pooling and lifecycle (browser-pool)
- * - Unified ReAct agent pipeline via ExecutionEngine
- * - Linear and jump-based workflow recipe execution
- * - Human-in-the-loop checkpoint management
+ * @file index.ts
+ * @description Central barrel file and orchestrator wrapper for the automation subsystem, exposing agent and workflow execution handles.
+ * Key Exported APIs: `automationOrchestrator` singleton instance, interfaces like `AutomationOrchestrator`, and re-exports of execution lifecycle control methods (`runAgent`, `cancelAgent`, `runWorkflow`, `cancelWorkflow`, `submitCheckpointResponse`, `closeBrowser`).
+ * Internal Mechanics: Coordinates active task types, checks busy status of the agent loops, delegates pause/resume requests down to the engine level, and releases pooled Playwright browser resources on termination.
+ * Relations: Direct entry point for renderer-facing IPC channels (defined in `agent.ipc.ts` and `webrtc.ipc.ts`) to pilot tasks and workflow pipelines.
  */
 
 import { runAgent, cancelAgent, isAgentRunning, setAgentPaused } from './execution-engine.js';

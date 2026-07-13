@@ -1,3 +1,11 @@
+/**
+ * @file useConnectionStore.ts
+ * @description Zustand store managing WebRTC session states, connection roles, signaling, and remote browser session settings.
+ * Exports the `useConnectionStore` hook to provide reactive session roles ('host', 'controller', 'local', 'idle') and session states.
+ * Internally holds connection metadata (like connection pins, pending controller IDs, error strings) and a `sendData` callback.
+ * Closely integrates with the WebRTC hooks/mechanisms to coordinate peer-to-peer data channel signaling and browser sync.
+ */
+
 import { create } from 'zustand';
 import type { HostSessionState, ControllerSessionState } from '../../shared/types';
 

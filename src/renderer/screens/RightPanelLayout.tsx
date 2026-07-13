@@ -1,3 +1,11 @@
+/**
+ * @file RightPanelLayout.tsx
+ * @description Tabbed layout panel container displayed in the right sidebar of the session views.
+ * Provides tab-switching navigation between the interactive AI agent control interface (AgentPanel) and the recorded/deterministic workflows registry (WorkflowsPanel).
+ * Utilizes the useUIStore Zustand store to persist the current active tab state (rightPanelTab) and handle tab transitions.
+ * Key exports: RightPanelLayout (function component).
+ */
+
 import { useUIStore } from '../stores/useUIStore';
 import { AgentPanel } from './AgentPanel';
 import { WorkflowsPanel } from './WorkflowsPanel';

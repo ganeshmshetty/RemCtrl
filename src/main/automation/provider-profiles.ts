@@ -1,3 +1,10 @@
+/**
+ * @filae provider-profiles.ts
+ * @description Configuration registry mapping API providers to their default model IDs, base URLs, and connection protocols.
+ * Key Exported APIs: `PROVIDER_PROFILES` record containing configurations for OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, Nebius, OpenRouter, and Google Vertex AI. Also exports the `ProviderProfile` interface.
+ * Relations: Direct integration with `model-resolver.ts` to locate baseline parameters, base URLs, and default engine identifiers when launching the LLM automation loop.
+ */
+
 import type { ApiProvider } from '../../shared/types.js';
 
 export interface ProviderProfile {

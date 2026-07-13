@@ -1,3 +1,12 @@
+/**
+ * @file MarkdownRenderer.tsx
+ * @description A lightweight, custom React component for parsing and rendering Markdown and formatted text block contents.
+ * Exports the `MarkdownRenderer` component, which parses text into text blocks and styled code snippets.
+ * Internally handles code fences (producing `CodeBlockCard`s with clipboard copy operations), Markdown headings, 
+ * list structures, and inline formatting (bold text, inline code tags, and secure external links).
+ * Extensively used across the Chat and Agent console panels to clean and display structured logs, agent outputs, and step details.
+ */
+
 import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 

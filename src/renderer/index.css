@@ -1,3 +1,12 @@
+/*
+ * index.css
+ * Primary global stylesheet for the RemoteCtrl renderer process.
+ * Imports Tailwind CSS utilities and defines visual design tokens (colors, border radiuses, and transitions) 
+ * for both dark (default) and light themes using CSS variables and selectors.
+ * Contains custom animations, drag-region utilities for macOS frameless titlebar operations, scrollbar customizations, 
+ * and structural layout classes (such as .app-shell, .main-content, and .browser-panel) that style the application container structure.
+ */
+
 @import "tailwindcss";
 
 /* ─── Design Tokens ─────────────────────────────────────────────────────────── */
@@ -1579,20 +1588,6 @@ code, pre, kbd {
   display: block;
 }
 
-/* Variable pill on step header */
-.wf-var-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: rgba(99,102,241,0.12);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 /* Step body (expanded) */
 .wf-editor-modal-v2 .wf-editor-step-body {
   padding: 10px 12px 10px 36px;
@@ -1633,116 +1628,6 @@ code, pre, kbd {
   text-align: center;
 }
 
-/* ─── Variable Panel ──────────────────────────────────────────────────────────── */
-
-.wf-var-section-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  padding: 8px 2px 10px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 10px;
-}
-
-.wf-var-empty {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
-  color: var(--text-muted);
-  font-size: 12px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-overlay);
-  border: 1px dashed var(--border);
-}
-.wf-var-empty code {
-  font-family: var(--font-mono, monospace);
-  color: var(--accent);
-  background: rgba(99,102,241,0.1);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-.wf-var-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.wf-var-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--bg-overlay);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: border-color var(--transition);
-}
-.wf-var-row.used { border-color: rgba(99,102,241,0.25); }
-.wf-var-row.unused { opacity: 0.65; }
-
-.wf-var-name {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 130px;
-  flex-shrink: 0;
-}
-
-.wf-var-token {
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  color: var(--accent);
-  background: rgba(99,102,241,0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.wf-var-badge {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 10px;
-}
-.wf-var-badge.unused {
-  background: rgba(245,158,11,0.12);
-  color: #f59e0b;
-  border: 1px solid rgba(245,158,11,0.25);
-}
-
-.wf-var-input {
-  flex: 1;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 5px 10px;
-  font-size: 12px;
-  color: var(--text-primary);
-  outline: none;
-}
-.wf-var-input:focus { border-color: var(--accent); }
-
-.wf-var-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
-  background: transparent;
-  border: 1px dashed var(--border-active);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--transition);
-  margin-top: 4px;
-  align-self: flex-start;
-}
-.wf-var-add-btn:hover { color: var(--accent); border-color: var(--accent); }
-
 /* ─── Workflow Card Badges ─────────────────────────────────────────────────────── */
 
 .wf-card-ai-badge {
@@ -1757,17 +1642,7 @@ code, pre, kbd {
   flex-shrink: 0;
 }
 
-.wf-card-var-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  color: var(--text-muted);
-  background: rgba(99,102,241,0.08);
-  border: 1px solid rgba(99,102,241,0.15);
-  padding: 1px 6px;
-  border-radius: 10px;
-}
+
 
 
 /* ─── Buttons ───────────────────────────────────────────────────────────────── */

@@ -1,3 +1,11 @@
+/**
+ * @file useAgentStore.ts
+ * @description Zustand store for managing agent execution state, workflow runs, chat feeds, checkpoints, and run histories.
+ * Exports the `useAgentStore` hook and `ChatMessage` interface to drive the main execution logs, chat UI, and status indicators.
+ * Internally handles state mapping, browser notification requests during agent checkpoints, and log filtering.
+ * Connects with `RemoteCtrlAPI` for history clearing and handles state updates received from IPC events via `ipcRenderer` bindings.
+ */
+
 import { create } from 'zustand';
 import type {
   AgentStatusPayload,

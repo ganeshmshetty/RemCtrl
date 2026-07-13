@@ -1,3 +1,12 @@
+/**
+ * @file ConnectionPlaceholder.tsx
+ * @description Main dashboard interface displayed to users when the active session role is 'idle'.
+ * Serves as the primary landing page offering quick-start controls for local browser session activation, hosting a screen share (Host mode), or inputting a remote PIN (Controller mode).
+ * Features a workflow registry displaying available saved workflows, allowing immediate automated playback on the local browser.
+ * Integrates with Zustand stores (useConnectionStore, useWorkflowStore, useAgentStore, useUIStore) and delegates system-level commands to RemoteCtrlAPI.
+ * Key exports: ConnectionPlaceholder (function component).
+ */
+
 import { useEffect, useState } from 'react';
 import { Zap, Play, Radio, Plus, FolderPlus, ArrowRight } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';

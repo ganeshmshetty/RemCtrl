@@ -1,3 +1,12 @@
+/**
+ * @file workflow.ipc.ts
+ * @description Main process IPC registration module managing the CRUD operations for local workflows.
+ * Exposes IPC invocation channels to the renderer process to list, save, and delete workflows.
+ * Internal mechanics involve parsing and validating incoming workflow objects using Zod schema verification
+ * before interacting with the local JSON/sqlite storage repository.
+ * Interacts directly with database/storage modules and maps schema definitions from the shared module.
+ */
+
 import { ipcMain } from 'electron';
 import { LocalWorkflowSchema } from '../../shared/schemas.js';
 import {

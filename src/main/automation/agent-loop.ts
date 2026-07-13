@@ -1,5 +1,9 @@
 /**
- * Agent Loop — Single-tier tool-calling loop using Vercel AI SDK generateText
+ * @file agent-loop.ts
+ * @description Single-turn and multi-turn autonomous tool-calling execution loops implemented via the Vercel AI SDK v5.
+ * Key Exported APIs: `runToolLoop` function, `AgentLoopResult` interface, and `AgentLoopOptions` configuration options.
+ * Internal Mechanics: Coordinates task execution with custom browser tools. Generates LLM calls with target system prompts, processes output streams, intercepts step completion metrics, maps tool actions (Goto, Act, Observe, Extract) to execution steps, and formats human-readable status events.
+ * Recording & State: Encodes executed actions to workflow-mappable commands, logs snapshots sequentially to `TaskSession` journals, and pushes status updates back to renderer callers via callback streams.
  */
 
 import { generateText } from 'ai';
@@ -98,6 +102,11 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
 
   const actions: string[] = [];
   const recordedSteps: RecordedAgentStep[] = [];
+  
+  if (actions.length === 0 && session.journal) {
+    session.journal.recordUserMessage(instruction);
+  }
+
   const tools = createBrowserTools(page, () => ({
     taskId: commandId,
     step: actions.length + 1,
@@ -133,65 +142,88 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
       }
 
       for (const tc of event.toolCalls ?? []) {
-        const input = (tc as any).input ?? (tc as any).args ?? {};
-        
-        let finalInput = { ...input };
-        if (tc.toolName === 'act' && input.index !== undefined) {
-          const toolResult = (event.toolResults?.find((tr: any) => tr.toolCallId === tc.toolCallId) as any)?.result;
-          if (toolResult?.resolvedSelector) {
-            finalInput = {
-              action: input.action,
-              value: input.value,
-              selector: toolResult.resolvedSelector
-            };
-          }
+        // AI SDK v5: tool call args are at tc.input (not tc.args)
+        const input = (tc as any).input ?? {};
+        // AI SDK v5: tool result output is at tr.output (not tr.result)
+        const toolOutput = (event.toolResults?.find((tr: any) => tr.toolCallId === tc.toolCallId) as any)?.output;
+
+        const actionsToProcess = [];
+        if (tc.toolName === 'runActionSequence' && Array.isArray(input.actions)) {
+          // runActionSequence returns { success, results: [{tool, result}] }
+          input.actions.forEach((actData: any, i: number) => {
+            actionsToProcess.push({
+              toolName: actData.toolName,
+              input: actData.args ?? {},
+              result: toolOutput?.results?.[i]?.result,
+            });
+          });
+        } else {
+          actionsToProcess.push({
+            toolName: tc.toolName,
+            input,
+            result: toolOutput,
+          });
         }
-        
-        const cleanSummary = formatToolAction(tc.toolName, finalInput);
-        onLog({ level: 'info', message: cleanSummary });
-        actions.push(cleanSummary);
-        
-        // Record structured step (skip meta-tools that don't replay)
-        if (!['think', 'notifyUser', 'done', 'askUser', 'wait'].includes(tc.toolName)) {
-          recordedSteps.push({ tool: tc.toolName, summary: cleanSummary, input: finalInput });
+
+        for (const actionInfo of actionsToProcess) {
+          let finalInput = { ...actionInfo.input };
+          if (actionInfo.toolName === 'act' && actionInfo.input.index !== undefined) {
+            if (actionInfo.result?.resolvedSelector) {
+              finalInput.selector = actionInfo.result.resolvedSelector;
+              console.log(`[agent-loop] selector resolved for act[index=${actionInfo.input.index}]: ${finalInput.selector}`);
+            } else {
+              console.warn(`[agent-loop] no selector resolved for act[index=${actionInfo.input.index}] — step will be skipped from workflow recording`);
+            }
+          }
           
-          // Emit deterministic workflow primitive hook
-          if (onRecordStep) {
-            let workflowStep: any = null;
-            const id = randomUUID();
-            const description = finalInput.description || cleanSummary;
+          const cleanSummary = formatToolAction(actionInfo.toolName, finalInput);
+          onLog({ level: 'info', message: cleanSummary });
+          actions.push(cleanSummary);
+          
+          if (!['think', 'notifyUser', 'done', 'askUser', 'wait'].includes(actionInfo.toolName)) {
+            recordedSteps.push({ tool: actionInfo.toolName, summary: cleanSummary, input: finalInput });
             
-            if (tc.toolName === 'goto' && finalInput.url) {
-              workflowStep = { id, type: 'navigate', url: finalInput.url };
-            } else if (tc.toolName === 'act' && finalInput.selector) {
-              const action = finalInput.action;
-              if (action === 'click') {
-                workflowStep = { id, type: 'click', selector: finalInput.selector, description };
-              } else if (action === 'fill') {
-                workflowStep = { id, type: 'fill', selector: finalInput.selector, value: finalInput.value || '', description };
-              } else if (action === 'select') {
-                workflowStep = { id, type: 'select', selector: finalInput.selector, value: finalInput.value || '', description };
-              } else if (action === 'check') {
-                workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `Check ${finalInput.selector}` };
-              } else if (action === 'press') {
-                workflowStep = { id, type: 'keypress', key: finalInput.value || 'Enter' };
-              } else if (action === 'uncheck' || action === 'focus' || action === 'hover') {
-                workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `${action} on ${finalInput.selector}` };
+            const snapshotId = session.journal?.recordAgentStep(actionInfo.toolName, finalInput, actionInfo.result, cleanSummary) || randomUUID();
+            
+            if (onRecordStep) {
+              let workflowStep: any = null;
+              const id = snapshotId;
+              const description = finalInput.description || cleanSummary;
+              
+              if (actionInfo.toolName === 'goto' && finalInput.url) {
+                workflowStep = { id, type: 'navigate', url: finalInput.url, onFailure: 'stop' };
+              } else if (actionInfo.toolName === 'act' && finalInput.selector && finalInput.selector.trim() !== '') {
+                const action = finalInput.action;
+                if (action === 'click') {
+                  workflowStep = { id, type: 'click', selector: finalInput.selector, description, onFailure: 'self_heal' };
+                } else if (action === 'fill') {
+                  workflowStep = { id, type: 'fill', selector: finalInput.selector, value: finalInput.value || '', description, onFailure: 'self_heal' };
+                } else if (action === 'select') {
+                  workflowStep = { id, type: 'select', selector: finalInput.selector, value: finalInput.value || '', description, onFailure: 'self_heal' };
+                } else if (action === 'check') {
+                  workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `Check ${finalInput.selector}`, onFailure: 'self_heal' };
+                } else if (action === 'press') {
+                  workflowStep = { id, type: 'keypress', key: finalInput.value || 'Enter', onFailure: 'skip' };
+                } else if (action === 'uncheck' || action === 'focus' || action === 'hover') {
+                  workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `${action} on ${finalInput.selector}`, onFailure: 'self_heal' };
+                }
+              } else if (actionInfo.toolName === 'keys' && finalInput.key) {
+                workflowStep = { id, type: 'keypress', key: finalInput.key, onFailure: 'skip' };
+              } else if (actionInfo.toolName === 'extract' && finalInput.instruction) {
+                workflowStep = { id, type: 'extract', instruction: finalInput.instruction, onFailure: 'skip' };
               }
-            } else if (tc.toolName === 'keys' && finalInput.key) {
-              workflowStep = { id, type: 'keypress', key: finalInput.key };
-            } else if (tc.toolName === 'extract' && finalInput.instruction) {
-              workflowStep = { id, type: 'extract', instruction: finalInput.instruction, variableName: `extracted_${id.split('-')[0]}` };
-            }
-            
-            if (workflowStep) {
-              onRecordStep(workflowStep);
+              
+              if (workflowStep) {
+                onRecordStep(workflowStep);
+              } else {
+                onLog({ level: 'warn', message: `Skipped recording step for ${actionInfo.toolName} (no mapped selector/action)` });
+              }
             }
           }
-        }
-        if (tc.toolName === 'done') {
-          goalAchieved = true;
-          finalMessage = input.message;
+          if (actionInfo.toolName === 'done') {
+            goalAchieved = true;
+            finalMessage = finalInput.message;
+          }
         }
       }
 

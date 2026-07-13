@@ -1,3 +1,19 @@
+/**
+ * @file browser-manager.ts
+ * @description Core browser automation controller. Orchestrates Playwright browser contexts, handles tab registration, captures page states, and performs remote mouse/keyboard input injection.
+ * @module main/browser-manager
+ * 
+ * Key Exports:
+ * - Lifecycle: `launchBrowser()`, `closeBrowser()`, `isBrowserRunning()`, and `resetProfile()`.
+ * - Tab Navigation: `switchTab()`, `newTab()`, `closeTab()`, `navigate()`, `goBack()`, `goForward()`, and `reload()`.
+ * - Event & Input: `injectMouse()`, `injectKeyboard()`, `getCaptureMetadata()`, `setBrowserNotifyWindow()`, and `getCdpUrl()`.
+ * 
+ * Mechanics & Relations:
+ * - Resolves the local or internal Chromium executable pathway, binds to CDP (Chrome DevTools Protocol) ports, and registers page listeners (`load`, `close`, `framenavigated`).
+ * - Invokes `startScreencast` and `stopScreencast` (`screencast.ts`) to capture frame updates and transmits them to Electron's renderer via WebContents IPC (`browser:tabsChange`).
+ * - Connects Stagehand or custom agents using the retrieved CDP WebSocket URL (`getCdpUrl()`) and coordinates with `storage.ts` for browser profile retrieval.
+ */
+
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
@@ -133,7 +149,12 @@ export async function newTab(): Promise<void> {
         const page = await context.newPage();
         await page.goto('about:blank');
       }
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (msg.includes('Target.createTarget') || msg.includes('Browser has been closed')) {
+        // Expected race condition if browser is shutting down
+        return;
+      }
       console.error('[browser] failed to open new tab:', err);
     }
   }

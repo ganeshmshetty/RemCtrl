@@ -1,3 +1,10 @@
+/**
+ * @file selector-generator.ts
+ * @description Generates stable, deterministic CSS/XPath selectors for element targets in browser automation.
+ * Key Exported APIs: `computeStableSelector` to resolve a reliable string locator for a given Playwright `Locator`.
+ * Internal Mechanics: Evaluates a series of priority heuristics inside the active window page. Attempts to locate targets using unique IDs, test attributes (e.g. `data-testid`), distinct text matching via XPath, and role plus accessible names. If no direct selector is unique, falls back to an anchored relative XPath referencing the closest stable parent, or builds an absolute structural CSS `nth-of-type` chain.
+ */
+
 import { Locator } from 'playwright';
 
 /**
@@ -23,7 +30,7 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
     // 1. Check for Unique ID
     if (el.id) {
       try {
-        const idSel = `#${el.id}`;
+        const idSel = `#${(globalThis as any).CSS.escape(el.id)}`;
         if (doc.querySelectorAll(idSel).length === 1) {
           return idSel;
         }
@@ -46,9 +53,9 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
     }
 
     // 3. Unique Text Content (for buttons/links/labels/spans/headings)
-    if (['button', 'a', 'label', 'span', 'h1', 'h2', 'h3'].includes(tag)) {
+    if (['button', 'a', 'label', 'span', 'h1', 'h2', 'h3', 'div', 'p', 'li', 'td', 'th'].includes(tag)) {
       const text = el.textContent?.trim();
-      if (text && text.length < 50 && !text.includes('\n')) {
+      if (text && text.length > 0 && text.length < 50 && !text.includes('\n')) {
         const escapedText = escapeXPathStr(text);
         const xpath = `//${tag}[normalize-space()=${escapedText}]`;
         try {
@@ -72,7 +79,8 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
     const accName = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.textContent?.trim();
     if (role && accName && accName.length < 50 && !accName.includes('\n')) {
       const escapedName = escapeXPathStr(accName);
-      const xpath = `//*[@role="${role}" or local-name()="${tag}"][normalize-space()=${escapedName}]`;
+      const escapedRole = escapeXPathStr(role);
+      const xpath = `//*[(@role=${escapedRole} or local-name()="${tag}") and (normalize-space()=${escapedName} or @aria-label=${escapedName} or @placeholder=${escapedName} or @title=${escapedName})]`;
       try {
         const iterator = doc.evaluate(xpath, doc, null, (doc as any).XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
         if (iterator.snapshotLength === 1) {
@@ -106,7 +114,7 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
     while (ancestor && ancestor.nodeType === 1) {
       if (ancestor.id) {
         try {
-          const idSel = `#${ancestor.id}`;
+          const idSel = `#${(globalThis as any).CSS.escape(ancestor.id)}`;
           if (doc.querySelectorAll(idSel).length === 1) {
             anchorSelector = idSel;
             break;

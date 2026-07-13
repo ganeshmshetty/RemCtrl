@@ -1,6 +1,15 @@
+/**
+ * @file agent.ipc.ts
+ * @description Main process IPC handlers managing agent loop triggers, prompts, workflow executions, pause/takeover state, and checkpoint resolution.
+ * Key Exported APIs: `registerAgentIpc` function to register Electron IPC handlers.
+ * Internal Mechanics: Coordinates with the automation engine via `runAgent`, `runWorkflow`, `cancelAgent`, and `cancelWorkflow`.
+ * Schema Verification: Uses Zod schemas like `AgentPromptPayloadSchema`, `AgentWorkflowBatchSchema`, and `CheckpointResponseSchema` to validate IPC payloads.
+ * Relations: Relies on `automationOrchestrator` and `sessionHistory` to manage global agent execution state, and broadcasts events (`agent:status`, `agent:log`, etc.) back to all active renderer windows.
+ */
+
 import { ipcMain, BrowserWindow } from 'electron';
 import { z } from 'zod';
-import { AgentPromptPayloadSchema, AgentWorkflowBatchSchema, CheckpointResponseSchema } from '../../shared/schemas.js';
+import { AgentPromptPayloadSchema, AgentWorkflowBatchSchema, CheckpointResponseSchema, AgentRewindPayloadSchema } from '../../shared/schemas.js';
 import { getPreferredProvider, getApiKey } from '../storage.js';
 import {
   runAgent,
@@ -54,7 +63,6 @@ export function registerAgentIpc(_win: BrowserWindow) {
         (status) => broadcast('agent:status', status),
         (log) => broadcast('agent:log', log),
         (step) => broadcast('workflow:recordedStep', step),
-        payload.variables,
       );
       return { ok: true };
     } catch (err) {
@@ -119,5 +127,38 @@ export function registerAgentIpc(_win: BrowserWindow) {
   ipcMain.handle('agent:clearHistory', async () => {
     sessionHistory.clear();
     return { ok: true };
+  });
+
+  ipcMain.handle('browser:rewindAndRerunAgent', async (_e, rawPayload: unknown) => {
+    let payload;
+    try {
+      payload = AgentRewindPayloadSchema.parse(rawPayload);
+    } catch (err) {
+      return { ok: false, error: `Invalid rewind payload: ${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    const provider = getPreferredProvider();
+    const apiKey = getApiKey(provider);
+
+    if (!apiKey && provider !== 'vertex') {
+      return { ok: false, error: `No API key set for provider: ${provider}` };
+    }
+
+    try {
+      sessionHistory.rewindTo(payload.snapshotId);
+      await runAgent(
+        payload.commandId,
+        payload.action,
+        payload.newInstruction,
+        apiKey,
+        provider,
+        (status) => broadcast('agent:status', status),
+        (log) => broadcast('agent:log', log),
+        (step) => broadcast('workflow:recordedStep', step),
+      );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 }

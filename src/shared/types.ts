@@ -1,4 +1,18 @@
-// ─── Workflow Types ────────────────────────────────────────────────────────────
+/**
+ * @file types.ts
+ * @description Centralized TypeScript interface and type definitions shared across the Main and Renderer processes.
+ * @module shared/types
+ * 
+ * Key Exports:
+ * - Workflow & Automation: `WorkflowStep`, `LocalWorkflow`, `RecordedAgentStep`, and step enum/payload definitions.
+ * - State Management: `HostSessionState` and `ControllerSessionState` tracking signaling and connection lifecycles.
+ * - Remote Control & WebRTC: `DataChannelMessage`, `RemoteMousePayload`, `RemoteKeyboardPayload`, and `CaptureMetadata`.
+ * - IPC Contract: `RemoteCtrlAPI` interface detailing method signatures (app, host, controller, browser, settings, workflows) and push listeners.
+ * 
+ * Mechanics & Relations:
+ * - Serves as the single source of truth for communication boundaries (both local IPC via Preload and WebRTC Data Channels).
+ * - Declares global window properties for `RemoteCtrlAPI` to ensure TypeScript safety within frontend views.
+ */
 
 export type StepType = 'navigate' | 'click' | 'fill' | 'select' | 'keypress' | 'wait' | 'extract' | 'check';
 
@@ -14,7 +28,7 @@ export type WorkflowStep =
   | (BaseStep & { type: 'select'; selector: string; value: string; description?: string })
   | (BaseStep & { type: 'keypress'; key: string })
   | (BaseStep & { type: 'wait'; ms: number })
-  | (BaseStep & { type: 'extract'; instruction: string; variableName: string })
+  | (BaseStep & { type: 'extract'; instruction: string })
   | (BaseStep & { type: 'check'; condition: string; onTrue?: string; onFalse?: string });
 
 /** A single structured step recorded from an AI agent run */
@@ -35,8 +49,6 @@ export interface LocalWorkflow {
   steps: WorkflowStep[];
   createdAt: number;
   updatedAt: number;
-  /** Template variable name → default value map used in {{variable}} substitution */
-  variables?: Record<string, string>;
   /** How this workflow was originally created */
   source?: 'ai_recorded' | 'chrome_ext' | 'manual';
 }
@@ -116,7 +128,13 @@ export interface AgentPromptPayload {
   commandId: string;
   action: AgentAction;
   instruction: string;
-  variables?: Record<string, string>;
+}
+
+export interface AgentRewindPayload {
+  snapshotId: string;
+  commandId: string;
+  action: 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action';
+  newInstruction: string;
 }
 
 export interface AgentStatusPayload {
@@ -170,7 +188,6 @@ export interface AgentWorkflowBatchPayload {
   name: string;
   startUrl?: string;
   steps: WorkflowStep[]; // WorkflowStep uses new StepType model
-  variables?: Record<string, string>;
 }
 
 export interface WorkflowRunStatus {
@@ -306,6 +323,7 @@ export interface RemoteCtrlAPI {
     injectMouse: (payload: RemoteMousePayload) => Promise<void>;
     injectKeyboard: (payload: RemoteKeyboardPayload) => Promise<void>;
     startAgent: (payload: AgentPromptPayload) => Promise<{ ok: boolean; error?: string }>;
+    rewindAndRerunAgent: (payload: AgentRewindPayload) => Promise<{ ok: boolean; error?: string }>;
     cancelAgent: () => Promise<{ ok: boolean }>;
     startWorkflow: (payload: AgentWorkflowBatchPayload) => Promise<{ ok: boolean; error?: string }>;
     cancelWorkflow: () => Promise<{ ok: boolean }>;

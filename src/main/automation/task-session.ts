@@ -1,26 +1,24 @@
 /**
- * TaskSession — Authoritative lifecycle state for one agent or workflow run.
- *
- * Replaces the three module-level globals (activeCommandId/activeRunId,
- * cancelRequested, isPaused) that were duplicated across agent-executor,
- * agent-runner, and workflow-executor.
- *
- * State machine:
- *   idle → running → paused ⇄ running → cancelled
- *                          └────────────────────→ cancelled
+ * @file task-session.ts
+ * @description State tracking container managing the running, paused, and cancelled lifecycles of active automation runs.
+ * Key Exported APIs: `TaskSession` class and the `TaskStatus` type definition.
+ * Internal Mechanics: Exposes state predicates (`isCancelled`, `isPaused`, `isActive`), drives asynchronous abort signaling via `AbortController`, and manages step logging sessions via `DiskJournalAdapter`. Implements a blocking `waitIfPaused` poll loop with automatic 15-minute timeout mitigation to prevent locked loops.
+ * Relations: Instantiated by execution engines (`execution-engine.ts` and `workflow-executor.ts`) to capture execution state and handle user pause/cancellation requests.
  */
 
 export type TaskStatus = 'idle' | 'running' | 'paused' | 'cancelled';
+
+import { DiskJournalAdapter, SessionJournal } from './session-journal.js';
 
 export class TaskSession {
   private _status: TaskStatus = 'idle';
   private _abortController = new AbortController();
   public initialGoal?: string;
-  public variables?: Record<string, string>;
-
-  constructor(options?: { initialGoal?: string; variables?: Record<string, string> }) {
+  public readonly journal: SessionJournal;
+  
+  constructor(options?: { initialGoal?: string; commandId?: string }) {
     this.initialGoal = options?.initialGoal;
-    this.variables = options?.variables;
+    this.journal = new DiskJournalAdapter(options?.commandId);
   }
 
   // ─── Reads ────────────────────────────────────────────────────────────────

@@ -1,20 +1,16 @@
 /**
- * Agent System Prompt — System prompt builders for single-tier tool-calling loops
+ * @file agent-system-prompt.ts
+ * @description System prompt constructor module that compiles operational instruction sets for LLM automation runs.
+ * Key Exported APIs: `buildAgentSystemPrompt` for standard autonomous agent loops and `buildWorkflowStepSystemPrompt` for structured workflow steps.
+ * Internal Heuristics: Configures LLM behavior with critical rules, tool explanations (such as `observe`, `act`, `runActionSequence`, `askUser`), validation paradigms, destructive action guardrails, and pagination collection routines.
+ * Relations: Invoked by agent loops (`agent-loop.ts`) and workflow execution engines to inject system state instructions prior to beginning conversational turns.
  */
 
 /** For the free-form runAgent() loop */
 export function buildAgentSystemPrompt(
   goal: string,
-  variables?: Record<string, string>,
 ): string {
-  const varBlock =
-    variables && Object.keys(variables).length > 0
-      ? `\nVariables (reference as %name%):\n${Object.keys(variables)
-          .map((k) => `  %${k}%`)
-          .join('\n')}`
-      : '';
-
-  return `You are a web automation assistant. Your goal: "${goal}"${varBlock}
+  return `You are a web automation assistant. Your goal: "${goal}"
 
 TOOLS:
 - getPageUrl()                              — get current URL and title

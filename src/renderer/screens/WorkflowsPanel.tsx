@@ -1,5 +1,14 @@
+/**
+ * @file WorkflowsPanel.tsx
+ * @description Sidebar panel listing saved workflows and allowing execution triggering, viewing/editing, and deletion.
+ * Uses useWorkflowStore to fetch, display, and manage stored workflow structures, and useUIStore to open the editor overlay.
+ * Handles conditional execution routing: triggers workflow executions locally through window.RemoteCtrlAPI.browser.startWorkflow
+ * if in local/host mode, or sends serialized agent workflow batches over the WebRTC data channel if in controller mode.
+ * Key exports: WorkflowsPanel (function component).
+ */
+
 import { useEffect, useState } from 'react';
-import { Play, Edit2, Trash2, Plus, Wand2, Variable, Bot } from 'lucide-react';
+import { Play, Eye, Trash2, Wand2, Bot } from 'lucide-react';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
@@ -24,13 +33,6 @@ export function WorkflowsPanel() {
     <div className="workflows-panel">
       <div className="workflows-header">
         <h2 className="workflows-header-title">Workflows</h2>
-        <button
-          className="btn btn-sm btn-ghost"
-          onClick={() => openWorkflowEditor()}
-          title="Create workflow manually"
-        >
-          <Plus size={14} /> New
-        </button>
       </div>
 
       <div className="workflows-list">
@@ -84,7 +86,6 @@ function WorkflowCard({
     controllerState === 'CONTROLLING_REMOTELY';
 
   const { setRightPanelTab } = useUIStore();
-  const varCount = workflow.variables ? Object.keys(workflow.variables).length : 0;
   const isAiRecorded = workflow.source === 'ai_recorded';
 
   function handleRun() {
@@ -92,25 +93,12 @@ function WorkflowCard({
     const workflowRunId = crypto.randomUUID();
     useAgentStore.getState().startNewExecution('workflow', workflowRunId, workflow.name);
 
-    const vars: Record<string, string> = workflow.variables ?? {};
-    const resolve = (text: string) =>
-      text.replace(/\{\{([^}]+)\}\}/g, (_: string, key: string) => vars[key.trim()] ?? `{{${key.trim()}}}`);
-
-    const resolvedSteps = workflow.steps.map((step: any) => {
-      return {
-        ...step,
-        url: step.url ? resolve(step.url) : step.url,
-        instruction: step.instruction ? resolve(step.instruction) : step.instruction,
-      };
-    });
-
     const payload = {
       workflowRunId,
       workflowId: workflow.id,
       name: workflow.name,
-      startUrl: workflow.startUrl ? resolve(workflow.startUrl) : workflow.startUrl,
-      steps: resolvedSteps,
-      variables: workflow.variables,
+      startUrl: workflow.startUrl,
+      steps: workflow.steps,
     };
 
     if (controllerState !== 'IDLE' && sendData) {
@@ -137,16 +125,10 @@ function WorkflowCard({
             )}
             <h3 className="workflow-card-name">{workflow.name}</h3>
           </div>
-          {varCount > 0 && (
-            <span className="wf-card-var-count">
-              <Variable size={9} />
-              {varCount} variable{varCount !== 1 ? 's' : ''}
-            </span>
-          )}
         </div>
         <div className="workflow-card-actions">
-          <button className="workflow-card-action-btn" onClick={onEdit} title="Edit">
-            <Edit2 size={14} />
+          <button className="workflow-card-action-btn" onClick={onEdit} title="View">
+            <Eye size={14} />
           </button>
           {confirmingDelete ? (
             <div style={{ display: 'flex', gap: 4 }}>

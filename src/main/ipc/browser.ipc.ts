@@ -1,3 +1,12 @@
+/**
+ * @file browser.ipc.ts
+ * @description Electron main process IPC handlers managing Playwright browser lifecycle, window capture, and input redirection.
+ * Key Exported APIs: `registerBrowserIpc` to attach IPC event handlers to the main electron runtime.
+ * Internal Mechanics: Coordinates closely with the `browser-manager` module to perform action mapping (launching, tab switching, navigation, tab closure, and reloading).
+ * Input Injection: Translates incoming mouse/keyboard coordinates and actions from remote control sessions using Zod schemas (`RemoteMousePayloadSchema`, `RemoteKeyboardPayloadSchema`) and injects them into the Playwright browser.
+ * Relations: Direct integration with `browser-manager` and `desktopCapturer` to facilitate WebRTC frame sync and user-driven interaction loop.
+ */
+
 import { ipcMain, desktopCapturer } from 'electron';
 import { RemoteMousePayloadSchema, RemoteKeyboardPayloadSchema } from '../../shared/schemas.js';
 import { 

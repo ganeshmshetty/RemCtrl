@@ -1,5 +1,11 @@
-// preload.cjs — CommonJS because Electron preload runs before ESM is available
-// This is the ONLY communication bridge between renderer and main.
+/**
+ * @file index.cjs
+ * @description Secure Electron preload script that acts as the IPC bridge between the main and renderer processes.
+ * Exposes a structured, type-safe global object `window.RemoteCtrlAPI` to the renderer via `contextBridge.exposeInMainWorld`.
+ * Exposes namespace APIs (`host`, `controller`, `browser`, `webrtc`, `agent`, `app`, `settings`, `workflows`, and a pub/sub listener registration hub `on`).
+ * Internally wraps Electron's `ipcRenderer.invoke` and event listener bindings, preventing direct exposure of the `ipcRenderer` module for enhanced security.
+ * Connects UI actions (Zustand stores, React components, and WebRTC hooks) with background browser processes and low-level system methods.
+ */
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -33,6 +39,7 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     injectMouse: (payload) => ipcRenderer.invoke('browser:injectMouse', payload),
     injectKeyboard: (payload) => ipcRenderer.invoke('browser:injectKeyboard', payload),
     startAgent: (payload) => ipcRenderer.invoke('browser:startAgent', payload),
+    rewindAndRerunAgent: (payload) => ipcRenderer.invoke('browser:rewindAndRerunAgent', payload),
     cancelAgent: () => ipcRenderer.invoke('browser:cancelAgent'),
     startWorkflow: (payload) => ipcRenderer.invoke('browser:startWorkflow', payload),
     cancelWorkflow: () => ipcRenderer.invoke('browser:cancelWorkflow'),

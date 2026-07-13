@@ -1,3 +1,12 @@
+/**
+ * @file Settings.tsx
+ * @description Settings configuration modal component for the application frontend.
+ * Provides tabbed controls for AI Models (API keys, active providers), Browser connection options (isolated profile dirs, persistence, headless mode), and Appearance (theme).
+ * Utilizes Zustand stores (useSettingsStore, useUIStore) to load/save settings locally and manage modal visibility.
+ * Interacts extensively with the Electron main process via window.RemoteCtrlAPI commands to query/set global shortcuts, available models, browser profiles, and connection modes.
+ * Key exports: Settings (function component).
+ */
+
 import { useState, useEffect } from 'react';
 
 import { X, Server, Cpu, RefreshCw, Eye, EyeOff, Palette, Globe, Sparkles } from 'lucide-react';

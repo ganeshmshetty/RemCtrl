@@ -1,8 +1,9 @@
 /**
- * Visual Orchestration Engine — Smooth Animated Cursor Glide & Click Ripple
- *
- * Provides Stagehand-inspired sleek pointer movement and visual click ripple
- * without injecting obstructive overlays or badges on DOM elements.
+ * @file cursor-overlay.ts
+ * @description Injects and manages a virtual cursor overlay within the Playwright automation browser to visually represent cursor positions, moves, and click ripples.
+ * Key Exported APIs: `ensureCursorOverlay`, `moveCursorTo`, `triggerRipple`, and `moveCursorToLocator`.
+ * Internal Mechanics: Evaluates IIFE scripts within the context of the page (`page.addInitScript` / `page.evaluate`), appends absolute-positioned custom SVGs to the body/document, triggers CSS-based cursor translation transitions, and animates ripple effects at given coordinates.
+ * Relations: Invoked by agent action executors before clicking or hovering on elements to provide a visible cue to the operator during remote session capture.
  */
 
 import type { Page, Locator } from 'playwright';

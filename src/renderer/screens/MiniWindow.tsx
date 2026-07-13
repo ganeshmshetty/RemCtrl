@@ -1,3 +1,13 @@
+/**
+ * @file MiniWindow.tsx
+ * @description Spotlight-style floating overlay component for quick, minimal keyboard control.
+ * Listens for global activation hotkeys via window.RemoteCtrlAPI.on.globalShortcut to focus the text command input.
+ * Orchestrates quick execution triggers for the AI agent (via browser.launch/startAgent) and monitors step progress.
+ * Synchronizes with useAgentStore to display minimal, live progress cards, current execution step logs, and action states.
+ * Connects to main-process application controls to toggle panel visibility or bring the primary UI window into focus.
+ * Key exports: MiniWindow (function component).
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import { Play, Square, ExternalLink, Sparkles, X, Activity } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';

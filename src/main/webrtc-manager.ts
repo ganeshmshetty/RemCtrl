@@ -1,3 +1,16 @@
+/**
+ * @file webrtc-manager.ts
+ * @description Singleton manager governing the creation, teardown, and window binding of the SignalingClient instance.
+ * @module main/webrtc-manager
+ * 
+ * Key Exports:
+ * - `webRTCManager`: Singleton instances exposing `setWindow()`, `getOrCreateClient()`, `destroyClient()`, and `getClient()`.
+ * 
+ * Mechanics & Relations:
+ * - Lazily instantiates the WebSocket signaling coordinator (`SignalingClient`) and connects it to the main `BrowserWindow` for event routing.
+ * - Serves as the middle layer between WebRTC IPC triggers (`webrtc.ipc.ts`) and signaling channel dispatches (`signaling-client.ts`).
+ */
+
 import { BrowserWindow } from 'electron';
 import { SignalingClient } from './signaling-client.js';
 
