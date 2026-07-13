@@ -1,3 +1,13 @@
+/**
+ * @file TopNav.tsx
+ * @description Top header navigation and status bar component.
+ * Integrates with the window manager's draggable region and provides buttons to trigger settings overlays or switch view modes.
+ * Displays connection pill states indicating active session status (Local, Host/Controller with PIN, or Disconnected).
+ * Coordinates termination events: clean closes local/remote browsers or WebRTC servers via window.RemoteCtrlAPI
+ * and resets connection state using the useConnectionStore Zustand store.
+ * Key exports: TopNav (function component).
+ */
+
 import { Settings } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';

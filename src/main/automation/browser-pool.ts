@@ -1,8 +1,9 @@
 /**
- * Browser Pool — Singleton Playwright CDP connection management for Automation Orchestrator
- *
- * Replaces Stagehand with direct, lightweight Playwright connection pooling.
- * Connects to the local Chrome instance via CDP without cold-start delay or extra LLM dependencies.
+ * @file browser-pool.ts
+ * @description Connection management utility for Playwright chromium instances connected via Chrome DevTools Protocol (CDP).
+ * Key Exported APIs: `getBrowserPage` to fetch/reuse the current browser context page, and `closeBrowser` to terminate the active session.
+ * Internal Mechanics: Connects asynchronously over CDP using `chromium.connectOverCDP`, manages a single active CDP URL connection, handles connection in-flight queuing to prevent race conditions, and extracts the last active page or instantiates new contexts.
+ * Relations: Direct dependency on `sessionHistory` to reset logs when connections close, and is called by the main execution loop to obtain Playwright hooks.
  */
 
 import { chromium, type Browser, type Page } from 'playwright';

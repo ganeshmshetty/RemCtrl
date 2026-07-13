@@ -1,3 +1,13 @@
+/**
+ * @file useWebRTC.ts
+ * @description React hooks orchestrating the WebRTC connection, audio/video streaming, and data channels.
+ * Exports the `useHostWebRTC` and `useControllerWebRTC` hooks, along with connection status states.
+ * Internally sets up RTCPeerConnection with STUN servers, manages an ICE candidate queuing mechanism,
+ * and maintains reliable and input data channels (`RemoteCtrl-reliable` / `RemoteCtrl-input`).
+ * Connects WebRTC signaling with the main process using IPC via `window.RemoteCtrlAPI`, forwarding 
+ * canvas screencast streams and remote inputs (mouse, keyboard) to synchronize the interactive session.
+ */
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { DataChannelMessage } from '../../shared/types';
 

@@ -1,3 +1,12 @@
+/**
+ * @file App.tsx
+ * @description Main entry component and layout coordinator for the Electron renderer process.
+ * Handles app-wide theme application (light, dark, system), settings loading, and conditional rendering of the MiniWindow.
+ * Registers global Electron IPC listeners via window.RemoteCtrlAPI (e.g., hostStateChange, agentLog, startLocalSession)
+ * to synchronize main-process events with Zustand stores (useConnectionStore, useAgentStore, useUIStore, useSettingsStore).
+ * Displays primary screens dynamically: ConnectionPlaceholder (idle), LocalSession, or ControllerSession, alongside Settings and WorkflowEditorModal.
+ */
+
 import { useEffect, useState } from 'react';
 import { useConnectionStore } from './stores/useConnectionStore';
 import { useAgentStore } from './stores/useAgentStore';

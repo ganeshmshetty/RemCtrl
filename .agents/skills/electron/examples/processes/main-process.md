@@ -19,6 +19,7 @@ This example demonstrates main process concepts and usage in Electron.
 ```javascript
 // main.js
 const { app, BrowserWindow } = require('electron')
+const path = require('path')
 
 let mainWindow
 

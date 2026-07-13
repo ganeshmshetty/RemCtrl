@@ -1,39 +1,50 @@
+/**
+ * @file schemas.ts
+ * @description Centralized validation layer defining Zod schemas for configurations, IPC payloads, settings, workflows, and remote-control actions.
+ * @module shared/schemas
+ * 
+ * Key Exports:
+ * - Workflow step validation: `WorkflowStepSchema`, `LocalWorkflowSchema`, and enum schemas for step types.
+ * - Settings schemas: `PersistedSettingsSchema` (excluding secure API keys), `AppThemeSchema`, and provider schemas.
+ * - Ext-server payloads: `ExtSaveWorkflowPayloadSchema`, `ExtStartAutomationPayloadSchema`, and run payload schemas.
+ * - IPC/Remote: `RemoteMousePayloadSchema`, `RemoteKeyboardPayloadSchema`, `ConnectPinSchema`, and `ApproveControllerSchema`.
+ * 
+ * Mechanics & Relations:
+ * - Acts as the validation gatekeeper across the system, ensuring data integrity for JSON persistence in `storage.ts`.
+ * - Validates messages arriving over WebSockets via `signaling-client.ts` and incoming API requests from browser extensions in `ext-server.ts`.
+ * - Provides compile-time TypeScript type definitions inferred from runtime validation constraints.
+ */
+
 import { z } from 'zod';
 
 // ─── Workflow Schemas ──────────────────────────────────────────────────────────
 
-export const StepTypeSchema = z.enum(['navigate', 'do', 'collect', 'check']);
+export const StepTypeSchema = z.enum(['navigate', 'click', 'fill', 'select', 'keypress', 'wait', 'extract', 'check']);
 
-export const WorkflowStepSchema = z.object({
+const BaseStepSchema = z.object({
   id: z.string().min(1),
-  type: StepTypeSchema,
-  // navigate
-  url: z.string().optional(),
-  // do, collect, check
-  instruction: z.string().optional(),
-  // check branching — step IDs
-  onTrue: z.string().optional(),
-  onFalse: z.string().optional(),
-  // recovery policy
-  onFailure: z.enum(['stop', 'skip', 'retry']).optional().default('stop'),
-}).refine(
-  (s) => {
-    if (s.type === 'navigate') return !!s.url;
-    if (s.type === 'do' || s.type === 'collect' || s.type === 'check') return !!s.instruction;
-    return true;
-  },
-  { message: 'navigate requires url; do/collect/check require instruction' },
-);
+  onFailure: z.enum(['stop', 'skip', 'retry', 'self_heal']).optional().default('self_heal'),
+});
+
+export const WorkflowStepSchema = z.discriminatedUnion('type', [
+  BaseStepSchema.extend({ type: z.literal('navigate'), url: z.string() }),
+  BaseStepSchema.extend({ type: z.literal('click'), selector: z.string().min(1), description: z.string().optional() }),
+  BaseStepSchema.extend({ type: z.literal('fill'), selector: z.string().min(1), value: z.string(), description: z.string().optional() }),
+  BaseStepSchema.extend({ type: z.literal('select'), selector: z.string().min(1), value: z.string(), description: z.string().optional() }),
+  BaseStepSchema.extend({ type: z.literal('keypress'), key: z.string() }),
+  BaseStepSchema.extend({ type: z.literal('wait'), ms: z.number() }),
+  BaseStepSchema.extend({ type: z.literal('extract'), instruction: z.string() }),
+  BaseStepSchema.extend({ type: z.literal('check'), condition: z.string(), onTrue: z.string().optional(), onFalse: z.string().optional() }),
+]);
 
 export const LocalWorkflowSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
-  startUrl: z.union([z.string().url(), z.literal('')]).optional(),
+  startUrl: z.string().max(2048).optional(),
   steps: z.array(WorkflowStepSchema).max(100),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive(),
-  variables: z.record(z.string(), z.string()).optional(),
   source: z.enum(['ai_recorded', 'chrome_ext', 'manual']).optional(),
 });
 
@@ -119,13 +130,26 @@ export const AgentPromptPayloadSchema = z.object({
   variables: z.record(z.string(), z.string()).optional(),
 });
 
+export const AgentRewindPayloadSchema = z.object({
+  snapshotId: z.string().min(1),
+  commandId: z.string().uuid(),
+  action: AgentActionSchema,
+  newInstruction: z.string().min(1).max(5000),
+});
+
+export const AgentStatusPayloadSchema = z.object({
+  commandId: z.string().uuid(),
+  state: z.enum(['running', 'completed', 'failed', 'cancelled', 'paused']),
+  result: z.any().optional(),
+  error: z.string().optional(),
+});
+
 export const AgentWorkflowBatchSchema = z.object({
   workflowRunId: z.string().uuid(),
   workflowId: z.string().min(1),
   name: z.string().min(1),
   startUrl: z.string().optional(),
   steps: z.array(WorkflowStepSchema).min(1).max(100),
-  variables: z.record(z.string(), z.string()).optional(),
 });
 
 // ─── Capture Metadata Schema ──────────────────────────────────────────────────
@@ -158,6 +182,10 @@ export const RemoteKeyboardPayloadSchema = z.object({
   action: z.enum(['down', 'up', 'press']),
   key: z.string().min(1).max(50),
 });
+
+export const LaunchBrowserPayloadSchema = z.string().optional();
+export const TabIdPayloadSchema = z.string().min(1);
+export const NavigatePayloadSchema = z.string().min(1);
 
 export const BrowserModeSchema = z.enum(['internal', 'local_chrome']);
 

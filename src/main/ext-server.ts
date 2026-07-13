@@ -1,3 +1,19 @@
+/**
+ * @file ext-server.ts
+ * @description Local WebSocket bridge server enabling communications between the Electron app and the companion Chrome Extension.
+ * @module main/ext-server
+ * 
+ * Key Exports:
+ * - `startExtensionBridgeServer(port)`: Spawns the WS server on 127.0.0.1, enforces Origin security checks, and registers event processors.
+ * - `stopExtensionBridgeServer()`: Terminates all active client connections and tears down the WS server.
+ * - `broadcastToExtensions(type, payload)`: Transmits real-time agent/workflow logs and execution status updates to connected extension clients.
+ * 
+ * Mechanics & Relations:
+ * - Validates received messages via Zod validation payloads (`ExtSaveWorkflowPayloadSchema`, `ExtStartAutomationPayloadSchema`, `ExtRunWorkflowPayloadSchema`).
+ * - Invokes `launchBrowser` in `browser-manager.ts` and initiates agent/workflow processes (`runAgent`, `runWorkflow`) inside the automation runner.
+ * - Propagates state updates to all opened Electron renderers using `BrowserWindow.getAllWindows()`.
+ */
+
 import { WebSocketServer, WebSocket } from 'ws';
 import crypto from 'crypto';
 import { BrowserWindow } from 'electron';

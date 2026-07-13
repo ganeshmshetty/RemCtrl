@@ -1,3 +1,20 @@
+/**
+ * @file storage.ts
+ * @description Local persistent storage layer. Manages JSON-based configurations, serialized workflows, fetched model lists, and secure API keys within Electron's userData folder.
+ * @module main/storage
+ * 
+ * Key Exports:
+ * - App settings getters/setters (Signaling URL, Browser Profile/Mode/Headless, Custom Base URLs, Theme, and Shortcuts).
+ * - API credentials validation and encryption: `hasApiKey()`, `setApiKey()`, and `getApiKey()`.
+ * - Workflow orchestration: `listWorkflows()`, `saveWorkflow()`, `deleteWorkflow()`, and `updateWorkflowStepSelector()`.
+ * - Models cache: `getModelsList()` and `saveModelsList()`.
+ * 
+ * Mechanics & Relations:
+ * - Employs atomic write routines (writing to a temporary file before renaming) to protect against storage corruption.
+ * - Utilizes Electron's native OS-level encryption (`safeStorage`) to secure API keys on disk.
+ * - Validates schema interfaces against Zod schemas (`PersistedSettingsSchema`, `LocalWorkflowSchema`) and isolates legacy invalid schemas.
+ */
+
 import path from 'path';
 import fs from 'fs';
 import { app, safeStorage } from 'electron';
@@ -326,7 +343,54 @@ let _workflowsCache: WorkflowStore | null = null;
 
 function loadWorkflowStore(): WorkflowStore {
   if (!_workflowsCache) {
-    _workflowsCache = readJson<WorkflowStore>(WORKFLOWS_FILE, { workflows: [] });
+    const raw = readJson<unknown>(WORKFLOWS_FILE, { workflows: [] });
+    const rawWorkflows =
+      raw !== null &&
+      typeof raw === 'object' &&
+      Array.isArray((raw as { workflows?: unknown }).workflows)
+        ? (raw as { workflows: unknown[] }).workflows
+        : [];
+    const workflows: LocalWorkflow[] = [];
+    const legacyWorkflows: unknown[] = [];
+    
+    for (const w of rawWorkflows) {
+      const parsed = LocalWorkflowSchema.safeParse(w);
+      if (parsed.success) {
+        workflows.push(parsed.data);
+      } else {
+        const id = w !== null && typeof w === 'object' && 'id' in w ? (w as { id: unknown }).id : undefined;
+        console.warn('Quarantining unparseable workflow:', id, parsed.error?.message);
+        legacyWorkflows.push(w);
+      }
+    }
+    
+    if (legacyWorkflows.length > 0) {
+      const legacyFile = path.join(USER_DATA, 'workflows.legacy.json');
+      const existingLegacy = readJson<unknown>(legacyFile, { workflows: [] });
+      const existingLegacyWorkflows =
+        existingLegacy !== null &&
+        typeof existingLegacy === 'object' &&
+        Array.isArray((existingLegacy as { workflows?: unknown }).workflows)
+          ? (existingLegacy as { workflows: unknown[] }).workflows
+          : [];
+      const existingIds = new Set(
+        existingLegacyWorkflows
+          .map((w) => w !== null && typeof w === 'object' && 'id' in w ? String((w as { id: unknown }).id) : '')
+          .filter(Boolean)
+      );
+      const newLegacy = legacyWorkflows.filter(
+        w => {
+          const id = w !== null && typeof w === 'object' && 'id' in w ? String((w as { id: unknown }).id) : '';
+          return id && !existingIds.has(id);
+        }
+      );
+      if (newLegacy.length > 0) {
+        existingLegacyWorkflows.push(...newLegacy);
+        writeJson(legacyFile, { workflows: existingLegacyWorkflows });
+      }
+    }
+    
+    _workflowsCache = { workflows };
   }
   return _workflowsCache;
 }
@@ -357,6 +421,36 @@ export function deleteWorkflow(workflowId: string): void {
     ...store,
     workflows: store.workflows.filter((w) => w.id !== workflowId)
   };
+  writeJson(WORKFLOWS_FILE, nextStore);
+  _workflowsCache = nextStore;
+}
+
+export function updateWorkflowStepSelector(workflowId: string, stepId: string, selector: string): void {
+  const store = loadWorkflowStore();
+  const nextWorkflows = [...store.workflows];
+  const idx = nextWorkflows.findIndex((w) => w.id === workflowId);
+  if (idx < 0) {
+    console.warn(`[storage] updateWorkflowStepSelector: workflow "${workflowId}" not found — selector not persisted`);
+    return;
+  }
+  const wf = { ...nextWorkflows[idx] };
+  const stepIdx = wf.steps.findIndex((s) => s.id === stepId);
+  if (stepIdx < 0) {
+    console.warn(`[storage] updateWorkflowStepSelector: step "${stepId}" not found in workflow "${workflowId}" — selector not persisted`);
+    return;
+  }
+  
+  const step = { ...wf.steps[stepIdx] };
+  if (step.type === 'click' || step.type === 'fill' || step.type === 'select') {
+    step.selector = selector;
+  }
+  
+  wf.steps = [...wf.steps];
+  wf.steps[stepIdx] = step;
+  wf.updatedAt = Date.now();
+  
+  nextWorkflows[idx] = wf;
+  const nextStore = { ...store, workflows: nextWorkflows };
   writeJson(WORKFLOWS_FILE, nextStore);
   _workflowsCache = nextStore;
 }

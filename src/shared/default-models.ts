@@ -1,3 +1,16 @@
+/**
+ * @file default-models.ts
+ * @description Static metadata repository defining the list of default supported LLM models for each API provider.
+ * @module shared/default-models
+ * 
+ * Key Exports:
+ * - `DEFAULT_MODELS`: A lookup map linking each supported `ApiProvider` to its standard model identifiers (e.g., GPT, Claude, Gemini, DeepSeek).
+ * 
+ * Mechanics & Relations:
+ * - Serves as a static reference for UI panels to populate model-selection dropdowns.
+ * - Used in conjunction with `storage.ts` and `schemas.ts` to validate user preferences and configure fallback options during LLM provider invocation.
+ */
+
 import type { ApiProvider } from './types.js';
 
 export const DEFAULT_MODELS: Record<ApiProvider, string[]> = {

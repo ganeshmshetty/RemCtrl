@@ -1,14 +1,9 @@
 /**
- * DOM Snapshot & Interactive Element Serializer
- *
- * Direct adaptation of browser-use's DOM serializer and ClickableElementDetector:
- * - Detects interactive elements using multi-signal heuristics (tags, roles, event attributes, cursor:pointer, search indicators).
- * - Enriches form controls (e.g., date formats for input[type="date"], top options for <select>).
- * - Tags interactive DOM elements with sequential indices (`data-remctrl-index="1"`, `"2"`...).
- * - Serializes into clean numbered lines:
- *     [1]<input type="date" format="YYYY-MM-DD" />
- *     [2]<select name="country" options="USA|Canada|UK|Germany" />
- *     [3]<button aria-label="Submit">Submit</button>
+ * @file dom-snapshot.ts
+ * @description DOM snapshot serializer that parses active webpage structures to identify and tag interactive elements.
+ * Key Exported APIs: `extractNumberedDOMSnapshot` (heavily based on browser-use ClickableElementDetector rules), `extractDOMAsMarkdown` for text-only LLM inputs, and snapshot interfaces (`IndexedDOMElement`, `NumberedDOMSnapshot`, `MarkdownSnapshotResult`).
+ * Internal Mechanics: Evaluates scripts within frame contexts to strip non-visual components, compute layouts/styles (checking cursor pointer, visibility bounds, ARIA roles), assign numeric indices (`data-remctrl-index`), generate fallback selectors, and post-process markdown representation.
+ * Relations: Invoked by agent loops and action handlers to feed the page state representation directly to the LLM context.
  */
 
 import type { Page } from 'playwright';

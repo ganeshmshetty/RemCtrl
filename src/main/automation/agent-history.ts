@@ -1,9 +1,9 @@
 /**
- * AgentHistoryManager — Conversational Resume & Multi-Turn Session Continuity
- *
- * Modeled after browser-use MessageManager (browser_use/agent/message_manager/service.py).
- * Maintains turn-by-turn history across multiple user instructions in the same session,
- * avoiding conversational amnesia while bounding context growth via LLM prompt compaction.
+ * @file agent-history.ts
+ * @description State manager and memory compactor for agent run histories. Ensures long-running agents retain context without exceeding context window limits.
+ * Key Exported APIs: `AgentHistoryManager` class, `HistoryTurnItem` interface, and the `sessionHistory` singleton instance.
+ * Internal Mechanics: Records individual conversation turns containing request instructions, final outputs, and action arrays. Implements smart history context building (embedding prior summaries, last 4 turns) and asynchronous context compaction.
+ * LLM Integration: Invokes `generateText` dynamically to summarize past history logs when the accumulated log sizes exceed thresholds (>5 turns or >25k chars) to prevent token bloat.
  */
 
 import { generateText } from 'ai';
@@ -13,6 +13,7 @@ export interface HistoryTurnItem {
   userRequest: string;
   finalMessage?: string;
   actionsTaken: string[];
+  commandId?: string;
 }
 
 export class AgentHistoryManager {
@@ -39,7 +40,7 @@ export class AgentHistoryManager {
   /**
    * Records a completed turn into session history.
    */
-  recordTurn(userRequest: string, finalMessage: string | undefined, actionsTaken: string[]): void {
+  recordTurn(userRequest: string, finalMessage: string | undefined, actionsTaken: string[], commandId?: string): void {
     if (this.turns.length === 0) {
       this.initialRequest = userRequest;
     }
@@ -48,7 +49,23 @@ export class AgentHistoryManager {
       userRequest,
       finalMessage,
       actionsTaken,
+      commandId,
     });
+  }
+
+  /**
+   * Rewinds the session history back to the start of the turn that matches the given commandId.
+   */
+  rewindTo(commandId: string): void {
+    const idx = this.turns.findIndex(t => t.commandId === commandId);
+    if (idx !== -1) {
+      this.turns = this.turns.slice(0, idx);
+      this.compactedSummary = null;
+    }
+    if (this.turns.length === 0) {
+      this.initialRequest = null;
+      this.compactedSummary = null;
+    }
   }
 
   /**
@@ -103,6 +120,8 @@ export class AgentHistoryManager {
     if (fullHistoryText.length < 25_000 && this.turns.length <= 8) return;
 
     try {
+      console.log('[History] Auto-compacting long agent memory in the background to save tokens...');
+
       const promptText = [
         this.compactedSummary ? `Previous Summary:\n${this.compactedSummary}` : '',
         `History to Compact:\n${fullHistoryText}`,
@@ -121,9 +140,10 @@ export class AgentHistoryManager {
         if (this.turns.length > 3) {
           this.turns = [this.turns[0], ...this.turns.slice(-2)];
         }
+        console.log('[History] Memory compacted successfully.');
       }
-    } catch {
-      // If compaction fails, continue without blocking execution
+    } catch (err) {
+      console.warn(`[History] Memory compaction failed: ${err instanceof Error ? err.message : String(err)}. Retaining full context for now.`);
     }
   }
 }

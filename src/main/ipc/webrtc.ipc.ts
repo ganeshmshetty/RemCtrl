@@ -1,3 +1,11 @@
+/**
+ * @file webrtc.ipc.ts
+ * @description Main process Electron IPC registration module managing WebRTC signaling connection exchanges and controller lifecycle.
+ * Key Exported APIs: `registerWebRtcIpc` to attach host/controller signaling events.
+ * Internal Mechanics: Interacts directly with the singleton `webRTCManager` to initialize/destroy peer clients, configure signaling parameters, and manage connection states (e.g., host approval/rejection or controller pins).
+ * Relations: Connects renderer-initiated UI actions (such as starting a host or connecting a controller) to the WebSocket signaling server and triggers Playwright window shutdown via `closeBrowser` on host stop.
+ */
+
 import { ipcMain, BrowserWindow } from 'electron';
 import { ApproveControllerSchema, ConnectPinSchema } from '../../shared/schemas.js';
 import { getSignalingUrl } from '../storage.js';

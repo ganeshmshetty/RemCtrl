@@ -1,3 +1,12 @@
+/**
+ * @file ControllerSession.tsx
+ * @description Layout orchestrator for the remote Controller Session dashboard views.
+ * Combines the remote browser view (BrowserPanel) with the right side control panel (RightPanelLayout) in a split pane.
+ * Offers a draggable vertical divider (drag-handle-vertical) utilizing window-level pointer event listeners
+ * to dynamically resize the right sidebar width, storing the width state locally.
+ * Key exports: ControllerSession (function component).
+ */
+
 import { useEffect, useRef, useState } from 'react';
 import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';

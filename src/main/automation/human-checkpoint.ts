@@ -1,15 +1,9 @@
 /**
- * Human Checkpoint — Live path for pausing an agent at a decision point.
- *
- * The live mechanism is a simple Map of pending Promise callbacks.
- * When the agent calls ask(), it emits a UI event and then awaits a
- * Promise that resolves when the user picks an option via IPC
- * (browser:submitCheckpoint → submitCheckpointResponse).
- *
- * The HumanCheckpointManager class and UncertaintyDetector that previously
- * lived here were never instantiated in any running path and have been removed.
- * The file-backed persistence logic they contained can be reintroduced
- * if resumable tasks become a roadmap item.
+ * @file human-checkpoint.ts
+ * @description Provides a bridge to pause automation execution and request manual human takeover or input (e.g. for CAPTCHAs, 2FA, or ambiguous scenarios).
+ * Key Exported APIs: `ask` method to suspend executions, `submitCheckpointResponse` to resolve suspended tasks, `globalCheckpointCallbacks` map, and `CheckpointOption` interface.
+ * Internal Mechanics: Suspends the execution flow using a Promise and registers callback handlers. Broadcasts an IPC message `browser:agentCheckpoint` to Electron renderer windows and sets up timeouts and abort listeners.
+ * Relations: Invoked from within the automation loop when human verification is required, and resolved by the IPC handler `browser:submitCheckpoint` in `agent.ipc.ts`.
  */
 
 import { BrowserWindow } from 'electron';

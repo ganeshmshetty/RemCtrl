@@ -1,3 +1,17 @@
+/**
+ * @file signaling-client.ts
+ * @description Socket.io WebSocket client coordinating WebRTC signaling handshakes, connection rooms, and host/controller session flows.
+ * @module main/signaling-client
+ * 
+ * Key Exports:
+ * - `SignalingClient` class: Exposes `startHost()`, `connectAsController()`, `approveController()`, `rejectController()`, `sendSignal()`, and `disconnect()`.
+ * 
+ * Mechanics & Relations:
+ * - Establishes socket connections, implements a 5-attempt unique PIN registration mechanism, and forwards WebRTC SDP/ICE candidates.
+ * - Pushes session updates (`host:stateChange`, `controller:stateChange`, `host:pin`, `webrtc:signal`) to the Electron renderer via `webContents.send()`.
+ * - Instantiated by `webrtc-manager.ts` and triggered by IPC routes inside `webrtc.ipc.ts` to orchestrate remote desktop control.
+ */
+
 import { io, Socket } from 'socket.io-client';
 import { BrowserWindow } from 'electron';
 import type { HostSessionState, ControllerSessionState } from '../shared/types.js';

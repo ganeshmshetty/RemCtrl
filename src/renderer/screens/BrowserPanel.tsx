@@ -1,3 +1,13 @@
+/**
+ * @file BrowserPanel.tsx
+ * @description Central browser viewport component rendering the interactive browser screencast.
+ * Displays tabs and address bar navigation for local browser runs or remote streams.
+ * Renders the screencast stream using either an HTML5 canvas for local sessions (consuming frame byte buffers via window.RemoteCtrlAPI.on.screencastFrame)
+ * or a video element coupled with useControllerWebRTC / useHostWebRTC hooks for peer-to-peer streaming.
+ * Provides a takeover layer that captures mouse clicks, movements, scroll wheels, and keyboard keypresses, injecting inputs back into the browser via WebRTC or direct IPC.
+ * Key exports: BrowserPanel (function component).
+ */
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, RotateCw, X, Plus, Loader2, Copy, Check } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
@@ -408,7 +418,9 @@ export function BrowserPanel() {
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onContextMenu={(e) => e.preventDefault()}
-                ref={(el) => el?.focus()}
+                ref={(el) => {
+                  el?.focus();
+                }}
               />
             )}
           </>

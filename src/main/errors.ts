@@ -1,6 +1,16 @@
 /**
- * Error classes for Agent execution
- * Adapted from Open Browser's error handling
+ * @file errors.ts
+ * @description Custom exception classes and diagnostic utilities for agentic execution, Playwright automation, and system connection errors.
+ * @module main/errors
+ * 
+ * Key Exports:
+ * - Base class: `AgentExecutionError` carrying code and retryable flags.
+ * - Specialized classes: `AgentStalledError`, `AgentStepLimitError`, `AgentTimeoutError`, `StagehandConnectionError`, `BrowserConnectionError`, `BrowserNotReadyError`, `CommandExecutionError`, and `RetryExhaustedError`.
+ * - Diagnostic: `extractError(err)` returning normalized error metadata (code, message, retryable, stack).
+ * 
+ * Mechanics & Relations:
+ * - Employs regex/substring matchers to inspect exception contents for network dropouts, HTTP 429/5xx status codes, and Playwright session closures.
+ * - Used by automation orchestrators, browser managers, and IPC handlers to format and report execution failures back to the client interface.
  */
 
 export class AgentExecutionError extends Error {
@@ -139,6 +149,12 @@ export function extractError(err: unknown): {
 function isRetryableError(err: Error): boolean {
   const message = err.message.toLowerCase();
   
+  // Stagehand/Playwright specific (fatal checks first)
+  if (message.includes('page closed') || 
+      message.includes('context destroyed')) {
+    return false;
+  }
+
   // Network/timeout errors
   if (message.includes('timeout') || 
       message.includes('network') || 
@@ -160,12 +176,6 @@ function isRetryableError(err: Error): boolean {
       message.includes('503') ||
       message.includes('504')) {
     return true;
-  }
-
-  // Stagehand/Playwright specific
-  if (message.includes('page closed') || 
-      message.includes('context destroyed')) {
-    return false; // These are usually fatal
   }
 
   return false;

@@ -1,14 +1,9 @@
 /**
- * Workflow Executor — Smart Workflow Architecture
- *
- * Step types: navigate | do | collect | check
- *
- * Execution is jump-based (not a flat index loop) so that `check` steps can
- * branch to arbitrary step IDs via onTrue / onFalse.
- *
- * Per-step failure policy:
- *   onFailure: 'stop'  → abort the whole workflow (default)
- *   onFailure: 'skip'  → log the error, advance to the next step linearly
+ * @file workflow-executor.ts
+ * @description Coordinates and executes structured multi-step automation workflows with built-in retry mechanics, branching logic, and AI-assisted self-healing.
+ * Key Exported APIs: `runWorkflow`, `cancelWorkflow`, `isWorkflowRunning`, `setWorkflowPaused`, `WorkflowRunStatusCb`, `WorkflowStepStatusCb`, and `WorkflowLogCb`.
+ * Internal Mechanics: Drives the execution cycle through parsed workflow steps (`navigate`, `click`, `fill`, `select`, `keypress`, `wait`, `extract`, `check`). Checks conditional state polling, implements exponential backoff retries on failure, and handles user pause/resume takeover.
+ * AI Self-Healing & Integration: If a fast-path CSS selector fails, invokes the AI tool-calling loop (`runToolLoop`) using the original step description to find the healed element, and persists the repaired selector back to the database.
  */
 
 import { getBrowserPage } from './browser-pool.js';
@@ -23,7 +18,7 @@ import type {
   AgentLogPayload,
 } from '../../shared/types.js';
 import { getPage, getCdpUrl, launchBrowser } from '../browser-manager.js';
-import { getPreferredProvider, getApiKey } from '../storage.js';
+import { getPreferredProvider, getApiKey, updateWorkflowStepSelector } from '../storage.js';
 import {
   BrowserNotReadyError,
   extractError,
@@ -41,33 +36,11 @@ const RETRY_INITIAL_DELAY_MS = 1_000;
 const RETRY_MAX_DELAY_MS = 10_000;
 const RETRY_BACKOFF = 2;
 
-const DO_MAX_STEPS = 8;
-const COLLECT_MAX_PAGES = 10;
 const CHECK_POLL_INTERVAL_MS = 500;
 const CHECK_POLL_MAX_MS = 3_000;
 const WORKFLOW_MAX_TRANSITIONS = 100;
 
-/**
- * Replace {{variable_name}} placeholders in a string with values from the variables map.
- * Unresolved placeholders are left as-is so steps still show their template form in logs.
- */
-function substituteVariables(text: string, variables: Record<string, string>): string {
-  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-    const trimmed = key.trim();
-    return Object.prototype.hasOwnProperty.call(variables, trimmed) ? variables[trimmed] : match;
-  });
-}
 
-function substituteUrlVariables(text: string, variables: Record<string, string>): string {
-  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-    const trimmed = key.trim();
-    if (!Object.prototype.hasOwnProperty.call(variables, trimmed)) return match;
-    const value = variables[trimmed];
-    // Don't encode if the variable contains a full domain/URL
-    if (/^https?:\/\//i.test(value)) return value;
-    return encodeURIComponent(value);
-  });
-}
 
 let activeSession: TaskSession | null = null;
 
@@ -167,14 +140,7 @@ export async function runWorkflow(
 
       const step = steps[index];
 
-      // Apply {{variable}} substitution for parameterized replay
-      payload.variables = payload.variables ?? {};
-      const vars = payload.variables;
-      const resolvedStep: WorkflowStep = {
-        ...step,
-        url: step.url ? substituteUrlVariables(step.url, vars) : step.url,
-        instruction: step.instruction ? substituteVariables(step.instruction, vars) : step.instruction,
-      };
+      const resolvedStep = { ...step } as WorkflowStep;
 
       const stepLabel = `Step ${index + 1}/${steps.length} [${resolvedStep.type.toUpperCase()}]`;
 
@@ -183,11 +149,11 @@ export async function runWorkflow(
       emitLog(onLog, 'info', `▶ ${stepLabel}`, '[Workflow]');
 
       try {
-        const result = await executeStepWithRetry(localPage, resolvedStep, onLog);
+        const result = await executeStepWithRetry(localPage, resolvedStep, payload.workflowId, onLog);
 
         let jumpToStepId: string | null = null;
         if (resolvedStep.type === 'check') {
-          const checkPassed = Boolean((result as { passed: boolean }).passed);
+          const checkPassed = Boolean((result as { passed: boolean }).passed ?? result);
           onStepStatus({
             workflowRunId,
             stepId: step.id,
@@ -197,15 +163,23 @@ export async function runWorkflow(
           });
 
           if (checkPassed) {
-            jumpToStepId = step.onTrue ?? (steps[index + 1]?.id ?? null);
+            jumpToStepId = resolvedStep.onTrue ?? (steps[index + 1]?.id ?? null);
           } else {
-            jumpToStepId = step.onFalse ?? null;
+            if (resolvedStep.onFalse !== undefined && resolvedStep.onFalse !== null) {
+              jumpToStepId = resolvedStep.onFalse;
+            } else {
+              onRunStatus({ workflowRunId, state: 'failed', error: 'Check step failed and no alternative path was provided.' });
+              return;
+            }
           }
         } else {
-          onStepStatus({ workflowRunId, stepId: step.id, index, state: 'completed', result });
-          if (resolvedStep.type === 'collect') {
-            vars[`step_${index + 1}_output`] = String((result as any).message || '');
+          if (resolvedStep.type === 'extract') {
+            const extractResult = result as { success: boolean; message?: string };
+            if (!extractResult.success) {
+              throw new Error(extractResult.message || 'Extraction did not achieve its goal');
+            }
           }
+          onStepStatus({ workflowRunId, stepId: step.id, index, state: 'completed', result });
           jumpToStepId = steps[index + 1]?.id ?? null;
         }
 
@@ -215,6 +189,10 @@ export async function runWorkflow(
         const errorInfo = extractError(stepErr);
         emitLog(onLog, 'error', `✗ ${stepLabel} failed: ${errorInfo.message}`, '[Workflow]');
         onStepStatus({ workflowRunId, stepId: step.id, index, state: 'failed', error: errorInfo.message });
+
+        if (session.isCancelled) {
+          throw stepErr; // Bubble up immediately to the outer catch
+        }
 
         if (step.onFailure === 'skip') {
           emitLog(onLog, 'warn', `onFailure=skip — continuing to next step.`, '[Workflow]');
@@ -248,6 +226,7 @@ export async function runWorkflow(
 async function executeStepWithRetry(
   page: Page,
   step: WorkflowStep,
+  workflowId: string,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
   let lastError: Error | null = null;
@@ -265,7 +244,7 @@ async function executeStepWithRetry(
       if (attempt > 1) {
         emitLog(onLog, 'info', `Attempt ${attempt}/${maxAttempts}`, '[Workflow]');
       }
-      return await executeStep(page, step, onLog);
+      return await executeStep(page, step, workflowId, onLog);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       const errorInfo = extractError(lastError);
@@ -289,6 +268,7 @@ async function executeStepWithRetry(
 async function executeStep(
   page: Page,
   step: WorkflowStep,
+  workflowId: string,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
   await ensureCursorOverlay(page);
@@ -298,20 +278,118 @@ async function executeStep(
   );
 
   switch (step.type) {
-    case 'navigate': return executeNavigateStep(page, step, onLog);
-    case 'do':       return executeDoStep(page, step, onLog);
-    case 'collect':  return executeCollectStep(page, step, onLog);
-    case 'check':    return executeCheckStep(page, step, onLog);
-    default: {
-      const _exhaustive: never = step.type;
-      throw new Error(`Unknown step type: ${_exhaustive}`);
+    case 'navigate': return executeNavigateStep(page, step as any, onLog);
+    case 'click':
+    case 'fill':
+    case 'select':
+    case 'keypress': return executeDeterministicActionWithSelfHeal(page, step as any, workflowId, onLog);
+    case 'wait':     return executeWaitStep(page, step as any, onLog);
+    case 'extract':  return executeExtractStep(page, step as any, onLog);
+    case 'check':    return executeCheckStep(page, step as any, onLog);
+    default:
+      throw new Error(`Unsupported or legacy step type: ${(step as any).type}`);
+  }
+}
+
+async function executeDeterministicActionWithSelfHeal(
+  page: Page,
+  step: Extract<WorkflowStep, { type: 'click' | 'fill' | 'select' | 'keypress' }>,
+  workflowId: string,
+  onLog: WorkflowLogCb
+) {
+  try {
+    if (step.type !== 'keypress') {
+      const locator = page.locator(step.selector);
+      // Fast path: wait a brief moment for the selector
+      await locator.waitFor({ timeout: 3000, state: 'visible' });
+      
+      if (step.type === 'click') {
+        const msg = `Action: click on ${step.selector}`;
+        emitLog(onLog, 'info', msg, '');
+        if (activeSession?.journal) {
+          await activeSession.journal.recordAgentStep('act', { action: 'click', selector: step.selector }, null, msg);
+        }
+        await locator.click();
+      } else if (step.type === 'fill') {
+        const msg = `Action: fill "${step.value}" on ${step.selector}`;
+        emitLog(onLog, 'info', msg, '');
+        if (activeSession?.journal) {
+          await activeSession.journal.recordAgentStep('act', { action: 'fill', selector: step.selector, value: step.value }, null, msg);
+        }
+        await locator.fill(step.value);
+      } else if (step.type === 'select') {
+        const msg = `Action: select "${step.value}" on ${step.selector}`;
+        emitLog(onLog, 'info', msg, '');
+        if (activeSession?.journal) {
+          await activeSession.journal.recordAgentStep('act', { action: 'select', selector: step.selector, value: step.value }, null, msg);
+        }
+        await locator.selectOption(step.value);
+      }
+    } else {
+      const msg = `Pressing key: ${step.key}`;
+      emitLog(onLog, 'info', msg, '');
+      if (activeSession?.journal) {
+        await activeSession.journal.recordAgentStep('keys', { key: step.key }, null, msg);
+      }
+      await page.keyboard.press(step.key);
     }
+    return { success: true };
+  } catch (err) {
+    if (step.type === 'keypress') throw err; // Cannot self-heal a pure keypress easily
+    if (step.onFailure !== 'self_heal') throw err; // Enforce onFailure policy (bypasses self-healing if stop/skip/retry)
+    
+    emitLog(onLog, 'warn', `Fast path failed for ${step.selector}. Triggering AI Self-Healing...`, '[SelfHeal]');
+    
+    const provider = getPreferredProvider();
+    const apiKey = getApiKey(provider);
+    const model = resolveModel(provider, apiKey);
+
+    // Provide the original semantic description to the agent so it knows what it's looking for
+    const instruction = `The automated workflow failed to find the element previously saved as "${step.selector}".
+However, the user originally described their intent as: "${step.description || 'Unknown'}".
+Please find the correct element that matches this description on the current page, and perform the '${step.type}' action on it.
+${step.type === 'fill' ? `The value to fill is: "${step.value}"` : ''}
+${step.type === 'select' ? `The value to select is: "${step.value}"` : ''}
+End your turn with 'done' once you have successfully interacted with it.`;
+
+    const loopResult = await runToolLoop({
+      commandId: `self-heal-${step.id}`,
+      instruction,
+      systemPrompt: buildWorkflowStepSystemPrompt('do', instruction), // reuse generic prompt
+      page,
+      session: (() => {
+        if (!activeSession) throw new Error('Cannot self-heal: workflow session is no longer active');
+        return activeSession;
+      })(),
+      model,
+      maxSteps: 5,
+      onLog: (l) => emitLog(onLog, l.level, l.message, '[SelfHeal]'),
+    });
+
+    if (!loopResult.goalAchieved) {
+      throw new Error(`Self-healing failed for step: ${step.description || step.selector}`, { cause: err });
+    }
+
+    // Try to extract the healed selector from the recorded steps of the self-heal agent loop
+    const healActStep = [...loopResult.recordedSteps].reverse().find((s: any) => s.tool === 'act');
+    const repairedSelector = healActStep?.input?.selector as string | undefined;
+    if (repairedSelector) {
+      emitLog(onLog, 'info', `Self-healed selector: "${repairedSelector}" (original: "${step.selector}")`, '[SelfHeal]');
+      try {
+        updateWorkflowStepSelector(workflowId, step.id, repairedSelector);
+        emitLog(onLog, 'info', `Successfully persisted healed selector back to workflow`, '[SelfHeal]');
+      } catch (saveErr) {
+        emitLog(onLog, 'warn', `Failed to persist healed selector: ${(saveErr as Error).message}`, '[SelfHeal]');
+      }
+    }
+
+    return { success: true, healed: true };
   }
 }
 
 async function executeNavigateStep(
   page: Page,
-  step: WorkflowStep,
+  step: Extract<WorkflowStep, { type: 'navigate' }>,
   onLog: WorkflowLogCb,
 ): Promise<{ navigatedTo: string; finalUrl: string; redirected: boolean }> {
   if (!step.url) throw new Error('navigate step requires a url');
@@ -321,7 +399,11 @@ async function executeNavigateStep(
     targetUrl = 'https://' + targetUrl;
   }
 
-  emitLog(onLog, 'info', `Navigating to: ${targetUrl}`, '[Navigate]');
+  const msg = `Navigating to ${targetUrl}`;
+  emitLog(onLog, 'info', msg, '');
+  if (activeSession?.journal) {
+    await activeSession.journal.recordAgentStep('goto', { url: targetUrl }, null, msg);
+  }
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 });
   await ensureCursorOverlay(page);
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
@@ -345,59 +427,35 @@ async function executeNavigateStep(
   return { navigatedTo: targetUrl, finalUrl, redirected };
 }
 
-async function executeDoStep(
+async function executeExtractStep(
   page: Page,
-  step: WorkflowStep,
+  step: Extract<WorkflowStep, { type: 'extract' }>,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
-  if (!step.instruction) throw new Error('do step requires an instruction');
+  if (!step.instruction) throw new Error('extract step requires an instruction');
 
   const provider = getPreferredProvider();
   const apiKey = getApiKey(provider);
   const model = resolveModel(provider, apiKey);
 
   const loopResult = await runToolLoop({
-    commandId: `workflow-do-${step.id}`,
+    commandId: `extract-${step.id}`,
     instruction: step.instruction,
-    systemPrompt: buildWorkflowStepSystemPrompt('do', step.instruction),
+    systemPrompt: buildWorkflowStepSystemPrompt('collect', step.instruction), // Reuse collect prompt logic
     page,
-    session: activeSession!,
+    session: (() => {
+      if (!activeSession) throw new Error('Cannot run extract step: workflow session is no longer active');
+      return activeSession;
+    })(),
     model,
-    maxSteps: DO_MAX_STEPS * 2,
-    onLog: (l) => emitLog(onLog, l.level, l.message, '[Do]'),
+    maxSteps: 15,
+    onLog: (l) => emitLog(onLog, l.level, l.message, '[Extract]'),
   });
 
-  if (!loopResult.goalAchieved) {
-    throw new Error(`Do step did not complete: "${step.instruction}"`);
+  const msg = `Extracting from page`;
+  if (activeSession?.journal) {
+    await activeSession.journal.recordAgentStep('extract', { instruction: step.instruction }, loopResult.finalMessage, msg);
   }
-  return {
-    success: true,
-    message: loopResult.finalMessage,
-    actions: loopResult.actions,
-  };
-}
-
-async function executeCollectStep(
-  page: Page,
-  step: WorkflowStep,
-  onLog: WorkflowLogCb,
-): Promise<unknown> {
-  if (!step.instruction) throw new Error('collect step requires an instruction');
-
-  const provider = getPreferredProvider();
-  const apiKey = getApiKey(provider);
-  const model = resolveModel(provider, apiKey);
-
-  const loopResult = await runToolLoop({
-    commandId: `workflow-collect-${step.id}`,
-    instruction: step.instruction,
-    systemPrompt: buildWorkflowStepSystemPrompt('collect', step.instruction),
-    page,
-    session: activeSession!,
-    model,
-    maxSteps: COLLECT_MAX_PAGES * 4,
-    onLog: (l) => emitLog(onLog, l.level, l.message, '[Collect]'),
-  });
 
   return {
     success: loopResult.goalAchieved,
@@ -406,17 +464,27 @@ async function executeCollectStep(
   };
 }
 
+async function executeWaitStep(
+  _page: Page,
+  step: Extract<WorkflowStep, { type: 'wait' }>,
+  onLog: WorkflowLogCb,
+): Promise<unknown> {
+  emitLog(onLog, 'info', `Waiting for ${step.ms}ms`, '[Wait]');
+  await sleep(step.ms);
+  return { success: true };
+}
+
 async function executeCheckStep(
   page: Page,
-  step: WorkflowStep,
+  step: Extract<WorkflowStep, { type: 'check' }>,
   onLog: WorkflowLogCb,
 ): Promise<boolean> {
-  if (!step.instruction) throw new Error('check step requires an instruction');
+  if (!step.condition) throw new Error('check step requires a condition');
 
-  emitLog(onLog, 'info', `Checking condition (with up to ${CHECK_POLL_MAX_MS}ms settle): "${step.instruction}"`, '[Check]');
+  const msg = `Action: check condition "${step.condition}"`;
+  emitLog(onLog, 'info', msg, '');
 
   const deadline = Date.now() + CHECK_POLL_MAX_MS;
-
   while (Date.now() < deadline) {
     const matchFound = await page.evaluate((query: string) => {
       const doc = (globalThis as any).document;
@@ -430,17 +498,22 @@ async function executeCheckStep(
         if (text.includes(q) || label.includes(q)) return true;
       }
       return false;
-    }, step.instruction);
+    }, step.condition);
 
     if (matchFound) {
-      emitLog(onLog, 'info', `Condition TRUE (matched "${step.instruction}").`, '[Check]');
+      emitLog(onLog, 'info', `Condition TRUE (matched "${step.condition}").`, '[Check]');
+      if (activeSession?.journal) {
+        await activeSession.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, true, msg);
+      }
       return true;
     }
-
     await sleep(CHECK_POLL_INTERVAL_MS);
   }
 
-  emitLog(onLog, 'info', `Condition FALSE after ${CHECK_POLL_MAX_MS}ms settling window.`, '[Check]');
+  emitLog(onLog, 'info', `Condition FALSE after ${CHECK_POLL_MAX_MS}ms.`, '[Check]');
+  if (activeSession?.journal) {
+    await activeSession.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, false, msg);
+  }
   return false;
 }
 
@@ -450,7 +523,7 @@ function emitLog(
   message: string,
   prefix = '[Workflow]',
 ): void {
-  const line = `${prefix} ${message}`;
+  const line = prefix ? `${prefix} ${message}` : message;
   if (level === 'error') console.error(line);
   else if (level === 'warn') console.warn(line);
   else console.log(line);

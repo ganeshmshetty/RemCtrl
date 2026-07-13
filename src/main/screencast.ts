@@ -1,3 +1,18 @@
+/**
+ * @file screencast.ts
+ * @description CDP (Chrome DevTools Protocol) screencast client. Attaches to Playwright page contexts to stream real-time screen frames and propagates them to the frontend.
+ * @module main/screencast
+ * 
+ * Key Exports:
+ * - `setScreencastWindow(win)`: Associates the destination Electron `BrowserWindow` for screencast frame broadcasts.
+ * - `startScreencast(page)`: Opens a new `CDPSession` on the targeted page, configures JPEG capture, listens to frame updates, and acknowledges receipts.
+ * - `stopScreencast()`: Disables screencasting and detaches the current `CDPSession`.
+ * 
+ * Mechanics & Relations:
+ * - Listens for `Page.screencastFrame` messages, decodes base64 payload strings to Node buffers, and dispatches them to the renderer via `screencast:frame` IPC.
+ * - Managed directly by `browser-manager.ts` on page initialization and tab-switching actions.
+ */
+
 import type { CDPSession, Page } from 'playwright';
 import type { BrowserWindow } from 'electron';
 

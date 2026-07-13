@@ -59,7 +59,7 @@
   Allow saving completed AI agent runs into visual drag-and-drop workflow cards (`WorkflowEditorModal.tsx`). Support converting typed inputs into parameterized variables (`{{variable_name}}`) so users can replay recorded clicks deterministically at 10x speed while injecting custom input values and selective AI extraction steps.
 - [x] **Workflow Creation UX Refactor** `[Medium Impact, Medium Complexity]`
   Deprecate manual "from-scratch" step selector creation. Streamline `WorkflowsPanel.tsx` and `WorkflowEditorModal.tsx` so workflows originate purely from AI-Recorded Runs or Chrome Extension live recordings, keeping the modal focused on editing variables (`{{var}}`), reordering steps, and adding AI evaluation checkpoints.
-- [ ] **Deterministic Workflow Execution & Self-Healing** `[High Impact, High Complexity]`
+- [x] **Deterministic Workflow Execution & Self-Healing** `[High Impact, High Complexity]`
   Refactor the workflow engine to a two-layer deterministic architecture per the detailed overview in [WORKFLOW_OVERHAUL.md](WORKFLOW_OVERHAUL.md).
   - **Selector Priority Chain**: Replace ephemeral indices with stable locators generated at record-time (id → stable attributes → role/name → text → relative XPath).
   - **Pure Playwright Executor**: Bypass the LLM for standard UI steps (`click`, `fill`, `keypress`, `navigate`) to dramatically increase execution speed and eliminate token cost.

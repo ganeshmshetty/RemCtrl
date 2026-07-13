@@ -1,18 +1,9 @@
 /**
- * ExecutionEngine — Unified agent execution pipeline
- *
- * A single DynamicPlanner-driven ReAct loop handles all task complexity.
- * Lifecycle state (running / paused / cancelled) is owned by TaskSession.
- *
- * Pipeline per step:
- *   1. DynamicPlanner.getNextStep()   — decide next action
- *   2. parseInstruction()             — extract navigation intent
- *   3. page.goto() if navigation URL  — navigate first
- *   4. browser tools act/observe/extract — execute the remaining action
- *   5. StallDetector                  — flag loops
- *   6. TaskEvaluator (extract only)   — validate result quality
- *   7. StrategyGenerator (on failure) — one recovery retry per step
- *   8. ExecutionLogger                — timing tracking
+ * @file execution-engine.ts
+ * @description Orchestrates the main execution pipeline for autonomous agent runs, managing timeouts, loops, logs, and sessions.
+ * Key Exported APIs: `runAgent`, `cancelAgent`, `isAgentRunning`, `setAgentPaused`, `AgentStatusCb`, and `AgentLogCb`.
+ * Internal Mechanics: Connects to the Playwright browser using `getBrowserPage`, instantiates `TaskSession` and `ExecutionLogger`, builds multi-turn conversation contexts via `sessionHistory`, resolves LLM models dynamically, and runs the tool loop within timeout and cancellation limits.
+ * Relations: Connects directly with the renderer-facing `agent.ipc.ts` for task control, triggers cursor overlay setups, and logs events through the browser status callback API.
  */
 
 import type { Page } from 'playwright';
@@ -65,7 +56,7 @@ export async function runAgent(
   provider: ApiProvider,
   onStatus: AgentStatusCb,
   onLog: AgentLogCb,
-  variables?: Record<string, string>,
+  onRecordStep?: (step: any) => void
 ): Promise<void> {
   if (activeSession?.isActive) {
     log(onLog, 'info', 'Terminating previous agent run before starting new task...');
@@ -84,7 +75,7 @@ export async function runAgent(
     return;
   }
 
-  const session = new TaskSession({ initialGoal: instruction, variables });
+  const session = new TaskSession({ initialGoal: instruction, commandId });
   activeSession = session;
   session.start();
 
@@ -131,13 +122,14 @@ export async function runAgent(
       return await runToolLoop({
         commandId,
         instruction: fullInstruction,
-        systemPrompt: buildAgentSystemPrompt(instruction, variables),
+        systemPrompt: buildAgentSystemPrompt(instruction),
         page: localPage!,
         session,
         model: resolveModel(provider, apiKey),
         maxSteps: MAX_STEPS,
         onStatus: guardedStatus,
         onLog,
+        onRecordStep,
       });
     };
 
@@ -149,7 +141,7 @@ export async function runAgent(
       log(onLog, 'info', 'Pipeline cancelled.');
       onStatus({ commandId, state: 'cancelled' });
     } else {
-      sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions);
+      sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions, commandId);
       await sessionHistory.maybeCompactHistory(resolveModel(provider, apiKey)).catch(() => {});
       executionLogger.complete();
       const summary = executionLogger.getSummary() as Record<string, any>;

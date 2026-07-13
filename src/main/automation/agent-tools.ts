@@ -1,16 +1,16 @@
 /**
- * Agent Tools — AI SDK atomic browser tool definitions for RemoteCtrl
- *
- * Built directly on Playwright with Stagehand-inspired capabilities:
- * - observe(): Returns clean interactive DOM & accessibility tree elements with robust selectors
- * - act(): Uses multi-strategy locator chains with deterministic Playwright action execution
- * - extract(): Extracts structured readable text from the DOM / accessibility tree
+ * @file agent-tools.ts
+ * @description Bundles and exports browser automation action bindings compatible with the Vercel AI SDK.
+ * Key Exported APIs: `createBrowserTools` factory method returning structured AI-sdk `tool` definitions, and `BrowserTools` type mapping.
+ * Internal Mechanics: Coordinates task operations using a custom `Mutex` to block concurrent tool execution. Implements core browser tools: navigation (`goto`), structured DOM observation (`observe`), content extraction (`extract`), raw keyboard input (`type`, `keys`), viewport scrolling (`scroll`), delayed pauses (`wait`), and multi-step pipeline optimization (`runActionSequence`).
+ * User Interaction: Integrates with `askUser` to halt the loops for human checkpoints via `ask`. Locates elements via page frame crawls, applies smooth cursor slide/ripple overlays (`moveCursorToLocator`), and yields stable CSS queries using `computeStableSelector`.
  */
 
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Page } from 'playwright';
+import type { Page, Locator } from 'playwright';
 import { ensureCursorOverlay, moveCursorToLocator } from './cursor-overlay.js';
+import { ElementTargetingEngine } from './element-targeting-engine.js';
 import { extractNumberedDOMSnapshot, extractDOMAsMarkdown } from './dom-snapshot.js';
 import { ask } from './human-checkpoint.js';
 
@@ -66,6 +66,34 @@ export function createBrowserTools(
     };
   };
 
+  const resolveAndValidateTarget = async (
+    index?: number,
+    selector?: string,
+    errorMsg = 'Could not find element.'
+  ): Promise<{ locator: Locator; resolvedSelector: string }> => {
+    if (index === undefined && !selector) {
+      throw new Error('Must specify either index or selector.');
+    }
+    let locator: Locator | null = null;
+    let resolvedSelector = '';
+
+    if (index !== undefined) {
+      const target = await ElementTargetingEngine.resolveByIndex(page, index);
+      locator = target.locator;
+      resolvedSelector = target.resolvedSelector;
+    } else if (selector) {
+      const target = await ElementTargetingEngine.resolveBySelector(page, selector);
+      locator = target.locator;
+      resolvedSelector = target.resolvedSelector;
+    }
+
+    if (!locator) {
+      throw new Error(errorMsg);
+    }
+
+    return { locator, resolvedSelector };
+  };
+
   const baseTools = {
     goto: tool({
       description: 'Navigate to a URL',
@@ -86,64 +114,16 @@ export function createBrowserTools(
         selector: z.string().optional().describe('CSS selector, #id, aria label, or visible text of the element'),
         action: z.enum(['click', 'fill', 'press', 'select', 'check', 'uncheck', 'focus', 'hover']),
         value: z.string().optional().describe('Value to fill/type/select (for fill, press, select actions)'),
+        description: z.string().optional().describe('A clear, user-friendly semantic description of the element and the interaction (e.g., "Click the login button", "Fill the username field")'),
       }),
       execute: wrap(async ({ index, selector, action, value }) => {
-        if (index === undefined && !selector) {
-          throw new Error('Must specify either index or selector for act().');
-        }
+        const { locator, resolvedSelector } = await resolveAndValidateTarget(
+          index,
+          selector,
+          'Could not find element. If you used a selector, the UI may have changed. Call observe() again.'
+        );
 
-        let locator: any = null;
-
-        // 1. First attempt: Search by index across all frames
-        if (index !== undefined) {
-          for (const frame of page.frames()) {
-            if (frame.isDetached()) continue;
-            try {
-              const candidate = frame.locator(`[data-remctrl-index="${index}"]`).first();
-              await candidate.waitFor({ timeout: 1500, state: 'attached' });
-              locator = candidate;
-              break;
-            } catch {
-              continue;
-            }
-          }
-        }
-
-        // 2. Fallback / Stale Reference Recovery: Search by selector or semantic roles across all frames
-        if (!locator && selector) {
-          for (const frame of page.frames()) {
-            if (frame.isDetached()) continue;
-            const strategies = [
-              () => frame.locator(selector).first(),
-              () => frame.getByRole('button', { name: selector, exact: false }).first(),
-              () => frame.getByRole('link', { name: selector, exact: false }).first(),
-              () => frame.getByRole('textbox', { name: selector, exact: false }).first(),
-              () => frame.getByRole('searchbox', { name: selector, exact: false }).first(),
-              () => frame.getByLabel(selector, { exact: false }).first(),
-              () => frame.getByPlaceholder(selector, { exact: false }).first(),
-              () => frame.getByText(selector, { exact: false }).first(),
-            ];
-
-            for (const strategy of strategies) {
-              try {
-                const candidate = strategy();
-                await candidate.waitFor({ timeout: 1000, state: 'attached' });
-                locator = candidate;
-                break;
-              } catch {
-                continue;
-              }
-            }
-            if (locator) break;
-          }
-        }
-
-        if (!locator) {
-          const identifier = index !== undefined ? `[index=${index}]` : `"${selector}"`;
-          throw new Error(`Element not found matching ${identifier} across any frame or shadow root. Try calling observe() first to refresh indices.`);
-        }
-
-        // Glide cursor smoothly and fire ripple animation
+        // 4. Glide cursor smoothly and fire ripple animation
         await moveCursorToLocator(page, locator);
 
         switch (action) {
@@ -172,25 +152,6 @@ export function createBrowserTools(
           case 'hover':
             await locator.hover({ timeout: 8000 });
             break;
-        }
-
-        let resolvedSelector = selector;
-        if (!resolvedSelector && locator) {
-          try {
-            resolvedSelector = await locator.evaluate((el: any) => {
-              let sel = el.tagName.toLowerCase();
-              if (el.id) sel += '#' + el.id;
-              if (el.getAttribute('aria-label')) sel += `[aria-label="${el.getAttribute('aria-label')}"]`;
-              if (el.getAttribute('name')) sel += `[name="${el.getAttribute('name')}"]`;
-              if (el.textContent && el.textContent.trim().length > 0) {
-                const text = el.textContent.trim().substring(0, 30).replace(/"/g, '\\"').replace(/\n/g, ' ');
-                sel += ` (text: "${text}")`;
-              }
-              return sel;
-            });
-          } catch (e) {
-            resolvedSelector = index !== undefined ? `[index=${index}]` : 'unknown';
-          }
         }
 
         await page.waitForLoadState('networkidle').catch(() => {});
@@ -349,36 +310,12 @@ export function createBrowserTools(
   // parent runActionSequence already holds the lock.
   const rawAct = async (args: { index?: number; selector?: string; action: 'click' | 'fill' | 'press' | 'select' | 'check' | 'uncheck' | 'focus' | 'hover'; value?: string }) => {
     const { index, selector, action, value } = args;
-    if (index === undefined && !selector) throw new Error('Must specify either index or selector for act().');
-    let locator: any = null;
-    if (index !== undefined) {
-      for (const frame of page.frames()) {
-        if (frame.isDetached()) continue;
-        try {
-          const c = frame.locator(`[data-remctrl-index="${index}"]`).first();
-          await c.waitFor({ timeout: 1500, state: 'attached' });
-          locator = c; break;
-        } catch { continue; }
-      }
-    }
-    if (!locator && selector) {
-      for (const frame of page.frames()) {
-        if (frame.isDetached()) continue;
-        const strategies = [
-          () => frame.locator(selector).first(),
-          () => frame.getByRole('button', { name: selector, exact: false }).first(),
-          () => frame.getByRole('link', { name: selector, exact: false }).first(),
-          () => frame.getByRole('textbox', { name: selector, exact: false }).first(),
-          () => frame.getByLabel(selector, { exact: false }).first(),
-          () => frame.getByText(selector, { exact: false }).first(),
-        ];
-        for (const s of strategies) {
-          try { const c = s(); await c.waitFor({ timeout: 1000, state: 'attached' }); locator = c; break; } catch { continue; }
-        }
-        if (locator) break;
-      }
-    }
-    if (!locator) throw new Error(`Element not found for act() in runActionSequence.`);
+    const { locator, resolvedSelector } = await resolveAndValidateTarget(
+      index,
+      selector,
+      'Element not found for act() in runActionSequence.'
+    );
+
     await moveCursorToLocator(page, locator);
     switch (action) {
       case 'click': await locator.click({ timeout: 8000 }); break;
@@ -390,7 +327,7 @@ export function createBrowserTools(
       case 'focus': await locator.focus({ timeout: 8000 }); break;
       case 'hover': await locator.hover({ timeout: 8000 }); break;
     }
-    return { success: true };
+    return { success: true, resolvedSelector };
   };
   const rawType = async (args: { text: string }) => { await page.keyboard.type(args.text); return { success: true }; };
   const rawKeys = async (args: { key: string }) => { await page.keyboard.press(args.key); return { success: true }; };

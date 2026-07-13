@@ -1,12 +1,9 @@
 /**
- * Execution Logger - Track steps, tokens, costs, and outcomes
- * 
- * Features:
- * - Per-step logging with timing
- * - Token usage tracking
- * - Cost calculation
- * - Progress reporting
- * - Execution history
+ * @file execution-logger.ts
+ * @description Manages session execution metrics including LLM token counts, step durations, run costs, and state snapshots.
+ * Key Exported APIs: `ExecutionLogger` class, `calculateCost` helper, `estimateTokens` helper, and interface types like `StepRecord`, `ExecutionSummary`, `TokenUsage`, and `CostBreakdown`.
+ * Internal Mechanics: Tracks step duration, calculates financial costs based on token counts per-provider, and manages checkpoint persistence to local storage via filesystem read/write routines.
+ * Relations: Connects directly to the automation loop to capture metrics for each agent action, updating steps dynamically as API responses return token usage from LLM providers.
  */
 
 import { writeFile, readFile, mkdir } from 'fs/promises';

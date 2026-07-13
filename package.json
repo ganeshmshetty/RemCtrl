@@ -54,6 +54,7 @@
     "@ai-sdk/google-vertex": "^3.0.140",
     "@ai-sdk/groq": "^3.0.42",
     "@ai-sdk/openai": "^3.0.71",
+    "@browserbasehq/stagehand": "^3.6.0",
     "ai": "^5.0.193",
     "express": "^5.2.1",
     "google-auth-library": "^10.9.0",

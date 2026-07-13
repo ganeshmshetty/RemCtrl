@@ -1,3 +1,12 @@
+/**
+ * @file useWorkflowStore.ts
+ * @description Zustand stores for managing custom workflows and application settings.
+ * Exports the `useWorkflowStore` hook for CRUD operations on local user workflows, and
+ * the `useSettingsStore` hook for system settings, API keys, browser profiles, and theme preferences.
+ * Internally coordinates with the main process using IPC via the `window.RemoteCtrlAPI` preload bridge.
+ * Integrates with Settings and Workflow interfaces in the UI to persist and update settings.
+ */
+
 import { create } from 'zustand';
 import type { LocalWorkflow, ApiProvider, AppTheme } from '../../shared/types';
 

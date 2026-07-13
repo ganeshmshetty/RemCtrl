@@ -1,3 +1,15 @@
+/**
+ * @file index.ts
+ * @description Electron main process entrypoint. Orchestrates application lifecycles, window instantiation (main and mini overlays), native menu bars, tray indicators, global key shortcuts, and security controls.
+ * @module main/index
+ * 
+ * Mechanics & Relations:
+ * - Controls application bootstrapping (`whenReady`), single-instance locks, and graceful shutdown routines (`before-quit`) that clean up active browser pools and signaling hooks.
+ * - Spawns main window and floating mini overlays with preload security isolation and intercepts navigation events.
+ * - Links to `ipc-handlers.ts` to hook up renderer IPC listeners and boots the local extension WebSocket server via `startExtensionBridgeServer`.
+ * - Pre-warms or tears down automated browser environments via `browser-manager.ts` and queries configurations using `storage.ts`.
+ */
+
 import {
   app,
   BrowserWindow,

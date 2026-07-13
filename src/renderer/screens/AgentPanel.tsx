@@ -1,3 +1,12 @@
+/**
+ * @file AgentPanel.tsx
+ * @description Side panel component facilitating human-in-the-loop interaction with the AI Browser Agent.
+ * Renders user/agent chat bubbles, warning banners, step-by-step collapsable logs, and interactive checkpoint forms.
+ * Triggers agent actions locally via window.RemoteCtrlAPI.browser commands, or sends prompts/responses over WebRTC (via sendData) in controller mode.
+ * Features a workflow recorder converting RecordedAgentSteps to WorkflowSteps, passing data to the editor modal.
+ * Key exports: AgentPanel (function component).
+ */
+
 import { useEffect, useRef, useState } from 'react';
 import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2, ChevronDown, Plus, Edit3, Keyboard, ArrowUpDown } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
@@ -7,12 +16,9 @@ import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 
-/** Convert recorded agent steps into workflow steps with {{variable}} placeholders */
-function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[]; variables: Record<string, string>; startUrl: string } {
+function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[]; startUrl: string } {
   const workflowSteps: WorkflowStep[] = [];
-  const variables: Record<string, string> = {};
   let startUrl = '';
-  let varCount = 0;
 
   for (const step of steps) {
     if (step.tool === 'goto') {
@@ -21,41 +27,30 @@ function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: Workflo
       workflowSteps.push({ id: crypto.randomUUID(), type: 'navigate', url, onFailure: 'stop' });
     } else if (step.tool === 'act') {
       const action = String(step.input.action ?? 'click');
+      const selector = String(step.input.selector ?? '').trim();
       const value = step.input.value != null ? String(step.input.value) : undefined;
-      let instruction = '';
+      const description = step.summary;
 
-      if (action === 'fill' && value !== undefined && value.trim()) {
-        // Convert typed values to {{variable}} placeholders
-        varCount++;
-        const varName = `input_${varCount}`;
-        variables[varName] = value;
-        instruction = `${step.summary.replace(/"[^"]*"/, `"{{${varName}}}"`)}`.replace(/^Action: fill/, 'Fill');
-        if (!instruction.includes(`{{${varName}}}`)) {
-          instruction = `Fill the field with {{${varName}}}`;
-        }
+      // Skip steps with no usable selector — they cannot be replayed
+      if (!selector) continue;
+
+      if (action === 'fill' || action === 'select') {
+        workflowSteps.push({ id: crypto.randomUUID(), type: action, selector, value: value ?? '', description, onFailure: 'self_heal' });
+      } else if (action === 'check') {
+         workflowSteps.push({ id: crypto.randomUUID(), type: 'click', selector, description: `Check ${selector}`, onFailure: 'self_heal' });
       } else {
-        instruction = step.summary.replace(/^Action: /, '');
+        workflowSteps.push({ id: crypto.randomUUID(), type: 'click', selector, description, onFailure: 'self_heal' });
       }
-
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction, onFailure: 'stop' });
-    } else if (step.tool === 'scroll') {
-      const dir = String(step.input.direction ?? 'down');
-      const px = Number(step.input.pixels ?? 500);
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: `Scroll ${dir} ${px}px`, onFailure: 'skip' });
     } else if (step.tool === 'keys') {
       const key = String(step.input.key ?? '');
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: `Press the ${key} key`, onFailure: 'skip' });
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'keypress', key, onFailure: 'skip' });
     } else if (step.tool === 'extract') {
-      const sel = step.input.selector ? ` from "${step.input.selector}"` : '';
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'collect', instruction: `Extract content${sel}`, onFailure: 'skip' });
-    } else if (step.tool === 'observe') {
-      // observe is transient — skip it (the DO step that follows handles the action)
-    } else {
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'do', instruction: step.summary, onFailure: 'skip' });
+      const instruction = step.input.instruction ? String(step.input.instruction) : 'Extract content';
+      workflowSteps.push({ id: crypto.randomUUID(), type: 'extract', instruction, onFailure: 'skip' });
     }
   }
 
-  return { steps: workflowSteps, variables, startUrl };
+  return { steps: workflowSteps, startUrl };
 }
 
 export function AgentPanel() {
@@ -165,6 +160,26 @@ export function AgentPanel() {
             msg={msg}
             onCheckpointResponse={handleCheckpointResponse}
             onTakeover={handleTakeover}
+            onEditMessage={(newInstruction) => {
+              if (msg.sender === 'user') {
+                const snapshotId = msg.id.replace('user-', '');
+                const commandId = crypto.randomUUID();
+                useAgentStore.getState().startNewExecution('agent', commandId, newInstruction);
+                useAgentStore.getState().appendMessage({
+                  id: `user-${commandId}`,
+                  sender: 'user',
+                  type: 'prompt',
+                  text: newInstruction,
+                  timestamp: Date.now(),
+                });
+                window.RemoteCtrlAPI?.browser.rewindAndRerunAgent({
+                  snapshotId,
+                  commandId,
+                  action: 'act',
+                  newInstruction,
+                });
+              }
+            }}
           />
         );
       }
@@ -256,16 +271,13 @@ export function AgentPanel() {
             onClick={() => {
               const { lastRecordedSteps, lastCompletedPrompt } = useAgentStore.getState();
               const { openWorkflowEditorWithData } = useUIStore.getState();
-              const { steps, variables, startUrl } = convertAgentRunToWorkflow(lastRecordedSteps);
-              const defaultName = lastCompletedPrompt
-                ? lastCompletedPrompt.slice(0, 60) + (lastCompletedPrompt.length > 60 ? '…' : '')
-                : 'AI-Recorded Workflow';
+              const { steps, startUrl } = convertAgentRunToWorkflow(lastRecordedSteps);
+              const goal = lastCompletedPrompt ?? '';
               openWorkflowEditorWithData({
-                name: defaultName,
-                description: lastCompletedPrompt ?? '',
+                name: goal.slice(0, 50) + (goal.length > 50 ? '...' : ''),
+                description: goal,
                 startUrl,
                 steps,
-                variables,
                 source: 'ai_recorded',
               });
             }}
@@ -344,11 +356,15 @@ function ChatBubble({
   msg,
   onCheckpointResponse,
   onTakeover,
+  onEditMessage,
 }: {
   msg: ChatMessage;
   onCheckpointResponse?: (checkpointId: string, optionId: string) => void;
   onTakeover?: () => void;
+  onEditMessage?: (newInstruction: string) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(msg.text);
   const isUser = msg.sender === 'user';
 
   // Checkpoint — interactive option buttons
@@ -476,8 +492,68 @@ function ChatBubble({
   // Standard user/agent bubble
   return (
     <div className={`agent-msg ${isUser ? 'user' : ''}`}>
-      <div className={`agent-msg-bubble ${isUser ? 'user' : 'agent'}`}>
-        <MarkdownRenderer content={msg.text} />
+      <div className={`agent-msg-bubble ${isUser ? 'user' : 'agent'}`} style={{ position: 'relative' }}>
+        {isEditing ? (
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              setIsEditing(false);
+              if (editText.trim() && editText !== msg.text) {
+                onEditMessage?.(editText);
+              }
+            }}
+            style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}
+          >
+            <textarea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              className="agent-prompt-input"
+              style={{ padding: '8px', background: 'var(--bg-card)', minHeight: '60px' }}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  e.currentTarget.form?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                }
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setIsEditing(false); setEditText(msg.text); }}>Cancel</button>
+              <button type="submit" className="btn btn-primary btn-sm">Resubmit</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <MarkdownRenderer content={msg.text} />
+            {isUser && onEditMessage && (
+              <button 
+                className="agent-msg-edit-btn"
+                onClick={() => {
+                  setEditText(msg.text);
+                  setIsEditing(true);
+                }}
+                title="Edit message & rewind"
+                style={{
+                  position: 'absolute',
+                  top: '-10px',
+                  right: '-10px',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '50%',
+                  padding: '4px',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}
+              >
+                <Edit3 size={12} />
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

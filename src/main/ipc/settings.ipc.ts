@@ -1,3 +1,12 @@
+/**
+ * @file settings.ipc.ts
+ * @description Electron main process IPC handlers managing persistent user configuration, credentials, browser parameters, and application diagnostics.
+ * Key Exported APIs: `registerSettingsIpc` for initializing settings-related IPC channels.
+ * Internal Mechanics: Coordinates with local storage utilities to read/write API keys, signaling server URLs, model configurations, browser headless/profile options, visual UI settings, and global shortcut preferences.
+ * Model Fetching: Features dynamic model resolution using `fetch` with an abort controller to query active AI providers' endpoints (OpenAI, Groq, Nebius, OpenRouter, DeepSeek) while using default static options for Vertex AI.
+ * Relations: Validates payloads via shared Zod schemas (e.g. `SetApiKeySchema`, `BrowserModeSchema`) and integrates with storage handlers.
+ */
+
 import { ipcMain, app } from 'electron';
 import {
   SetApiKeySchema,
