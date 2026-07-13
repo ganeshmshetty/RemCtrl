@@ -130,6 +130,13 @@ export function registerAgentIpc(_win: BrowserWindow) {
   });
 
   ipcMain.handle('browser:rewindAndRerunAgent', async (_e, rawPayload: unknown) => {
+    if (isWorkflowRunning()) {
+      return { ok: false, error: 'A workflow is already running.' };
+    }
+    if (isAgentRunning()) {
+      return { ok: false, error: 'An agent command is already running.' };
+    }
+
     let payload;
     try {
       payload = AgentRewindPayloadSchema.parse(rawPayload);
@@ -145,7 +152,7 @@ export function registerAgentIpc(_win: BrowserWindow) {
     }
 
     try {
-      sessionHistory.rewindTo(payload.snapshotId);
+      await sessionHistory.rewindTo(payload.snapshotId);
       await runAgent(
         payload.commandId,
         payload.action,

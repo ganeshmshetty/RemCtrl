@@ -183,6 +183,10 @@ export const RemoteKeyboardPayloadSchema = z.object({
   key: z.string().min(1).max(50),
 });
 
+export const LaunchBrowserPayloadSchema = z.string().optional();
+export const TabIdPayloadSchema = z.string().min(1);
+export const NavigatePayloadSchema = z.string().min(1);
+
 export const BrowserModeSchema = z.enum(['internal', 'local_chrome']);
 
 // ─── Persisted Settings File Schema ──────────────────────────────────────────

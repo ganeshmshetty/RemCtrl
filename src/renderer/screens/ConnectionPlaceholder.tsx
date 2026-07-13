@@ -48,15 +48,22 @@ export function ConnectionPlaceholder() {
     const workflowRunId = crypto.randomUUID();
     useAgentStore.getState().startNewExecution('workflow', workflowRunId, workflow.name);
 
-    window.RemoteCtrlAPI?.browser.startWorkflow({
-      workflowRunId,
-      workflowId: workflow.id,
-      name: workflow.name,
-      startUrl: workflow.startUrl,
-      steps: workflow.steps,
-    });
-
-    setRightPanelTab('agent');
+    try {
+      const res = await window.RemoteCtrlAPI?.browser.startWorkflow({
+        workflowRunId,
+        workflowId: workflow.id,
+        name: workflow.name,
+        startUrl: workflow.startUrl,
+        steps: workflow.steps,
+      });
+      if (res && res.ok) {
+        setRightPanelTab('agent');
+      } else {
+        alert(`Failed to start workflow: ${res?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Failed to start workflow: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   function handleHost() {

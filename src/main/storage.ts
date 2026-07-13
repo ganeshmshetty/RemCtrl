@@ -351,26 +351,42 @@ function loadWorkflowStore(): WorkflowStore {
         ? (raw as { workflows: unknown[] }).workflows
         : [];
     const workflows: LocalWorkflow[] = [];
-    const legacyWorkflows: any[] = [];
+    const legacyWorkflows: unknown[] = [];
     
     for (const w of rawWorkflows) {
       const parsed = LocalWorkflowSchema.safeParse(w);
       if (parsed.success) {
-        workflows.push(parsed.data as any);
+        workflows.push(parsed.data);
       } else {
-        console.warn('Quarantining unparseable workflow:', (w as any)?.id, parsed.error?.message);
+        const id = w !== null && typeof w === 'object' && 'id' in w ? (w as { id: unknown }).id : undefined;
+        console.warn('Quarantining unparseable workflow:', id, parsed.error?.message);
         legacyWorkflows.push(w);
       }
     }
     
     if (legacyWorkflows.length > 0) {
       const legacyFile = path.join(USER_DATA, 'workflows.legacy.json');
-      const existingLegacy = readJson<any>(legacyFile, { workflows: [] });
-      const existingIds = new Set(existingLegacy.workflows.map((w: any) => w.id));
-      const newLegacy = legacyWorkflows.filter(w => !existingIds.has((w as any)?.id));
+      const existingLegacy = readJson<unknown>(legacyFile, { workflows: [] });
+      const existingLegacyWorkflows =
+        existingLegacy !== null &&
+        typeof existingLegacy === 'object' &&
+        Array.isArray((existingLegacy as { workflows?: unknown }).workflows)
+          ? (existingLegacy as { workflows: unknown[] }).workflows
+          : [];
+      const existingIds = new Set(
+        existingLegacyWorkflows
+          .map((w) => w !== null && typeof w === 'object' && 'id' in w ? String((w as { id: unknown }).id) : '')
+          .filter(Boolean)
+      );
+      const newLegacy = legacyWorkflows.filter(
+        w => {
+          const id = w !== null && typeof w === 'object' && 'id' in w ? String((w as { id: unknown }).id) : '';
+          return id && !existingIds.has(id);
+        }
+      );
       if (newLegacy.length > 0) {
-        existingLegacy.workflows.push(...newLegacy);
-        writeJson(legacyFile, existingLegacy);
+        existingLegacyWorkflows.push(...newLegacy);
+        writeJson(legacyFile, { workflows: existingLegacyWorkflows });
       }
     }
     
@@ -423,10 +439,16 @@ export function updateWorkflowStepSelector(workflowId: string, stepId: string, s
     console.warn(`[storage] updateWorkflowStepSelector: step "${stepId}" not found in workflow "${workflowId}" — selector not persisted`);
     return;
   }
-  const step = { ...wf.steps[stepIdx] } as any;
-  step.selector = selector;
+  
+  const step = { ...wf.steps[stepIdx] };
+  if (step.type === 'click' || step.type === 'fill' || step.type === 'select') {
+    step.selector = selector;
+  }
+  
   wf.steps = [...wf.steps];
   wf.steps[stepIdx] = step;
+  wf.updatedAt = Date.now();
+  
   nextWorkflows[idx] = wf;
   const nextStore = { ...store, workflows: nextWorkflows };
   writeJson(WORKFLOWS_FILE, nextStore);

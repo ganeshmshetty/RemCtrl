@@ -60,6 +60,7 @@ export class AgentHistoryManager {
     const idx = this.turns.findIndex(t => t.commandId === commandId);
     if (idx !== -1) {
       this.turns = this.turns.slice(0, idx);
+      this.compactedSummary = null;
     }
     if (this.turns.length === 0) {
       this.initialRequest = null;

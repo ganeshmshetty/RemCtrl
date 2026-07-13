@@ -22,7 +22,7 @@ Workflows are built from the following steps (defined in `src/shared/types.ts`):
 
 During deterministic replays, selectors can break if the website layout changes. Rather than failing the workflow, RemoteCtrl executes an **AI-driven self-healing pipeline**:
 
-```
+```text
 [Replay Action] ───> Selector Fails to Resolve
                           │
                           ▼

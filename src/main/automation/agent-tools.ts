@@ -8,7 +8,7 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
-import type { Page } from 'playwright';
+import type { Page, Locator } from 'playwright';
 import { ensureCursorOverlay, moveCursorToLocator } from './cursor-overlay.js';
 import { ElementTargetingEngine } from './element-targeting-engine.js';
 import { extractNumberedDOMSnapshot, extractDOMAsMarkdown } from './dom-snapshot.js';
@@ -66,6 +66,34 @@ export function createBrowserTools(
     };
   };
 
+  const resolveAndValidateTarget = async (
+    index?: number,
+    selector?: string,
+    errorMsg = 'Could not find element.'
+  ): Promise<{ locator: Locator; resolvedSelector: string }> => {
+    if (index === undefined && !selector) {
+      throw new Error('Must specify either index or selector.');
+    }
+    let locator: Locator | null = null;
+    let resolvedSelector = '';
+
+    if (index !== undefined) {
+      const target = await ElementTargetingEngine.resolveByIndex(page, index);
+      locator = target.locator;
+      resolvedSelector = target.resolvedSelector;
+    } else if (selector) {
+      const target = await ElementTargetingEngine.resolveBySelector(page, selector);
+      locator = target.locator;
+      resolvedSelector = target.resolvedSelector;
+    }
+
+    if (!locator) {
+      throw new Error(errorMsg);
+    }
+
+    return { locator, resolvedSelector };
+  };
+
   const baseTools = {
     goto: tool({
       description: 'Navigate to a URL',
@@ -89,28 +117,11 @@ export function createBrowserTools(
         description: z.string().optional().describe('A clear, user-friendly semantic description of the element and the interaction (e.g., "Click the login button", "Fill the username field")'),
       }),
       execute: wrap(async ({ index, selector, action, value }) => {
-        if (index === undefined && !selector) {
-          throw new Error('Must specify either index or selector for act().');
-        }
-
-        let locator: any = null;
-        let resolvedSelector = '';
-
-        if (index !== undefined) {
-          // Use the deep module to resolve by LLM index
-          const target = await ElementTargetingEngine.resolveByIndex(page, index);
-          locator = target.locator;
-          resolvedSelector = target.resolvedSelector;
-        } else if (selector) {
-          // Use the deep module to resolve by exact string selector
-          const target = await ElementTargetingEngine.resolveBySelector(page, selector);
-          locator = target.locator;
-          resolvedSelector = target.resolvedSelector;
-        }
-
-        if (!locator) {
-          throw new Error('Could not find element. If you used a selector, the UI may have changed. Call observe() again.');
-        }
+        const { locator, resolvedSelector } = await resolveAndValidateTarget(
+          index,
+          selector,
+          'Could not find element. If you used a selector, the UI may have changed. Call observe() again.'
+        );
 
         // 4. Glide cursor smoothly and fire ripple animation
         await moveCursorToLocator(page, locator);
@@ -299,21 +310,11 @@ export function createBrowserTools(
   // parent runActionSequence already holds the lock.
   const rawAct = async (args: { index?: number; selector?: string; action: 'click' | 'fill' | 'press' | 'select' | 'check' | 'uncheck' | 'focus' | 'hover'; value?: string }) => {
     const { index, selector, action, value } = args;
-    if (index === undefined && !selector) throw new Error('Must specify either index or selector for act().');
-    let locator: any = null;
-    let resolvedSelector = '';
-
-    if (index !== undefined) {
-      const target = await ElementTargetingEngine.resolveByIndex(page, index);
-      locator = target.locator;
-      resolvedSelector = target.resolvedSelector;
-    } else if (selector) {
-      const target = await ElementTargetingEngine.resolveBySelector(page, selector);
-      locator = target.locator;
-      resolvedSelector = target.resolvedSelector;
-    }
-
-    if (!locator) throw new Error(`Element not found for act() in runActionSequence.`);
+    const { locator, resolvedSelector } = await resolveAndValidateTarget(
+      index,
+      selector,
+      'Element not found for act() in runActionSequence.'
+    );
 
     await moveCursorToLocator(page, locator);
     switch (action) {

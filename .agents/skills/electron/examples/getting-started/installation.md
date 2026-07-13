@@ -47,7 +47,7 @@ pnpm add electron --save-dev
 
 ### Example: Project Structure
 
-```
+```text
 my-electron-app/
 ├── main.js          # Main process entry point
 ├── preload.js       # Preload script (optional)

@@ -149,8 +149,8 @@ export async function newTab(): Promise<void> {
         const page = await context.newPage();
         await page.goto('about:blank');
       }
-    } catch (err: any) {
-      const msg = err?.message || String(err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Target.createTarget') || msg.includes('Browser has been closed')) {
         // Expected race condition if browser is shutting down
         return;

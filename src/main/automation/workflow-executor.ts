@@ -140,7 +140,7 @@ export async function runWorkflow(
 
       const step = steps[index];
 
-      const resolvedStep = { ...step } as any;
+      const resolvedStep = { ...step } as WorkflowStep;
 
       const stepLabel = `Step ${index + 1}/${steps.length} [${resolvedStep.type.toUpperCase()}]`;
 
@@ -163,14 +163,20 @@ export async function runWorkflow(
           });
 
           if (checkPassed) {
-            jumpToStepId = (step as any).onTrue ?? (steps[index + 1]?.id ?? null);
+            jumpToStepId = resolvedStep.onTrue ?? (steps[index + 1]?.id ?? null);
           } else {
-            jumpToStepId = (step as any).onFalse ?? null;
+            if (resolvedStep.onFalse !== undefined && resolvedStep.onFalse !== null) {
+              jumpToStepId = resolvedStep.onFalse;
+            } else {
+              onRunStatus({ workflowRunId, state: 'failed', error: 'Check step failed and no alternative path was provided.' });
+              return;
+            }
           }
         } else {
           if (resolvedStep.type === 'extract') {
-            if (!(result as any).success) {
-              throw new Error((result as any).message || 'Extraction did not achieve its goal');
+            const extractResult = result as { success: boolean; message?: string };
+            if (!extractResult.success) {
+              throw new Error(extractResult.message || 'Extraction did not achieve its goal');
             }
           }
           onStepStatus({ workflowRunId, stepId: step.id, index, state: 'completed', result });
@@ -300,23 +306,31 @@ async function executeDeterministicActionWithSelfHeal(
       if (step.type === 'click') {
         const msg = `Action: click on ${step.selector}`;
         emitLog(onLog, 'info', msg, '');
-        activeSession?.journal?.recordAgentStep('act', { action: 'click', selector: step.selector }, null, msg);
+        if (activeSession?.journal) {
+          await activeSession.journal.recordAgentStep('act', { action: 'click', selector: step.selector }, null, msg);
+        }
         await locator.click();
       } else if (step.type === 'fill') {
         const msg = `Action: fill "${step.value}" on ${step.selector}`;
         emitLog(onLog, 'info', msg, '');
-        activeSession?.journal?.recordAgentStep('act', { action: 'fill', selector: step.selector, value: step.value }, null, msg);
+        if (activeSession?.journal) {
+          await activeSession.journal.recordAgentStep('act', { action: 'fill', selector: step.selector, value: step.value }, null, msg);
+        }
         await locator.fill(step.value);
       } else if (step.type === 'select') {
         const msg = `Action: select "${step.value}" on ${step.selector}`;
         emitLog(onLog, 'info', msg, '');
-        activeSession?.journal?.recordAgentStep('act', { action: 'select', selector: step.selector, value: step.value }, null, msg);
+        if (activeSession?.journal) {
+          await activeSession.journal.recordAgentStep('act', { action: 'select', selector: step.selector, value: step.value }, null, msg);
+        }
         await locator.selectOption(step.value);
       }
     } else {
       const msg = `Pressing key: ${step.key}`;
       emitLog(onLog, 'info', msg, '');
-      activeSession?.journal?.recordAgentStep('keys', { key: step.key }, null, msg);
+      if (activeSession?.journal) {
+        await activeSession.journal.recordAgentStep('keys', { key: step.key }, null, msg);
+      }
       await page.keyboard.press(step.key);
     }
     return { success: true };
@@ -353,7 +367,7 @@ End your turn with 'done' once you have successfully interacted with it.`;
     });
 
     if (!loopResult.goalAchieved) {
-      throw new Error(`Self-healing failed for step: ${step.description || step.selector}`);
+      throw new Error(`Self-healing failed for step: ${step.description || step.selector}`, { cause: err });
     }
 
     // Try to extract the healed selector from the recorded steps of the self-heal agent loop
@@ -387,7 +401,9 @@ async function executeNavigateStep(
 
   const msg = `Navigating to ${targetUrl}`;
   emitLog(onLog, 'info', msg, '');
-  activeSession?.journal?.recordAgentStep('goto', { url: targetUrl }, null, msg);
+  if (activeSession?.journal) {
+    await activeSession.journal.recordAgentStep('goto', { url: targetUrl }, null, msg);
+  }
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 });
   await ensureCursorOverlay(page);
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
@@ -437,7 +453,9 @@ async function executeExtractStep(
   });
 
   const msg = `Extracting from page`;
-  activeSession?.journal?.recordAgentStep('extract', { instruction: step.instruction }, loopResult.finalMessage, msg);
+  if (activeSession?.journal) {
+    await activeSession.journal.recordAgentStep('extract', { instruction: step.instruction }, loopResult.finalMessage, msg);
+  }
 
   return {
     success: loopResult.goalAchieved,
@@ -484,14 +502,18 @@ async function executeCheckStep(
 
     if (matchFound) {
       emitLog(onLog, 'info', `Condition TRUE (matched "${step.condition}").`, '[Check]');
-      activeSession?.journal?.recordAgentStep('act', { action: 'check', selector: step.condition }, true, msg);
+      if (activeSession?.journal) {
+        await activeSession.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, true, msg);
+      }
       return true;
     }
     await sleep(CHECK_POLL_INTERVAL_MS);
   }
 
   emitLog(onLog, 'info', `Condition FALSE after ${CHECK_POLL_MAX_MS}ms.`, '[Check]');
-  activeSession?.journal?.recordAgentStep('act', { action: 'check', selector: step.condition }, false, msg);
+  if (activeSession?.journal) {
+    await activeSession.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, false, msg);
+  }
   return false;
 }
 

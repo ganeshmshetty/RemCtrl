@@ -53,14 +53,21 @@ function StepRow({ step, idx }: { step: WorkflowStep; idx: number }) {
   const meta = STEP_TYPES.find((t) => t.type === step.type) ?? STEP_TYPES[1];
 
   let previewText = '';
-  if (step.type === 'navigate') previewText = step.url || 'Empty URL';
-  else if (step.type === 'click' || step.type === 'fill' || step.type === 'select') previewText = (step as any).description || (step as any).selector || 'Empty selector';
-  else if (step.type === 'keypress') previewText = (step as any).key || 'Empty key';
-  else if (step.type === 'wait') previewText = `${(step as any).ms || 0}ms`;
-  else if (step.type === 'extract') previewText = (step as any).instruction || 'Empty instruction';
-  else if (step.type === 'check') previewText = (step as any).condition || 'Empty condition';
+  if (step.type === 'navigate') {
+    previewText = step.url || 'Empty URL';
+  } else if (step.type === 'click' || step.type === 'fill' || step.type === 'select') {
+    previewText = step.description || step.selector || 'Empty selector';
+  } else if (step.type === 'keypress') {
+    previewText = step.key || 'Empty key';
+  } else if (step.type === 'wait') {
+    previewText = `${step.ms || 0}ms`;
+  } else if (step.type === 'extract') {
+    previewText = step.instruction || 'Empty instruction';
+  } else if (step.type === 'check') {
+    previewText = step.condition || 'Empty condition';
+  }
 
-  const sel = (step as any).selector || '';
+  const sel = (step.type === 'click' || step.type === 'fill' || step.type === 'select') ? step.selector : '';
   const isFragileSelector = (step.type === 'click' || step.type === 'fill' || step.type === 'select') && 
     (sel.includes('nth-child') || sel.includes('nth-of-type') || sel.includes('[index=]') || /\[\d+\]/.test(sel));
 

@@ -36,9 +36,9 @@ export type JournalSnapshot = AgentStepSnapshot | UserMessageSnapshot;
 
 export interface SessionJournal {
   id: string;
-  recordUserMessage(text: string): string;
-  recordAgentStep(toolName: string, input: any, result: any, summary: string): string;
-  rewindTo(snapshotId: string): void;
+  recordUserMessage(text: string): Promise<string>;
+  recordAgentStep(toolName: string, input: any, result: any, summary: string): Promise<string>;
+  rewindTo(snapshotId: string): Promise<void>;
   extractWorkflow(sinceSnapshotId?: string): LocalWorkflow;
   getHistory(): JournalSnapshot[];
 }
@@ -65,19 +65,38 @@ export class DiskJournalAdapter implements SessionJournal {
     if (!fs.existsSync(this.filePath)) return;
     const content = fs.readFileSync(this.filePath, 'utf-8');
     const lines = content.split('\n').filter(l => l.trim() !== '');
-    this.snapshots = lines.map(l => JSON.parse(l));
+    this.snapshots = [];
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line);
+        this.snapshots.push(parsed);
+      } catch (err) {
+        console.warn(`[Journal] Skipping malformed JSONL line in session ${this.id}: ${line}. Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
-  private appendToDisk(snapshot: JournalSnapshot) {
-    fs.appendFileSync(this.filePath, JSON.stringify(snapshot) + '\n', 'utf-8');
+  private async appendToDisk(snapshot: JournalSnapshot) {
+    await fs.promises.appendFile(this.filePath, JSON.stringify(snapshot) + '\n', 'utf-8');
   }
 
-  private rewriteDisk() {
+  private async rewriteDisk() {
+    const tempPath = this.filePath + '.tmp';
     const lines = this.snapshots.map(s => JSON.stringify(s)).join('\n') + (this.snapshots.length > 0 ? '\n' : '');
-    fs.writeFileSync(this.filePath, lines, 'utf-8');
+    try {
+      await fs.promises.writeFile(tempPath, lines, 'utf-8');
+      await fs.promises.rename(tempPath, this.filePath);
+    } catch (err) {
+      try {
+        if (fs.existsSync(tempPath)) {
+          await fs.promises.unlink(tempPath);
+        }
+      } catch {}
+      throw err;
+    }
   }
 
-  recordUserMessage(text: string): string {
+  async recordUserMessage(text: string): Promise<string> {
     const snapshot: UserMessageSnapshot = {
       id: randomUUID(),
       timestamp: Date.now(),
@@ -85,11 +104,11 @@ export class DiskJournalAdapter implements SessionJournal {
       text
     };
     this.snapshots.push(snapshot);
-    this.appendToDisk(snapshot);
+    await this.appendToDisk(snapshot);
     return snapshot.id;
   }
 
-  recordAgentStep(toolName: string, input: any, result: any, summary: string): string {
+  async recordAgentStep(toolName: string, input: any, result: any, summary: string): Promise<string> {
     const snapshot: AgentStepSnapshot = {
       id: randomUUID(),
       timestamp: Date.now(),
@@ -100,16 +119,16 @@ export class DiskJournalAdapter implements SessionJournal {
       summary
     };
     this.snapshots.push(snapshot);
-    this.appendToDisk(snapshot);
+    await this.appendToDisk(snapshot);
     return snapshot.id;
   }
 
-  rewindTo(snapshotId: string): void {
+  async rewindTo(snapshotId: string): Promise<void> {
     const idx = this.snapshots.findIndex(s => s.id === snapshotId);
     if (idx === -1) throw new Error(`Snapshot ${snapshotId} not found`);
     // Keep everything UP TO AND INCLUDING the target snapshot
     this.snapshots = this.snapshots.slice(0, idx + 1);
-    this.rewriteDisk();
+    await this.rewriteDisk();
   }
 
   getHistory(): JournalSnapshot[] {
@@ -153,8 +172,9 @@ export class DiskJournalAdapter implements SessionJournal {
         }
       } else if (actionInfo.toolName === 'keys' && finalInput.key) {
         workflowStep = { id, type: 'keypress', key: finalInput.key, onFailure: 'skip' };
-      } else if (actionInfo.toolName === 'extract' && finalInput.instruction) {
-        workflowStep = { id, type: 'extract', instruction: finalInput.instruction, onFailure: 'skip' };
+      } else if (actionInfo.toolName === 'extract') {
+        const instruction = finalInput.instruction || `Extract text from ${finalInput.selector || 'page'} (limit: ${finalInput.limit || 8000})`;
+        workflowStep = { id, type: 'extract', instruction, onFailure: 'skip' };
       }
 
       if (workflowStep) {

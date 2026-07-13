@@ -385,7 +385,7 @@ export interface RemoteCtrlAPI {
     agentStatus: (cb: (payload: AgentStatusPayload) => void) => () => void;
     agentLog: (cb: (payload: AgentLogPayload) => void) => () => void;
     pin: (cb: (pin: string) => void) => () => void;
-    workflowRecordedStep: (cb: (step: any) => void) => () => void;
+    workflowRecordedStep: (cb: (step: RecordedAgentStep) => void) => () => void;
     error: (cb: (message: string) => void) => () => void;
     webrtcSignal: (cb: (signal: unknown) => void) => () => void;
     captureMetadata: (cb: (meta: CaptureMetadata) => void) => () => void;

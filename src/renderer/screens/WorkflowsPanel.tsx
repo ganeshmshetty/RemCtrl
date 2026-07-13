@@ -16,7 +16,7 @@ import { useConnectionStore } from '../stores/useConnectionStore';
 
 export function WorkflowsPanel() {
   const { workflows, isLoading, error, loadWorkflows, deleteWorkflow } = useWorkflowStore();
-  const { openWorkflowEditor } = useUIStore();
+  const { openWorkflowEditor: onView } = useUIStore();
   
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
@@ -57,7 +57,7 @@ export function WorkflowsPanel() {
             key={wf.id}
             workflow={wf}
             confirmingDelete={confirmingDelete === wf.id}
-            onEdit={() => openWorkflowEditor(wf.id)}
+            onView={() => onView(wf.id)}
             onDelete={() => setConfirmingDelete(wf.id)}
             onConfirmDelete={() => handleDelete(wf.id)}
             onCancelDelete={() => setConfirmingDelete(null)}
@@ -71,7 +71,7 @@ export function WorkflowsPanel() {
 function WorkflowCard({
   workflow,
   confirmingDelete,
-  onEdit,
+  onView,
   onDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -127,7 +127,7 @@ function WorkflowCard({
           </div>
         </div>
         <div className="workflow-card-actions">
-          <button className="workflow-card-action-btn" onClick={onEdit} title="View">
+          <button className="workflow-card-action-btn" onClick={onView} title="View">
             <Eye size={14} />
           </button>
           {confirmingDelete ? (

@@ -7,6 +7,10 @@
 
 import { Locator } from 'playwright';
 
+type Element = any;
+type HTMLElement = any;
+type HTMLInputElement = any;
+
 /**
  * Computes a stable, deterministic selector for a given Playwright Locator.
  * It evaluates a priority chain inside the page to find the most robust locator
@@ -14,10 +18,11 @@ import { Locator } from 'playwright';
  * anchored to the nearest stable ancestor if all else fails.
  */
 export async function computeStableSelector(locator: Locator): Promise<string> {
-  return await locator.evaluate((el: any) => {
+  return await locator.evaluate((el: Element) => {
     const doc = el.ownerDocument;
     if (!doc) return '';
 
+    const htmlEl = el as HTMLElement;
     const tag = el.tagName.toLowerCase();
 
     // Helper to escape string for XPath
@@ -28,13 +33,14 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
     }
 
     // 1. Check for Unique ID
-    if (el.id) {
+    if (htmlEl.id) {
       try {
-        const idSel = `#${(globalThis as any).CSS.escape(el.id)}`;
+        const idSel = `#${(globalThis as any).CSS.escape(htmlEl.id)}`;
         if (doc.querySelectorAll(idSel).length === 1) {
           return idSel;
         }
-      } catch (e) {}
+      } catch {
+      }
     }
 
     // 2. Check for Stable Attributes
@@ -48,14 +54,16 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
           if (doc.querySelectorAll(attrSel).length === 1) {
             return attrSel;
           }
-        } catch (e) {}
+        } catch {
+        }
       }
     }
 
     // 3. Unique Text Content (for buttons/links/labels/spans/headings)
     if (['button', 'a', 'label', 'span', 'h1', 'h2', 'h3', 'div', 'p', 'li', 'td', 'th'].includes(tag)) {
-      const text = el.textContent?.trim();
-      if (text && text.length > 0 && text.length < 50 && !text.includes('\n')) {
+      const rawText = el.textContent?.trim();
+      if (rawText && rawText.length > 0 && rawText.length < 50 && !rawText.includes('\n')) {
+        const text = rawText.replace(/\s+/g, ' ');
         const escapedText = escapeXPathStr(text);
         const xpath = `//${tag}[normalize-space()=${escapedText}]`;
         try {
@@ -63,7 +71,8 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
           if (iterator.snapshotLength === 1) {
             return `xpath=${xpath}`;
           }
-        } catch (e) {}
+        } catch {
+        }
       }
     }
 
@@ -72,12 +81,13 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
     if (!role) {
       if (tag === 'button') role = 'button';
       else if (tag === 'a') role = 'link';
-      else if (tag === 'input' && el.type === 'checkbox') role = 'checkbox';
-      else if (tag === 'input' && el.type === 'radio') role = 'radio';
-      else if (tag === 'input' && ['text', 'search', 'email', 'password'].includes(el.type)) role = 'textbox';
+      else if (tag === 'input' && (el as HTMLInputElement).type === 'checkbox') role = 'checkbox';
+      else if (tag === 'input' && (el as HTMLInputElement).type === 'radio') role = 'radio';
+      else if (tag === 'input' && ['text', 'search', 'email', 'password'].includes((el as HTMLInputElement).type)) role = 'textbox';
     }
-    const accName = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.textContent?.trim();
-    if (role && accName && accName.length < 50 && !accName.includes('\n')) {
+    const rawAccName = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.textContent?.trim();
+    if (role && rawAccName && rawAccName.length < 50 && !rawAccName.includes('\n')) {
+      const accName = rawAccName.replace(/\s+/g, ' ');
       const escapedName = escapeXPathStr(accName);
       const escapedRole = escapeXPathStr(role);
       const xpath = `//*[(@role=${escapedRole} or local-name()="${tag}") and (normalize-space()=${escapedName} or @aria-label=${escapedName} or @placeholder=${escapedName} or @title=${escapedName})]`;
@@ -86,13 +96,14 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
         if (iterator.snapshotLength === 1) {
           return `xpath=${xpath}`;
         }
-      } catch (e) {}
+      } catch {
+      }
     }
 
     // Helper to get relative xpath from element to ancestor
-    function getRelativeXPath(element: any, ancestor: any): string {
+    function getRelativeXPath(element: Element, ancestor: Element): string {
       let path = '';
-      let curr: any = element;
+      let curr: Element | null = element;
       while (curr && curr !== ancestor) {
         const currTag = curr.tagName.toLowerCase();
         let index = 1;
@@ -109,7 +120,7 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
     }
 
     // 5. Anchored Relative XPath (anchored to nearest stable ancestor)
-    let ancestor: any = el.parentElement;
+    let ancestor: HTMLElement | null = htmlEl.parentElement;
     let anchorSelector = '';
     while (ancestor && ancestor.nodeType === 1) {
       if (ancestor.id) {
@@ -144,7 +155,7 @@ export async function computeStableSelector(locator: Locator): Promise<string> {
 
     // 6. Absolute Structural Fallback (CSS)
     let path = '';
-    let current: any = el;
+    let current: Element | null = el;
     while (current && current.nodeType === 1) {
       let index = 1;
       let sibling = current.previousElementSibling;

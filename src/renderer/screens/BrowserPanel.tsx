@@ -418,7 +418,9 @@ export function BrowserPanel() {
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onContextMenu={(e) => e.preventDefault()}
-                ref={(el) => el?.focus()}
+                ref={(el) => {
+                  el?.focus();
+                }}
               />
             )}
           </>

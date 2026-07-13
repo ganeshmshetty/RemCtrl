@@ -104,7 +104,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
   const recordedSteps: RecordedAgentStep[] = [];
   
   if (actions.length === 0 && session.journal) {
-    session.journal.recordUserMessage(instruction);
+    await session.journal.recordUserMessage(instruction);
   }
 
   const tools = createBrowserTools(page, () => ({
@@ -166,7 +166,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
         }
 
         for (const actionInfo of actionsToProcess) {
-          let finalInput = { ...actionInfo.input };
+          const finalInput = { ...actionInfo.input };
           if (actionInfo.toolName === 'act' && actionInfo.input.index !== undefined) {
             if (actionInfo.result?.resolvedSelector) {
               finalInput.selector = actionInfo.result.resolvedSelector;
@@ -183,7 +183,9 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
           if (!['think', 'notifyUser', 'done', 'askUser', 'wait'].includes(actionInfo.toolName)) {
             recordedSteps.push({ tool: actionInfo.toolName, summary: cleanSummary, input: finalInput });
             
-            const snapshotId = session.journal?.recordAgentStep(actionInfo.toolName, finalInput, actionInfo.result, cleanSummary) || randomUUID();
+            const snapshotId = session.journal
+              ? await session.journal.recordAgentStep(actionInfo.toolName, finalInput, actionInfo.result, cleanSummary)
+              : randomUUID();
             
             if (onRecordStep) {
               let workflowStep: any = null;

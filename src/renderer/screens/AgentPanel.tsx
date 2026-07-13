@@ -528,7 +528,10 @@ function ChatBubble({
             {isUser && onEditMessage && (
               <button 
                 className="agent-msg-edit-btn"
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  setEditText(msg.text);
+                  setIsEditing(true);
+                }}
                 title="Edit message & rewind"
                 style={{
                   position: 'absolute',

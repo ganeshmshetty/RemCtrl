@@ -8,7 +8,13 @@
  */
 
 import { ipcMain, desktopCapturer } from 'electron';
-import { RemoteMousePayloadSchema, RemoteKeyboardPayloadSchema } from '../../shared/schemas.js';
+import { 
+  RemoteMousePayloadSchema, 
+  RemoteKeyboardPayloadSchema,
+  LaunchBrowserPayloadSchema,
+  TabIdPayloadSchema,
+  NavigatePayloadSchema
+} from '../../shared/schemas.js';
 import { 
   launchBrowser, 
   closeBrowser, 
@@ -28,10 +34,10 @@ import {
 
 export function registerBrowserIpc() {
   ipcMain.handle('browser:launch', async (_e, startUrl?: unknown) => {
+    const parsed = LaunchBrowserPayloadSchema.safeParse(startUrl);
+    const url = parsed.success ? parsed.data : undefined;
     try {
-      const title = await launchBrowser(
-        typeof startUrl === 'string' ? startUrl : undefined,
-      );
+      const title = await launchBrowser(url);
       return title;
     } catch (err) {
       console.error('[ipc] Failed to launch browser:', err);
@@ -55,21 +61,23 @@ export function registerBrowserIpc() {
     const parsed = RemoteMousePayloadSchema.safeParse(payload);
     if (!parsed.success) {
       console.error('[ipc] Invalid mouse payload:', parsed.error);
-      return;
+      return { ok: false, error: `Invalid mouse payload: ${parsed.error.message}` };
     }
     const meta = getCaptureMetadata();
     if (meta) {
       await injectMouse(parsed.data, meta);
     }
+    return { ok: true };
   });
 
   ipcMain.handle('browser:injectKeyboard', async (_e, payload: unknown) => {
     const parsed = RemoteKeyboardPayloadSchema.safeParse(payload);
     if (!parsed.success) {
       console.error('[ipc] Invalid keyboard payload:', parsed.error);
-      return;
+      return { ok: false, error: `Invalid keyboard payload: ${parsed.error.message}` };
     }
     await injectKeyboard(parsed.data);
+    return { ok: true };
   });
 
   ipcMain.handle('browser:resetProfile', async () => {
@@ -82,10 +90,11 @@ export function registerBrowserIpc() {
   });
 
   ipcMain.handle('browser:switchTab', async (_e, tabId: unknown) => {
-    if (typeof tabId !== 'string' || !tabId) {
+    const parsed = TabIdPayloadSchema.safeParse(tabId);
+    if (!parsed.success) {
       return { ok: false, error: 'Invalid tabId: must be a non-empty string' };
     }
-    await switchTab(tabId);
+    await switchTab(parsed.data);
     return { ok: true };
   });
 
@@ -105,18 +114,20 @@ export function registerBrowserIpc() {
   });
 
   ipcMain.handle('browser:navigate', async (_e, url: unknown) => {
-    if (typeof url !== 'string' || !url) {
+    const parsed = NavigatePayloadSchema.safeParse(url);
+    if (!parsed.success) {
       return { ok: false, error: 'Invalid url: must be a non-empty string' };
     }
-    await navigate(url);
+    await navigate(parsed.data);
     return { ok: true };
   });
 
   ipcMain.handle('browser:closeTab', async (_e, tabId: unknown) => {
-    if (typeof tabId !== 'string' || !tabId) {
+    const parsed = TabIdPayloadSchema.safeParse(tabId);
+    if (!parsed.success) {
       return { ok: false, error: 'Invalid tabId: must be a non-empty string' };
     }
-    await closeTab(tabId);
+    await closeTab(parsed.data);
     return { ok: true };
   });
 

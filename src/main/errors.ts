@@ -149,6 +149,12 @@ export function extractError(err: unknown): {
 function isRetryableError(err: Error): boolean {
   const message = err.message.toLowerCase();
   
+  // Stagehand/Playwright specific (fatal checks first)
+  if (message.includes('page closed') || 
+      message.includes('context destroyed')) {
+    return false;
+  }
+
   // Network/timeout errors
   if (message.includes('timeout') || 
       message.includes('network') || 
@@ -170,12 +176,6 @@ function isRetryableError(err: Error): boolean {
       message.includes('503') ||
       message.includes('504')) {
     return true;
-  }
-
-  // Stagehand/Playwright specific
-  if (message.includes('page closed') || 
-      message.includes('context destroyed')) {
-    return false; // These are usually fatal
   }
 
   return false;
