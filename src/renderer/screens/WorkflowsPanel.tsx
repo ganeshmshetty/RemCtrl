@@ -97,7 +97,6 @@ function WorkflowCard({
       workflowRunId,
       workflowId: workflow.id,
       name: workflow.name,
-      startUrl: workflow.startUrl,
       steps: workflow.steps,
     };
 
@@ -153,11 +152,6 @@ function WorkflowCard({
 
       <div className="workflow-card-meta" style={{ display: 'flex', gap: 10 }}>
         <span>{workflow.steps.length} step{workflow.steps.length === 1 ? '' : 's'}</span>
-        {workflow.startUrl && (
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
-            {workflow.startUrl.replace(/^https?:\/\//, '')}
-          </span>
-        )}
       </div>
 
       <button

@@ -45,7 +45,6 @@ export interface LocalWorkflow {
   id: string;
   name: string;
   description?: string;
-  startUrl?: string;
   steps: WorkflowStep[];
   createdAt: number;
   updatedAt: number;
@@ -186,7 +185,6 @@ export interface AgentWorkflowBatchPayload {
   workflowRunId: string;
   workflowId: string;
   name: string;
-  startUrl?: string;
   steps: WorkflowStep[]; // WorkflowStep uses new StepType model
 }
 
@@ -304,6 +302,7 @@ export interface RemoteCtrlAPI {
     showMainWindow: () => Promise<void>;
     hideMiniWindow: () => Promise<void>;
     showMiniWindow: (hideMain?: boolean) => Promise<void>;
+    setIgnoreMouseEvents: (ignore: boolean) => Promise<void>;
   };
   host: {
     start: () => Promise<void>;
@@ -399,6 +398,8 @@ export interface RemoteCtrlAPI {
     firstLaunch: (cb: () => void) => () => void;
     startLocalSession: (cb: () => void) => () => void;
     globalShortcut: (cb: () => void) => () => void;
+    themeChanged: (cb: (theme: string) => void) => () => void;
+    agentStarted: (cb: (payload: { commandId: string; instruction: string }) => void) => () => void;
   };
 }
 

@@ -21,10 +21,6 @@ import { WorkflowEditorModal } from './screens/WorkflowEditorModal';
 import { useSettingsStore } from './stores/useWorkflowStore';
 
 export default function App() {
-  if (window.location.search.includes('mini=true')) {
-    return <MiniWindow />;
-  }
-
   const { role, setHostState, setControllerState, setPendingControllerId, setPin, setError } =
     useConnectionStore();
   const { handleAgentStatus, handleAgentLog, handleWorkflowRunStatus, handleWorkflowStepStatus, handleAgentCheckpoint } = useAgentStore();
@@ -88,10 +84,30 @@ export default function App() {
         window.RemoteCtrlAPI?.browser.launch();
         window.RemoteCtrlAPI?.app.showMiniWindow(true);
       }),
+      window.RemoteCtrlAPI.on.themeChanged((newTheme) => {
+        useSettingsStore.setState({ theme: newTheme as any });
+      }),
+      window.RemoteCtrlAPI.on.agentStarted((payload) => {
+        const store = useAgentStore.getState();
+        if (store.activeCommandId !== payload.commandId) {
+          store.startNewExecution('agent', payload.commandId, payload.instruction);
+          store.appendMessage({
+            id: `user-${payload.commandId}`,
+            sender: 'user',
+            type: 'prompt',
+            text: payload.instruction,
+            timestamp: Date.now(),
+          });
+        }
+      }),
     ];
 
     return () => unsubs.forEach((u) => u());
   }, []);
+
+  if (window.location.search.includes('mini=true')) {
+    return <MiniWindow />;
+  }
 
   return (
     <div className="app-shell">

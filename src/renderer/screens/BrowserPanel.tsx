@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight, RotateCw, X, Plus, Loader2, Copy, Check } fr
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useControllerWebRTC, useHostWebRTC } from '../hooks/useWebRTC';
+import { ChatInputBar } from './ChatInputBar';
 import type { TabInfo, AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, AgentCheckpointPayload } from '../../shared/types';
 
 function useLocalScreencast(isLocal: boolean) {
@@ -186,23 +187,11 @@ export function BrowserPanel() {
     const el = isLocal ? localCanvasRef.current : videoRef.current;
     if (!el) return { xPercent: 0, yPercent: 0 };
     const rect = el.getBoundingClientRect();
-    const isUninitCanvas = isLocal && (el as HTMLCanvasElement).width === 300 && (el as HTMLCanvasElement).height === 150;
-    const nativeW = isLocal
-      ? (isUninitCanvas ? 1280 : (el as HTMLCanvasElement).width || 1280)
-      : (el as HTMLVideoElement).videoWidth || 1280;
-    const nativeH = isLocal
-      ? (isUninitCanvas ? 800 : (el as HTMLCanvasElement).height || 800)
-      : (el as HTMLVideoElement).videoHeight || 800;
-    const scale = Math.min(rect.width / nativeW, rect.height / nativeH);
-    const renderedW = nativeW * scale;
-    const renderedH = nativeH * scale;
-    const offsetX = (rect.width - renderedW) / 2;
-    const offsetY = (rect.height - renderedH) / 2;
-    const relX = clientX - rect.left - offsetX;
-    const relY = clientY - rect.top - offsetY;
+    const relX = clientX - rect.left;
+    const relY = clientY - rect.top;
     return {
-      xPercent: Math.max(0, Math.min(1, relX / renderedW)),
-      yPercent: Math.max(0, Math.min(1, relY / renderedH)),
+      xPercent: Math.max(0, Math.min(1, relX / rect.width)),
+      yPercent: Math.max(0, Math.min(1, relY / rect.height)),
     };
   };
 
@@ -299,8 +288,9 @@ export function BrowserPanel() {
 
   return (
     <div className="browser-panel">
-      {/* Browser Nav / Tabs */}
-      {isConnected && tabs.length > 0 && (
+      <div className={`browser-window ${isTakeoverActive ? 'takeover-active' : ''}`}>
+        {/* Browser Nav / Tabs */}
+        {isConnected && tabs.length > 0 && (
         <div className="ctrl-toolbar">
           <div className="ctrl-tabs-row">
             <div className="ctrl-tabs">
@@ -440,7 +430,8 @@ export function BrowserPanel() {
           </div>
         )}
       </div>
+      </div>
+      <ChatInputBar />
     </div>
   );
 }
-

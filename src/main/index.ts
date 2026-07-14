@@ -117,14 +117,17 @@ function getOrCreateMiniWindow() {
   if (miniWindow && !miniWindow.isDestroyed()) return miniWindow;
 
   miniWindow = new BrowserWindow({
-    width: 440,
-    height: 320,
+    width: 600,
+    height: 400,
     frame: false,
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
-    backgroundColor: '#141415',
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    acceptFirstMouse: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -139,6 +142,9 @@ function getOrCreateMiniWindow() {
   } else {
     miniWindow.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { 'mini': 'true' } });
   }
+  
+  // Enforce macOS floating level so it stays above everything
+  miniWindow.setAlwaysOnTop(true, 'floating');
 
   miniWindow.on('closed', () => {
     miniWindow = null;
@@ -382,6 +388,12 @@ app.whenReady().then(async () => {
     win.show();
     win.focus();
     win.webContents.send('app:globalShortcut');
+  });
+
+  ipcMain.handle('app:setIgnoreMouseEvents', (_e, ignore: boolean) => {
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.setIgnoreMouseEvents(ignore, { forward: true });
+    }
   });
 
   // ── Auto Updater configuration (Commented out until Code Signing is setup) ──

@@ -63,7 +63,7 @@ export async function runWorkflow(
   onStepStatus: WorkflowStepStatusCb,
   onLog: WorkflowLogCb,
 ): Promise<void> {
-  const { workflowRunId, name, startUrl, steps } = payload;
+  const { workflowRunId, name, steps } = payload;
   if (activeSession?.isActive) {
     emitLog(onLog, 'info', 'Terminating previous workflow run before starting new execution...', '[Workflow]');
     activeSession.cancel();
@@ -103,16 +103,7 @@ export async function runWorkflow(
       });
     }
 
-    if (startUrl) {
-      let targetUrl = startUrl.trim();
-      if (!/^https?:\/\//i.test(targetUrl)) {
-        targetUrl = 'https://' + targetUrl;
-      }
-      emitLog(onLog, 'info', `Navigating to start URL: ${targetUrl}`, '[Workflow]');
-      await localPage.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch((e: Error) => {
-        emitLog(onLog, 'warn', `Start URL navigation warning: ${e.message}`, '[Workflow]');
-      });
-    }
+
 
     let currentStepId: string | null = steps[0]?.id ?? null;
     let transitions = 0;

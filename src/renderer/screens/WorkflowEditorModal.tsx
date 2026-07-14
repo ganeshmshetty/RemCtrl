@@ -169,7 +169,6 @@ export function WorkflowEditorModal() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [startUrl, setStartUrl] = useState('');
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -182,7 +181,6 @@ export function WorkflowEditorModal() {
     if (prefillWorkflow) {
       setName(prefillWorkflow.name ?? '');
       setDescription(prefillWorkflow.description ?? '');
-      setStartUrl(prefillWorkflow.startUrl ?? '');
       setSteps(prefillWorkflow.steps ?? [defaultStep()]);
 
     } else if (editingWorkflowId) {
@@ -190,13 +188,11 @@ export function WorkflowEditorModal() {
       if (wf) {
         setName(wf.name);
         setDescription(wf.description || '');
-        setStartUrl(wf.startUrl || '');
         setSteps(wf.steps || []);
       }
     } else {
       setName('');
       setDescription('');
-      setStartUrl('');
       setSteps([defaultStep()]);
     }
   }, [isWorkflowEditorOpen, editingWorkflowId, prefillWorkflow, workflows]);
@@ -213,7 +209,6 @@ export function WorkflowEditorModal() {
         id: editingWorkflowId || crypto.randomUUID(),
         name: name.trim(),
         description: description.trim(),
-        startUrl: startUrl.trim(),
         steps: steps,
         source: prefillWorkflow?.source ?? existing?.source ?? (isEditing ? undefined : ('manual' as const)),
         createdAt: now,
@@ -256,24 +251,13 @@ export function WorkflowEditorModal() {
 
         {/* ── Meta fields ── */}
         <div className="wf-editor-meta">
-          <div className="wf-editor-field" style={{ flex: 2 }}>
+          <div className="wf-editor-field">
             <label>Name</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Daily Login"
               autoFocus={!isAiRecorded}
-              disabled={isEditing}
-            />
-          </div>
-          <div className="wf-editor-field" style={{ flex: 1 }}>
-            <label>
-              Start URL <span style={{ opacity: 0.4 }}>(optional)</span>
-            </label>
-            <input
-              value={startUrl}
-              onChange={(e) => setStartUrl(e.target.value)}
-              placeholder="https://…"
               disabled={isEditing}
             />
           </div>

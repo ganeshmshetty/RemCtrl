@@ -112,7 +112,6 @@ async function handleExtensionMessage(ws: WebSocket, msg: { type: string; payloa
         id: payload.id || crypto.randomUUID(),
         name: payload.name || `Recorded Workflow ${new Date().toLocaleDateString()}`,
         description: payload.description || 'Recorded directly from Chrome Extension',
-        startUrl: payload.startUrl || 'about:blank',
         steps: Array.isArray(payload.steps) ? payload.steps : [],
         createdAt: now,
         updatedAt: now,
@@ -220,7 +219,7 @@ async function handleExtensionMessage(ws: WebSocket, msg: { type: string; payloa
 
       // Launch browser
       try {
-        await launchBrowser(workflow.startUrl || 'about:blank');
+        await launchBrowser();
       } catch (err) {
         isExecutionStarting = false;
         ws.send(JSON.stringify({
@@ -236,7 +235,6 @@ async function handleExtensionMessage(ws: WebSocket, msg: { type: string; payloa
         workflowRunId,
         workflowId: workflow.id,
         name: workflow.name,
-        startUrl: workflow.startUrl,
         steps: workflow.steps,
       };
 

@@ -53,7 +53,6 @@ export function ConnectionPlaceholder() {
         workflowRunId,
         workflowId: workflow.id,
         name: workflow.name,
-        startUrl: workflow.startUrl,
         steps: workflow.steps,
       });
       if (res && res.ok) {

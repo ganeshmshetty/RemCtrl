@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     showMainWindow: () => ipcRenderer.invoke('app:showMainWindow'),
     hideMiniWindow: () => ipcRenderer.invoke('app:hideMiniWindow'),
     showMiniWindow: (hideMain) => ipcRenderer.invoke('app:showMiniWindow', hideMain),
+    setIgnoreMouseEvents: (ignore) => ipcRenderer.invoke('app:setIgnoreMouseEvents', ignore),
   },
 
   // ── Settings ──────────────────────────────────────────────────────────────
@@ -219,6 +220,16 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       const listener = () => cb();
       ipcRenderer.on('app:globalShortcut', listener);
       return () => ipcRenderer.removeListener('app:globalShortcut', listener);
+    },
+    themeChanged: (cb) => {
+      const listener = (_event, theme) => cb(theme);
+      ipcRenderer.on('settings:themeChanged', listener);
+      return () => ipcRenderer.removeListener('settings:themeChanged', listener);
+    },
+    agentStarted: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on('agent:started', listener);
+      return () => ipcRenderer.removeListener('agent:started', listener);
     },
   },
 });

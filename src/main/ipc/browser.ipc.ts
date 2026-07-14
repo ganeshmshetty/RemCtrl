@@ -7,7 +7,7 @@
  * Relations: Direct integration with `browser-manager` and `desktopCapturer` to facilitate WebRTC frame sync and user-driven interaction loop.
  */
 
-import { ipcMain, desktopCapturer } from 'electron';
+import { ipcMain, desktopCapturer, BrowserWindow } from 'electron';
 import { 
   RemoteMousePayloadSchema, 
   RemoteKeyboardPayloadSchema,
@@ -29,11 +29,13 @@ import {
   reload,
   navigate,
   closeTab,
-  newTab
+  newTab,
+  setActiveSourceWindow
 } from '../browser-manager.js';
 
 export function registerBrowserIpc() {
   ipcMain.handle('browser:launch', async (_e, startUrl?: unknown) => {
+    setActiveSourceWindow(BrowserWindow.fromWebContents(_e.sender));
     const parsed = LaunchBrowserPayloadSchema.safeParse(startUrl);
     const url = parsed.success ? parsed.data : undefined;
     try {
@@ -90,6 +92,7 @@ export function registerBrowserIpc() {
   });
 
   ipcMain.handle('browser:switchTab', async (_e, tabId: unknown) => {
+    setActiveSourceWindow(BrowserWindow.fromWebContents(_e.sender));
     const parsed = TabIdPayloadSchema.safeParse(tabId);
     if (!parsed.success) {
       return { ok: false, error: 'Invalid tabId: must be a non-empty string' };
@@ -114,6 +117,7 @@ export function registerBrowserIpc() {
   });
 
   ipcMain.handle('browser:navigate', async (_e, url: unknown) => {
+    setActiveSourceWindow(BrowserWindow.fromWebContents(_e.sender));
     const parsed = NavigatePayloadSchema.safeParse(url);
     if (!parsed.success) {
       return { ok: false, error: 'Invalid url: must be a non-empty string' };
@@ -131,7 +135,8 @@ export function registerBrowserIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle('browser:newTab', async () => {
+  ipcMain.handle('browser:newTab', async (_e) => {
+    setActiveSourceWindow(BrowserWindow.fromWebContents(_e.sender));
     await newTab();
     return { ok: true };
   });

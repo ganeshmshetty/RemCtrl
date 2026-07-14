@@ -41,7 +41,6 @@ export const LocalWorkflowSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
-  startUrl: z.string().max(2048).optional(),
   steps: z.array(WorkflowStepSchema).max(100),
   createdAt: z.number().int().positive(),
   updatedAt: z.number().int().positive(),
@@ -88,7 +87,6 @@ export const ExtSaveWorkflowPayloadSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
   description: z.string().optional(),
-  startUrl: z.string().optional(),
   steps: z.array(WorkflowStepSchema).optional(),
 });
 
@@ -148,7 +146,6 @@ export const AgentWorkflowBatchSchema = z.object({
   workflowRunId: z.string().uuid(),
   workflowId: z.string().min(1),
   name: z.string().min(1),
-  startUrl: z.string().optional(),
   steps: z.array(WorkflowStepSchema).min(1).max(100),
 });
 

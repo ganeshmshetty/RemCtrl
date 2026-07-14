@@ -8,13 +8,13 @@
  * Key exports: TopNav (function component).
  */
 
-import { Settings } from 'lucide-react';
+import { Settings, PanelRight } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 
 export function TopNav() {
   const { role, hostState, controllerState, pin, reset } = useConnectionStore();
-  const { openSettings } = useUIStore();
+  const { openSettings, isSidebarOpen, toggleSidebar } = useUIStore();
 
   const isConnected = 
     hostState === 'SESSION_ACTIVE' || 
@@ -88,6 +88,15 @@ export function TopNav() {
             <div className="connection-pill-dot"></div>
             <span>Not connected</span>
           </div>
+        )}
+        {role !== 'idle' && (
+          <button 
+            className={`icon-btn ${isSidebarOpen ? 'active' : ''}`} 
+            onClick={toggleSidebar} 
+            title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+          >
+            <PanelRight size={15} style={{ color: isSidebarOpen ? 'var(--accent)' : 'inherit' }} />
+          </button>
         )}
         <button className="icon-btn" onClick={handleOpenSettings} title="Settings">
           <Settings size={15} />

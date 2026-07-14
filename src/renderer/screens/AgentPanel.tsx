@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Send, Bot, Zap, StopCircle, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2, ChevronDown, Plus, Edit3, Keyboard, ArrowUpDown } from 'lucide-react';
+import { Bot, Zap, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2, ChevronDown, Edit3, Keyboard, ArrowUpDown } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
@@ -16,14 +16,12 @@ import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 
-function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[]; startUrl: string } {
+function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[] } {
   const workflowSteps: WorkflowStep[] = [];
-  let startUrl = '';
 
   for (const step of steps) {
     if (step.tool === 'goto') {
       const url = String(step.input.url ?? '');
-      if (!startUrl) startUrl = url;
       workflowSteps.push({ id: crypto.randomUUID(), type: 'navigate', url, onFailure: 'stop' });
     } else if (step.tool === 'act') {
       const action = String(step.input.action ?? 'click');
@@ -50,37 +48,27 @@ function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: Workflo
     }
   }
 
-  return { steps: workflowSteps, startUrl };
+  return { steps: workflowSteps };
 }
 
 export function AgentPanel() {
   const { 
-    chatHistory, isTakeoverActive, setTakeoverActive, 
+    chatHistory, setTakeoverActive,
     workflowRunState, workflowRunId, workflowStepStatuses,
     agentStatus, currentAction
   } = useAgentStore();
   
   const { role, controllerState, hostState, sendData } = useConnectionStore();
-  const [prompt, setPrompt] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   
-  const isConnected = 
-    role === 'local' ||
-    hostState === 'SESSION_ACTIVE' || 
-    hostState === 'AGENT_EXECUTING' || 
-    hostState === 'HUMAN_TAKEOVER' ||
-    controllerState === 'SESSION_ACTIVE' ||
-    controllerState === 'CONTROLLING_REMOTELY';
+
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, workflowRunState]);
 
-  function handleSendPrompt(e: React.FormEvent) {
-    e.preventDefault();
-    const text = prompt.trim();
-    if (!text || !isConnected) return;
-
+  function handleSendPrompt(text: string) {
+    if (!text) return;
     const commandId = crypto.randomUUID();
     useAgentStore.getState().startNewExecution('agent', commandId, text);
     useAgentStore.getState().appendMessage({
@@ -104,17 +92,9 @@ export function AgentPanel() {
     } else if (hostState !== 'IDLE' || role === 'local') {
       window.RemoteCtrlAPI?.browser.startAgent(payload);
     }
-
-    setPrompt('');
   }
 
-  function handleCancelAgent() {
-    if (controllerState !== 'IDLE' && sendData) {
-      sendData({ type: 'AGENT_PROMPT', version: '1.0', timestamp: Date.now(), payload: { commandId: '__cancel__', action: 'act', instruction: '' } }, true);
-    } else if (hostState !== 'IDLE' || role === 'local') {
-      window.RemoteCtrlAPI?.browser.cancelAgent();
-    }
-  }
+
 
   function handleCheckpointResponse(checkpointId: string, selectedOptionId: string) {
     if (controllerState !== 'IDLE' && sendData) {
@@ -211,31 +191,30 @@ export function AgentPanel() {
 
         {chatHistory.length === 0 && workflowRunState === 'idle' && (
           <div className="agent-chat-empty">
-            <Bot size={32} strokeWidth={1} style={{ opacity: 0.3, marginBottom: 12 }} />
             <div style={{ fontWeight: 500, fontSize: 16 }}>Agent is ready</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, marginBottom: 24 }}>What would you like to do?</div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 300 }}>
               <button 
                 className="btn btn-ghost" 
-                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)' }}
-                onClick={() => setPrompt('Go to hackernews and find the top story about AI')}
+                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)', gap: '8px' }}
+                onClick={() => handleSendPrompt('Go to hackernews and find the top story about AI')}
               >
-                Find top AI story on HackerNews
+                <Globe size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Find top AI story on HackerNews
               </button>
               <button 
                 className="btn btn-ghost" 
-                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)' }}
-                onClick={() => setPrompt('Go to google flights and find a weekend trip from NYC to MIA')}
+                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)', gap: '8px' }}
+                onClick={() => handleSendPrompt('Go to google flights and find a weekend trip from NYC to MIA')}
               >
-                Search flights to Miami
+                <MousePointer size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Search flights to Miami
               </button>
               <button 
                 className="btn btn-ghost" 
-                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)' }}
-                onClick={() => setPrompt('Extract the main article text from this page')}
+                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)', gap: '8px' }}
+                onClick={() => handleSendPrompt('Extract the main article text from this page')}
               >
-                Extract article text
+                <FileText size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Extract article text
               </button>
             </div>
           </div>
@@ -271,12 +250,11 @@ export function AgentPanel() {
             onClick={() => {
               const { lastRecordedSteps, lastCompletedPrompt } = useAgentStore.getState();
               const { openWorkflowEditorWithData } = useUIStore.getState();
-              const { steps, startUrl } = convertAgentRunToWorkflow(lastRecordedSteps);
+              const { steps } = convertAgentRunToWorkflow(lastRecordedSteps);
               const goal = lastCompletedPrompt ?? '';
               openWorkflowEditorWithData({
                 name: goal.slice(0, 50) + (goal.length > 50 ? '...' : ''),
                 description: goal,
-                startUrl,
                 steps,
                 source: 'ai_recorded',
               });
@@ -289,65 +267,6 @@ export function AgentPanel() {
         <div ref={chatEndRef} />
       </div>
 
-      <div className="agent-input-area">
-        <div className="agent-controls">
-          <button 
-            className="agent-control-btn"
-            onClick={() => useAgentStore.getState().startNewChat()}
-            title="Start New Chat"
-          >
-            <Plus size={14} /> New
-          </button>
-          <button 
-            className={`agent-control-btn ${isTakeoverActive ? 'active' : ''}`}
-            onClick={() => {
-              const newActive = !isTakeoverActive;
-              setTakeoverActive(newActive);
-              window.RemoteCtrlAPI?.browser.setTakeoverActive?.(newActive);
-            }}
-            disabled={!isConnected}
-          >
-            {isTakeoverActive ? <Hand size={14} /> : <MousePointer size={14} />}
-            {isTakeoverActive ? 'Release' : 'Takeover'}
-          </button>
-        </div>
-
-        <form onSubmit={handleSendPrompt} className="agent-prompt-form">
-          <textarea
-            className="agent-prompt-input"
-            placeholder={isConnected ? "What should I do?" : "Connect to a browser first..."}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            disabled={!isConnected}
-            rows={1}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendPrompt(e as any);
-              }
-            }}
-          />
-          {agentStatus === 'running' ? (
-            <button
-              type="button"
-              className="agent-prompt-send danger"
-              onClick={handleCancelAgent}
-              title="Stop execution"
-            >
-              <StopCircle size={18} />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="agent-prompt-send"
-              disabled={!prompt.trim() || !isConnected}
-              title="Send prompt"
-            >
-              <Send size={18} />
-            </button>
-          )}
-        </form>
-      </div>
     </div>
   );
 }

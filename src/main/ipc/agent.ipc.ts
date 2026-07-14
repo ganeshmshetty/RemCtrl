@@ -54,6 +54,11 @@ export function registerAgentIpc(_win: BrowserWindow) {
     }
 
     try {
+      broadcast('agent:started', {
+        commandId: payload.commandId,
+        instruction: payload.instruction,
+      });
+
       await runAgent(
         payload.commandId,
         payload.action,

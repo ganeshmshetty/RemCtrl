@@ -20,10 +20,13 @@ import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInf
 import { startScreencast, stopScreencast } from './screencast.js';
 import { getBrowserMode, getHeadlessMode, getUseVisionCUA, BROWSER_PROFILE_DIR, getBrowserProfileDir, isProfileInitialized, markProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
 import { closeBrowser as closeAutomationPool } from './automation/browser-pool.js';
-import type { BrowserWindow } from 'electron';
+import { moveCursorTo, triggerRipple } from './automation/cursor-overlay.js';
+import { BrowserWindow } from 'electron';
 import { execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import net from 'net';
+import os from 'os';
+import path from 'path';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
 
@@ -66,6 +69,11 @@ export function setBrowserNotifyWindow(win: BrowserWindow) {
   notifyWindow = win;
 }
 
+let activeSourceWindow: BrowserWindow | null = null;
+export function setActiveSourceWindow(win: BrowserWindow | null) {
+  activeSourceWindow = win;
+}
+
 let tabsChangeTimeout: NodeJS.Timeout | null = null;
 function emitTabsChange() {
   if (tabsChangeTimeout) clearTimeout(tabsChangeTimeout);
@@ -79,10 +87,22 @@ function emitTabsChange() {
 async function forceTabActivation(page: Page) {
   // 1. Steal OS focus to un-throttle Chromium's rendering pipeline
   await page.bringToFront().catch(() => {});
-  // 2. Instantly reclaim focus for our Electron app
-  if (notifyWindow && !notifyWindow.isDestroyed()) {
-    notifyWindow.show();
+  
+  // 2. Instantly reclaim focus for our Electron app explicitly to the source that requested it
+  if (activeSourceWindow && !activeSourceWindow.isDestroyed() && activeSourceWindow.isVisible()) {
+    activeSourceWindow.focus();
+    setTimeout(() => {
+      if (activeSourceWindow && !activeSourceWindow.isDestroyed() && activeSourceWindow.isVisible()) {
+        activeSourceWindow.focus();
+      }
+    }, 100);
+  } else if (notifyWindow && !notifyWindow.isDestroyed() && notifyWindow.isVisible()) {
     notifyWindow.focus();
+    setTimeout(() => {
+      if (notifyWindow && !notifyWindow.isDestroyed() && notifyWindow.isVisible()) {
+        notifyWindow.focus();
+      }
+    }, 100);
   }
 }
 
@@ -143,8 +163,13 @@ export async function newTab(): Promise<void> {
     try {
       if (activePageEntry) {
         const pagePromise = context.waitForEvent('page');
-        await activePageEntry.page.evaluate("window.open('about:blank', '_blank'); null;");
+        const client = await context.newCDPSession(activePageEntry.page);
+        await client.send('Target.createTarget', {
+          url: 'about:blank',
+          background: true,
+        });
         await pagePromise;
+        await client.detach().catch(() => {});
       } else {
         const page = await context.newPage();
         await page.goto('about:blank');
@@ -280,6 +305,114 @@ function isEmptyProfile(profileDir = BROWSER_PROFILE_DIR): boolean {
   return !fs.existsSync(prefsPath);
 }
 
+function getChromeUserDataDirs(): string[] {
+  const home = os.homedir();
+  const candidates: string[] = [];
+
+  if (process.platform === 'darwin') {
+    const base = path.join(home, 'Library', 'Application Support');
+    candidates.push(
+      path.join(base, 'Google/Chrome'),
+      path.join(base, 'Google/Chrome Canary'),
+      path.join(base, 'Chromium'),
+      path.join(base, 'BraveSoftware/Brave-Browser')
+    );
+  } else if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    candidates.push(
+      path.join(localAppData, 'Google/Chrome/User Data'),
+      path.join(localAppData, 'Google/Chrome SxS/User Data'),
+      path.join(localAppData, 'Chromium/User Data'),
+      path.join(localAppData, 'BraveSoftware/Brave-Browser/User Data')
+    );
+  } else {
+    // Linux
+    const base = path.join(home, '.config');
+    candidates.push(
+      path.join(base, 'google-chrome'),
+      path.join(base, 'google-chrome-unstable'),
+      path.join(base, 'chromium'),
+      path.join(base, 'BraveSoftware/Brave-Browser')
+    );
+  }
+
+  return candidates.filter(dir => fs.existsSync(dir));
+}
+
+async function isPortOpen(port: number, timeout = 1000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeout);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, '127.0.0.1');
+  });
+}
+
+async function discoverChromeCdpUrl(): Promise<string> {
+  const dataDirs = getChromeUserDataDirs();
+  for (const dataDir of dataDirs) {
+    const portFilePath = path.join(dataDir, 'DevToolsActivePort');
+    if (!fs.existsSync(portFilePath)) continue;
+
+    try {
+      const content = fs.readFileSync(portFilePath, 'utf-8').trim();
+      const lines = content.split('\n');
+      if (lines.length === 0) continue;
+
+      const port = parseInt(lines[0].trim(), 10);
+      const wsPath = lines[1] ? lines[1].trim() : '/devtools/browser';
+
+      if (await isPortOpen(port)) {
+        console.log(`[browser] Discovered active Chrome debugging port ${port} from ${portFilePath}`);
+        return `ws://127.0.0.1:${port}${wsPath}`;
+      }
+    } catch (e) {
+      console.warn(`[browser] Failed to read/verify port file ${portFilePath}:`, e);
+      continue;
+    }
+  }
+
+  // Fallback to standard 9222 port check
+  if (await isPortOpen(9222)) {
+    try {
+      const wsUrl = await resolveCdpWsUrl('http://127.0.0.1:9222', 2000);
+      return wsUrl;
+    } catch {
+      return 'ws://127.0.0.1:9222/devtools/browser';
+    }
+  }
+
+  // Attempt to open the remote debugging settings page in the running Chrome browser
+  const executablePath = findSystemChrome();
+  if (executablePath) {
+    try {
+      spawn(executablePath, ['chrome://inspect/#remote-debugging'], {
+        detached: true,
+        stdio: 'ignore'
+      }).unref();
+    } catch (e) {
+      console.warn('[browser] Failed to open chrome://inspect settings page:', e);
+    }
+  }
+
+  throw new Error(
+    'Could not discover a running Chrome instance with remote debugging enabled.\n\n' +
+    'We have opened "chrome://inspect/#remote-debugging" in your Chrome browser.\n' +
+    'Please tick the checkbox "Allow remote debugging for this browser instance" to enable it, and then try connecting again.'
+  );
+}
+
 export async function launchBrowser(startUrl = 'https://www.google.com'): Promise<string> {
   if (browser) {
     console.log('[browser] Playwright already running, reusing');
@@ -290,18 +423,19 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 
   if (mode === 'local_chrome') {
     try {
-      console.log('[browser] Attempting to connect to Local Chrome on port 9222...');
-      browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+      console.log('[browser] Auto-discovering running debug Chrome...');
+      cdpWsUrl = await discoverChromeCdpUrl();
+      console.log(`[browser] Connecting to discovered CDP endpoint: ${cdpWsUrl}`);
+
+      browser = await chromium.connectOverCDP(cdpWsUrl);
       // Use existing default context
       context = browser.contexts()[0];
       if (!context) {
          context = await browser.newContext();
       }
-      // Resolve the actual ws:// debugger URL for Stagehand
-      cdpWsUrl = await resolveCdpWsUrl('http://localhost:9222');
-    } catch (err) {
-      console.error('[browser] Failed to connect to local Chrome. Make sure it is running with --remote-debugging-port=9222', err);
-      throw new Error('Failed to connect to local Chrome on port 9222.');
+    } catch (err: any) {
+      console.error('[browser] Failed to connect to local Chrome:', err.message);
+      throw new Error(err.message);
     }
   } else {
     // ── Internal mode: persistent profile ───────────────────────────────────
@@ -365,6 +499,10 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
           '--window-position=100,100',
           '--no-first-run',
           '--no-default-browser-check',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--test-type',
         ];
         if (launchHeadless) {
           args.push('--headless=new');
@@ -404,6 +542,10 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
           '--window-position=100,100',
           '--no-first-run',
           '--no-default-browser-check',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--test-type',
         ],
         viewport: { width, height },
       });
@@ -547,6 +689,9 @@ export async function injectMouse(payload: RemoteMousePayload, meta: CaptureMeta
   const x = payload.xPercent * meta.viewportWidth;
   const y = payload.yPercent * meta.viewportHeight;
 
+  // Fire-and-forget: visually move the agent's custom cursor
+  moveCursorTo(activePageEntry.page, x, y).catch(() => {});
+
   if (payload.action === 'move') {
     await activePageEntry.page.mouse.move(x, y);
   } else if (payload.action === 'down') {
@@ -556,6 +701,7 @@ export async function injectMouse(payload: RemoteMousePayload, meta: CaptureMeta
     await activePageEntry.page.mouse.move(x, y);
     await activePageEntry.page.mouse.up({ button: payload.button || 'left' });
   } else if (payload.action === 'click') {
+    triggerRipple(activePageEntry.page, x, y).catch(() => {});
     await activePageEntry.page.mouse.click(x, y, { button: payload.button || 'left' });
   } else if (payload.action === 'scroll' && payload.deltaY) {
     await activePageEntry.page.mouse.move(x, y);

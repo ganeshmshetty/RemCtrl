@@ -8,14 +8,16 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { useConnectionStore } from '../stores/useConnectionStore';
+import { useUIStore } from '../stores/useUIStore';
 import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';
-import { useConnectionStore } from '../stores/useConnectionStore';
 
 export function ControllerSession() {
   const { role } = useConnectionStore();
-  const [rightPanelWidth, setRightPanelWidth] = useState(380);
+  const [rightPanelWidth, setRightPanelWidth] = useState(384);
   const isResizing = useRef(false);
+  const { isSidebarOpen } = useUIStore();
 
   useEffect(() => {
     if (role === 'idle') return;
@@ -46,7 +48,7 @@ export function ControllerSession() {
     <>
       <BrowserPanel />
 
-      {role !== 'idle' && (
+      {role !== 'idle' && isSidebarOpen && (
         <>
           <div 
             className="drag-handle-vertical"

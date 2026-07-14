@@ -7,7 +7,7 @@
  * Relations: Validates payloads via shared Zod schemas (e.g. `SetApiKeySchema`, `BrowserModeSchema`) and integrates with storage handlers.
  */
 
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, BrowserWindow } from 'electron';
 import {
   SetApiKeySchema,
   SetSignalingUrlSchema,
@@ -222,6 +222,9 @@ export function registerSettingsIpc() {
   ipcMain.handle('settings:setTheme', async (_e, theme: unknown) => {
     const parsed = SetThemeSchema.parse({ theme });
     setTheme(parsed.theme);
+    BrowserWindow.getAllWindows().forEach((w) => {
+      if (!w.isDestroyed()) w.webContents.send('settings:themeChanged', parsed.theme);
+    });
   });
 
   ipcMain.handle('settings:getGlobalShortcut', async () => getGlobalShortcut());
