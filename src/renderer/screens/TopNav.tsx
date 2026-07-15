@@ -11,6 +11,7 @@
 import { Command, PanelRight, Settings } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
+import * as Tooltip from '@radix-ui/react-tooltip';
 
 export function TopNav() {
   const { role, hostState, controllerState, pin, reset } = useConnectionStore();
@@ -68,48 +69,70 @@ export function TopNav() {
               <div className="connection-pill-dot connected"></div>
               <span>Local session</span>
             </div>
-            <button
-              className="top-nav-mini-btn"
-              onClick={() => window.RemoteCtrlAPI?.app.showMiniWindow(true)}
-              title="Switch to Mini Prompt Window"
-            >
-              Mini Window ↗
-            </button>
-            <button 
-              className="top-nav-stop-btn"
-              onClick={handleDisconnect}
-              title="Stop Local Session"
-            >
-              Stop
-            </button>
+            <NavTooltip text="Switch to Mini Prompt Window">
+              <button
+                className="top-nav-mini-btn"
+                onClick={() => window.RemoteCtrlAPI?.app.showMiniWindow(true)}
+              >
+                Mini Window ↗
+              </button>
+            </NavTooltip>
+            <NavTooltip text="Stop Local Session">
+              <button 
+                className="top-nav-stop-btn"
+                onClick={handleDisconnect}
+              >
+                Stop
+              </button>
+            </NavTooltip>
           </div>
         ) : isConnected ? (
           <div className="connection-pill">
             <div className="connection-pill-dot connected"></div>
             <span className="connection-pill-label">Connected</span>
             <span className="connection-pill-pin">{pin}</span>
-            <button 
-              className="disconnect-btn"
-              onClick={handleDisconnect}
-              title="Disconnect"
-            >
-              Disconnect
-            </button>
+            <NavTooltip text="Disconnect">
+              <button 
+                className="disconnect-btn"
+                onClick={handleDisconnect}
+              >
+                Disconnect
+              </button>
+            </NavTooltip>
           </div>
         ) : null}
         {role !== 'idle' && (
-          <button 
-            className={`icon-btn ${isSidebarOpen ? 'active' : ''}`} 
-            onClick={toggleSidebar} 
-            title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
-          >
-            <PanelRight size={15} style={{ color: isSidebarOpen ? 'var(--accent)' : 'inherit' }} />
-          </button>
+          <NavTooltip text={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}>
+            <button 
+              className={`icon-btn ${isSidebarOpen ? 'active' : ''}`} 
+              onClick={toggleSidebar} 
+            >
+              <PanelRight size={15} style={{ color: isSidebarOpen ? 'var(--accent)' : 'inherit' }} />
+            </button>
+          </NavTooltip>
         )}
-        <button className="icon-btn" onClick={handleOpenSettings} title="Settings">
-          <Settings size={15} />
-        </button>
+        <NavTooltip text="Settings">
+          <button className="icon-btn" onClick={handleOpenSettings}>
+            <Settings size={15} />
+          </button>
+        </NavTooltip>
       </div>
     </div>
+  );
+}
+
+function NavTooltip({ text, children }: { text: string; children: React.ReactNode }) {
+  return (
+    <Tooltip.Root delayDuration={0}>
+      <Tooltip.Trigger asChild>
+        {children}
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="top-nav-tooltip" sideOffset={5} side="bottom">
+          {text}
+          <Tooltip.Arrow className="top-nav-tooltip-arrow" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 }

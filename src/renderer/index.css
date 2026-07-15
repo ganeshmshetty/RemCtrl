@@ -7,9 +7,7 @@
  * and structural layout classes (such as .app-shell, .main-content, and .browser-panel) that style the application container structure.
  */
 
-@import "tailwindcss";
-
-/* ─── Design Tokens ─── */
+/* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
   --bg-base: #141415;
   --bg-surface: #1c1c1e;
@@ -173,6 +171,11 @@ code, pre, kbd {
 .animate-spin      { animation: spin 0.8s linear infinite; }
 .animate-pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
 .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+@keyframes select-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
 .animate-pop-in { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; display: inline-block; }
 
 /* ─── Drag Region (macOS titlebar) ─── */
@@ -255,6 +258,34 @@ code, pre, kbd {
 .first-launch-banner button:hover {
   color: var(--text-primary);
   background: var(--bg-overlay);
+}
+
+/* ─── Radix Context Menu ─── */
+.context-menu-content {
+  min-width: 180px;
+  background-color: var(--bg-surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 5px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  animation: select-in 100ms cubic-bezier(0, 0, 0.2, 1);
+  z-index: 1000;
+}
+
+.context-menu-item {
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+
+.context-menu-item:hover,
+.context-menu-item[data-highlighted] {
+  background-color: var(--accent);
+  color: white;
 }
 
 /* ─── Buttons ─── */

@@ -15,6 +15,7 @@ import { useUIStore } from '../stores/useUIStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import * as Accordion from '@radix-ui/react-accordion';
 import './AgentPanel.css';
 
 function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[] } {
@@ -119,11 +120,11 @@ export function AgentPanel() {
     const rendered: React.ReactNode[] = [];
     let currentLogGroup: ChatMessage[] = [];
 
-    const flushLogs = (key: string) => {
-      if (currentLogGroup.length > 0) {
+    const flushLogs = (key: string, isLast = false) => {
+      if (currentLogGroup.length > 0 || (isLast && agentStatus === 'running')) {
         const logs = [...currentLogGroup];
         rendered.push(
-          <CollapsableLogs key={key} logs={logs} agentStatus={agentStatus} />
+          <CollapsableLogs key={key} logs={logs} agentStatus={isLast ? agentStatus : 'idle'} currentAction={isLast ? currentAction : undefined} />
         );
         currentLogGroup = [];
       }
@@ -165,7 +166,7 @@ export function AgentPanel() {
         );
       }
     }
-    flushLogs('log-group-end');
+    flushLogs('log-group-end', true);
     return rendered;
   };
 
@@ -222,28 +223,6 @@ export function AgentPanel() {
         )}
 
         {renderChatHistory()}
-        
-        {agentStatus === 'running' && (
-          <div
-            className="agent-executing-status"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 14px',
-              background: 'var(--accent-glow)',
-              border: '1px solid var(--accent)',
-              borderRadius: 'var(--radius)',
-              color: 'var(--text-primary)',
-              fontSize: 12,
-              fontWeight: 500,
-              margin: '8px 0',
-            }}
-          >
-            <Loader2 className="animate-spin" size={14} style={{ color: 'var(--accent)' }} />
-            <span>{currentAction || 'Executing task...'}</span>
-          </div>
-        )}
         
         {chatHistory.length > 0 && chatHistory[chatHistory.length - 1].type === 'status' && (
           <button 
@@ -479,7 +458,7 @@ function ChatBubble({
   );
 }
 
-function CollapsableLogs({ logs, agentStatus }: { logs: ChatMessage[]; agentStatus: string }) {
+function CollapsableLogs({ logs, agentStatus, currentAction }: { logs: ChatMessage[]; agentStatus: string; currentAction?: string | null }) {
   const [isOpen, setIsOpen] = useState(agentStatus === 'running');
 
   useEffect(() => {
@@ -488,39 +467,50 @@ function CollapsableLogs({ logs, agentStatus }: { logs: ChatMessage[]; agentStat
     }
   }, [agentStatus]);
 
+  const isRunning = agentStatus === 'running';
+
   return (
     <div className="agent-msg-logs-collapsable animate-fade-in" style={{ margin: '6px 0', width: '100%' }}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          background: 'none',
-          border: 'none',
-          color: 'var(--text-muted)',
-          fontSize: 11,
-          fontWeight: 600,
-          cursor: 'pointer',
-          padding: '4px 0',
-          outline: 'none',
-        }}
-      >
-        <div style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s ease' }}>
-          <ChevronDown size={12} />
-        </div>
-        <span>
-          {isOpen ? 'Hide' : 'Show'} {logs.length} execution step{logs.length > 1 ? 's' : ''}
-        </span>
-      </button>
-
-      {isOpen && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 12, borderLeft: '1px dashed var(--border)' }}>
-          {logs.map((log) => (
-            <ChatBubble key={log.id} msg={log} />
-          ))}
-        </div>
-      )}
+      <Accordion.Root type="single" collapsible value={isOpen ? "logs" : ""} onValueChange={(v) => setIsOpen(v === "logs")}>
+        <Accordion.Item value="logs" style={{ border: 'none' }}>
+          <Accordion.Header style={{ margin: 0 }}>
+            <Accordion.Trigger
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: isRunning ? 'var(--accent-glow)' : 'none',
+                border: isRunning ? '1px solid var(--accent)' : 'none',
+                color: isRunning ? 'var(--text-primary)' : 'var(--text-muted)',
+                fontSize: 12,
+                fontWeight: isRunning ? 500 : 600,
+                cursor: 'pointer',
+                padding: isRunning ? '8px 14px' : '4px 0',
+                borderRadius: 'var(--radius)',
+                outline: 'none',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {isRunning && (
+                <Loader2 className="animate-spin" size={14} style={{ color: 'var(--accent)' }} />
+              )}
+              <div className="accordion-chevron-wrapper">
+                <ChevronDown size={12} className="accordion-chevron" />
+              </div>
+              <span>
+                {isRunning ? (currentAction || 'Working...') : `Execution steps (${logs.length})`}
+              </span>
+            </Accordion.Trigger>
+          </Accordion.Header>
+          <Accordion.Content className="accordion-content">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 12, borderLeft: '1px dashed var(--border)' }}>
+              {logs.map((log) => (
+                <ChatBubble key={log.id} msg={log} />
+              ))}
+            </div>
+          </Accordion.Content>
+        </Accordion.Item>
+      </Accordion.Root>
     </div>
   );
 }

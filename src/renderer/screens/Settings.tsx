@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   Bot,
   Check,
+  ChevronDown,
   ChevronRight,
   Eye,
   EyeOff,
@@ -17,6 +18,9 @@ import {
 import { useSettingsStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import type { ApiProvider, BrowserMode } from '../../shared/types';
+import * as Switch from '@radix-ui/react-switch';
+import * as Select from '@radix-ui/react-select';
+import * as Dialog from '@radix-ui/react-dialog';
 import './Settings.css';
 
 type SettingsTab = 'general' | 'ai' | 'browser' | 'connection';
@@ -196,11 +200,16 @@ export function Settings() {
   const close = () => useUIStore.getState().closeSettings();
 
   return (
-    <div className="preferences-overlay" onMouseDown={close}>
-      <section className="preferences-window" aria-label="RemoteCtrl settings" onMouseDown={(event) => event.stopPropagation()}>
-        <aside className="preferences-sidebar">
-          <div className="preferences-sidebar-title drag-region">RemoteCtrl</div>
-          <nav className="preferences-nav" aria-label="Settings categories">
+    <Dialog.Root open={true} onOpenChange={(open) => { if (!open) close(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="preferences-overlay" />
+        <Dialog.Content className="preferences-window" aria-describedby={undefined}>
+          <aside className="preferences-sidebar">
+            <Dialog.Title className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)' }}>
+              RemoteCtrl Settings
+            </Dialog.Title>
+            <div className="preferences-sidebar-title drag-region">RemoteCtrl</div>
+            <nav className="preferences-nav" aria-label="Settings categories">
             {(Object.keys(TAB_DETAILS) as SettingsTab[]).map((id) => {
               const detail = TAB_DETAILS[id];
               const Icon = detail.icon;
@@ -240,11 +249,16 @@ export function Settings() {
               <>
                 <PreferenceGroup title="Appearance" description="Choose how RemoteCtrl looks on this device.">
                   <PreferenceRow title="Theme" description="Follows your system setting by default.">
-                    <select className="preferences-select preferences-compact-control" value={theme} onChange={(event) => void setTheme(event.target.value as typeof theme)}>
-                      <option value="system">System</option>
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                    </select>
+                    <PreferenceSelect
+                      value={theme}
+                      onChange={(val) => void setTheme(val as typeof theme)}
+                      options={[
+                        { value: 'system', label: 'System' },
+                        { value: 'dark', label: 'Dark' },
+                        { value: 'light', label: 'Light' },
+                      ]}
+                      className="w-[168px]"
+                    />
                   </PreferenceRow>
                 </PreferenceGroup>
 
@@ -264,9 +278,14 @@ export function Settings() {
                 <PreferenceGroup title="Model selection" description="Choose the provider and model used for agent tasks.">
                   <div className="preferences-grid">
                     <label className="preferences-control-label">Provider
-                      <select className="preferences-select" value={preferredProvider} onChange={(event) => void handleProviderChange(event.target.value as ApiProvider)}>
-                        {(Object.keys(PROVIDER_LABELS) as ApiProvider[]).map((provider) => <option key={provider} value={provider}>{PROVIDER_LABELS[provider]}</option>)}
-                      </select>
+                      <PreferenceSelect
+                        value={preferredProvider}
+                        onChange={(val) => void handleProviderChange(val as ApiProvider)}
+                        options={(Object.keys(PROVIDER_LABELS) as ApiProvider[]).map((provider) => ({
+                          value: provider,
+                          label: PROVIDER_LABELS[provider],
+                        }))}
+                      />
                     </label>
                     <label className="preferences-control-label">Model
                       {isCustomModel ? (
@@ -275,11 +294,21 @@ export function Settings() {
                           <button type="button" className="preferences-button" onClick={() => void handleSaveCustomModel()}>Save</button>
                         </div>
                       ) : (
-                        <select className="preferences-select" value={preferredModel ?? ''} onChange={(event) => event.target.value === '__custom__' ? (setCustomModelInput(preferredModel ?? ''), setIsCustomModel(true)) : void setPreferredModel(event.target.value)}>
-                          {models.map((model) => <option key={model} value={model}>{model}</option>)}
-                          {!!preferredModel && !models.includes(preferredModel) && <option value={preferredModel}>{preferredModel} (Custom)</option>}
-                          <option value="__custom__">Custom model…</option>
-                        </select>
+                        <PreferenceSelect
+                          value={preferredModel ?? ''}
+                          onChange={(val) =>
+                            val === '__custom__'
+                              ? (setCustomModelInput(preferredModel ?? ''), setIsCustomModel(true))
+                              : void setPreferredModel(val)
+                          }
+                          options={[
+                            ...models.map((model) => ({ value: model, label: model })),
+                            ...((!!preferredModel && !models.includes(preferredModel))
+                              ? [{ value: preferredModel, label: `${preferredModel} (Custom)` }]
+                              : []),
+                            { value: '__custom__', label: 'Custom model…' },
+                          ]}
+                        />
                       )}
                     </label>
                   </div>
@@ -307,12 +336,17 @@ export function Settings() {
 
             {activeTab === 'browser' && (
               <>
-                <PreferenceGroup title="Automation browser" description="Control which browser RemoteCtrl uses for automation.">
+                 <PreferenceGroup title="Automation browser" description="Control which browser RemoteCtrl uses for automation.">
                   <PreferenceRow title="Browser mode" description={browserMode === 'internal' ? 'A managed, isolated browser profile.' : 'Connects to Chrome running with remote debugging on port 9222.'}>
-                    <select className="preferences-select preferences-compact-control" value={browserMode} onChange={(event) => void handleBrowserMode(event.target.value as BrowserMode)}>
-                      <option value="internal">Internal browser</option>
-                      <option value="local_chrome">Local Chrome</option>
-                    </select>
+                    <PreferenceSelect
+                      value={browserMode}
+                      onChange={(val) => void handleBrowserMode(val as BrowserMode)}
+                      options={[
+                        { value: 'internal', label: 'Internal browser' },
+                        { value: 'local_chrome', label: 'Local Chrome' },
+                      ]}
+                      className="w-[168px]"
+                    />
                   </PreferenceRow>
                   {browserMode === 'internal' && <PreferenceToggle title="Headless mode" description="Run the managed browser in the background." checked={headlessMode} onChange={(checked) => void setHeadlessMode(checked)} />}
                   {browserMode === 'internal' && <PreferenceToggle title="Keep browser open on quit" description="Leave the managed browser running when RemoteCtrl closes." checked={keepBrowserOpenOnQuit} onChange={(checked) => void setKeepBrowserOpenOnQuit(checked)} />}
@@ -322,13 +356,17 @@ export function Settings() {
                 {browserMode === 'internal' && <PreferenceGroup title="Profiles" description="Profiles isolate browser cookies, sessions, and logins.">
                   <PreferenceRow title="Active profile" description="Switch profiles before starting a new browser session.">
                     <div className="preferences-inline-control">
-                      <select className="preferences-select" value={browserProfile || 'default'} onChange={(event) => void setBrowserProfile(event.target.value)}>
-                        <option value="default">Default</option>
-                        <option value="work">Work</option>
-                        <option value="personal">Personal</option>
-                        <option value="clean">Clean</option>
-                        {customProfiles.map((profile) => <option key={profile} value={profile}>{profile}</option>)}
-                      </select>
+                      <PreferenceSelect
+                        value={browserProfile || 'default'}
+                        onChange={(val) => void setBrowserProfile(val)}
+                        options={[
+                          { value: 'default', label: 'Default' },
+                          { value: 'work', label: 'Work' },
+                          { value: 'personal', label: 'Personal' },
+                          { value: 'clean', label: 'Clean' },
+                          ...customProfiles.map((profile) => ({ value: profile, label: profile })),
+                        ]}
+                      />
                       {customProfiles.includes(browserProfile) && <button type="button" className="preferences-icon-button preferences-danger" onClick={() => void deleteCustomProfile(browserProfile)} aria-label="Delete selected profile"><Trash2 size={15} /></button>}
                     </div>
                   </PreferenceRow>
@@ -360,8 +398,9 @@ export function Settings() {
             )}
           </div>
         </main>
-      </section>
-    </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -374,9 +413,64 @@ function PreferenceRow({ title, description, children }: { title: string; descri
 }
 
 function PreferenceToggle({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return <PreferenceRow title={title} description={description}><label className="preferences-switch"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span /></label></PreferenceRow>;
+  return (
+    <PreferenceRow title={title} description={description}>
+      <Switch.Root
+        checked={checked}
+        onCheckedChange={onChange}
+        className="preferences-switch"
+      >
+        <Switch.Thumb className="preferences-switch-thumb" />
+      </Switch.Root>
+    </PreferenceRow>
+  );
 }
 
 function StatusPill({ label }: { label: string }) {
   return <span className="preferences-status"><Check size={13} /> {label}</span>;
+}
+
+interface SelectOption {
+  value: string;
+  label: string;
+}
+
+function PreferenceSelect({
+  value,
+  onChange,
+  options,
+  className = '',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  className?: string;
+}) {
+  const selectedLabel = options.find((opt) => opt.value === value)?.label || value;
+
+  return (
+    <Select.Root value={value} onValueChange={onChange}>
+      <Select.Trigger className={`preferences-select-trigger ${className}`}>
+        <Select.Value>{selectedLabel}</Select.Value>
+        <Select.Icon>
+          <ChevronDown size={14} className="opacity-60" />
+        </Select.Icon>
+      </Select.Trigger>
+      
+      <Select.Portal>
+        <Select.Content className="preferences-select-content" position="popper" sideOffset={4}>
+          <Select.Viewport className="p-1">
+            {options.map((opt) => (
+              <Select.Item key={opt.value} value={opt.value} className="preferences-select-item">
+                <Select.ItemText>{opt.label}</Select.ItemText>
+                <Select.ItemIndicator>
+                  <Check size={12} className="text-[var(--accent)]" />
+                </Select.ItemIndicator>
+              </Select.Item>
+            ))}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
 }

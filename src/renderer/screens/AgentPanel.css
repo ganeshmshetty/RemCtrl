@@ -338,3 +338,34 @@
 
 .agent-prompt-send.danger { color: var(--danger); }
 .agent-prompt-send.danger:hover:not(:disabled) { color: #f87171; } /* Lighter red for hover */
+
+/* Radix Accordion */
+.accordion-chevron-wrapper {
+  display: flex;
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
+
+[data-state="open"] > .accordion-chevron-wrapper,
+[data-state="open"] .accordion-chevron-wrapper {
+  transform: rotate(0deg);
+}
+
+.accordion-content {
+  overflow: hidden;
+}
+.accordion-content[data-state="open"] {
+  animation: accordion-down 0.15s ease-out;
+}
+.accordion-content[data-state="closed"] {
+  animation: accordion-up 0.15s ease-out;
+}
+
+@keyframes accordion-down {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-accordion-content-height); opacity: 1; }
+}
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}

@@ -19,6 +19,7 @@ import { Settings } from './screens/Settings';
 import { MiniWindow } from './screens/MiniWindow';
 import { WorkflowEditorModal } from './screens/WorkflowEditorModal';
 import { useSettingsStore } from './stores/useWorkflowStore';
+import * as Tooltip from '@radix-ui/react-tooltip';
 import './screens/App.css';
 
 export default function App() {
@@ -125,31 +126,37 @@ export default function App() {
   }, []);
 
   if (window.location.search.includes('mini=true')) {
-    return <MiniWindow />;
+    return (
+      <Tooltip.Provider>
+        <MiniWindow />
+      </Tooltip.Provider>
+    );
   }
 
   return (
-    <div className="app-shell">
-      <TopNav />
-      {showFirstLaunchBanner && (
-        <div className="first-launch-banner">
-          <span>🎉 First launch! Log into the sites you want the AI to access — it'll remember them forever.</span>
-          <button onClick={() => setShowFirstLaunchBanner(false)}>✕</button>
-        </div>
-      )}
-      <div className="main-content">
-        {role === 'idle' ? (
-          <div className="home-screen">
-            <ConnectionPlaceholder />
+    <Tooltip.Provider>
+      <div className="app-shell">
+        <TopNav />
+        {showFirstLaunchBanner && (
+          <div className="first-launch-banner">
+            <span>🎉 First launch! Log into the sites you want the AI to access — it'll remember them forever.</span>
+            <button onClick={() => setShowFirstLaunchBanner(false)}>✕</button>
           </div>
-        ) : role === 'local' ? (
-          <LocalSession />
-        ) : (
-          <ControllerSession />
         )}
+        <div className="main-content">
+          {role === 'idle' ? (
+            <div className="home-screen">
+              <ConnectionPlaceholder />
+            </div>
+          ) : role === 'local' ? (
+            <LocalSession />
+          ) : (
+            <ControllerSession />
+          )}
+        </div>
+        {isSettingsOpen && <Settings />}
+        <WorkflowEditorModal />
       </div>
-      {isSettingsOpen && <Settings />}
-      <WorkflowEditorModal />
-    </div>
+    </Tooltip.Provider>
   );
 }

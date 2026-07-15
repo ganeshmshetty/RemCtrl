@@ -15,6 +15,7 @@ import { useAgentStore } from '../stores/useAgentStore';
 import { useControllerWebRTC, useHostWebRTC } from '../hooks/useWebRTC';
 import { ChatInputBar } from './ChatInputBar';
 import type { TabInfo, AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, AgentCheckpointPayload } from '../../shared/types';
+import * as ContextMenu from '@radix-ui/react-context-menu';
 import './BrowserPanel.css';
 
 function useLocalScreencast(isLocal: boolean) {
@@ -297,10 +298,24 @@ export function BrowserPanel() {
           <div className="ctrl-tabs-row">
             <div className="ctrl-tabs">
               {tabs.map((tab) => (
-                <div key={tab.id} className={`ctrl-tab ${tab.active ? 'ctrl-tab-active' : ''}`} onClick={() => handleSwitchTab(tab.id)}>
-                  <span className="ctrl-tab-title truncate">{tab.title}</span>
-                  <button className="ctrl-tab-close" onClick={(e) => { e.stopPropagation(); handleBrowserAction('closeTab', tab.id); }}><X size={10} /></button>
-                </div>
+                <ContextMenu.Root key={tab.id}>
+                  <ContextMenu.Trigger asChild>
+                    <div className={`ctrl-tab ${tab.active ? 'ctrl-tab-active' : ''}`} onClick={() => handleSwitchTab(tab.id)}>
+                      <span className="ctrl-tab-title truncate">{tab.title}</span>
+                      <button className="ctrl-tab-close" onClick={(e) => { e.stopPropagation(); handleBrowserAction('closeTab', tab.id); }}><X size={10} /></button>
+                    </div>
+                  </ContextMenu.Trigger>
+                  <ContextMenu.Portal>
+                    <ContextMenu.Content className="context-menu-content">
+                      <ContextMenu.Item className="context-menu-item" onClick={() => handleBrowserAction('reload')}>
+                        Reload Tab
+                      </ContextMenu.Item>
+                      <ContextMenu.Item className="context-menu-item" onClick={() => handleBrowserAction('closeTab', tab.id)}>
+                        Close Tab
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Portal>
+                </ContextMenu.Root>
               ))}
               <button className="ctrl-tab-new" onClick={() => handleBrowserAction('newTab')}><Plus size={14} /></button>
             </div>

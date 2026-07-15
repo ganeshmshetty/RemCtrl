@@ -206,7 +206,7 @@ export function MiniWindow() {
             </div>
 
             <div className="mini-log-card no-drag">
-              <Activity size={12} className="animate-pulse flex-shrink-0" color="var(--accent)" />
+              <Activity size={12} className="animate-pulse" style={{ flexShrink: 0 }} color="var(--accent)" />
               <span className="truncate">
                 {latestLog || currentAction || 'Executing automation commands...'}
               </span>
