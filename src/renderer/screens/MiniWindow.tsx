@@ -12,6 +12,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Play, Square, Sparkles, X, Activity } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload } from '../../shared/types';
+import './MiniWindow.css';
 
 export function MiniWindow() {
   const [instruction, setInstruction] = useState('');

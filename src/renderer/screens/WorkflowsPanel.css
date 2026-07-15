@@ -1,0 +1,135 @@
+/* ─── Workflows Panel ─── */
+.workflows-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.workflows-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workflows-header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workflows-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+
+
+.workflows-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 32px;
+}
+
+.workflows-empty-icon {
+  width: 48px;
+  height: 48px;
+  background: var(--bg-overlay);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--text-secondary);
+}
+
+.workflow-card {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  transition: border-color var(--transition);
+}
+.workflow-card:hover {
+  border-color: rgba(124, 106, 247, 0.5);
+}
+
+.workflow-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.workflow-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workflow-card-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.workflow-card-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.workflow-card-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.workflow-card-action-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+.workflow-card-action-btn.danger:hover { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+
+.workflow-card-run-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition);
+  margin-top: 12px;
+}
+.workflow-card-run-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.workflow-card-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── Workflow Card Badges ─── */
+.wf-card-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  flex-shrink: 0;
+}

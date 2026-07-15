@@ -17,6 +17,7 @@ import {
 import { useSettingsStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import type { ApiProvider, BrowserMode } from '../../shared/types';
+import './Settings.css';
 
 type SettingsTab = 'general' | 'ai' | 'browser' | 'connection';
 

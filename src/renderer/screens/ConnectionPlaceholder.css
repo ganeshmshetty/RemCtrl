@@ -1,0 +1,103 @@
+/* ─── Home Screen ─── */
+.home-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  overflow-y: auto;
+}
+
+/* ─── Connection Placeholder ─── */
+.connection-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 560px;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.cp-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  font-size: 24px;
+}
+
+.cp-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.cp-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+}
+
+.cp-host-btn {
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 24px;
+  padding: 12px;
+  font-size: 14px;
+}
+
+.cp-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.cp-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.cp-divider-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.cp-pin-form {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.cp-pin-input {
+  flex: 1;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 12px;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  letter-spacing: 2px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition);
+  text-align: center;
+}
+.cp-pin-input:focus {
+  border-color: var(--accent);
+}
+
+.cp-join-btn {
+  padding: 10px 16px;
+}

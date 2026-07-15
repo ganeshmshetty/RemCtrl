@@ -12,6 +12,7 @@ import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';
+import './ControllerSession.css';
 
 export function ControllerSession() {
   const { role } = useConnectionStore();

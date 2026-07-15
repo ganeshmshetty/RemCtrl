@@ -19,6 +19,7 @@ import { Settings } from './screens/Settings';
 import { MiniWindow } from './screens/MiniWindow';
 import { WorkflowEditorModal } from './screens/WorkflowEditorModal';
 import { useSettingsStore } from './stores/useWorkflowStore';
+import './screens/App.css';
 
 export default function App() {
   const { role, setHostState, setControllerState, setPendingControllerId, setPin, setError } =

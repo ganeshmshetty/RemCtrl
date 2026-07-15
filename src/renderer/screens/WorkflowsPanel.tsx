@@ -13,6 +13,7 @@ import { useWorkflowStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
+import './WorkflowsPanel.css';
 
 export function WorkflowsPanel() {
   const { workflows, isLoading, error, loadWorkflows, deleteWorkflow } = useWorkflowStore();

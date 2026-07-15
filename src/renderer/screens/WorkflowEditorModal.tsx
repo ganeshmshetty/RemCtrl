@@ -16,6 +16,7 @@ import {
 import { useUIStore } from '../stores/useUIStore';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
 import type { WorkflowStep, StepType } from '../../shared/types';
+import './WorkflowEditorModal.css';
 
 // ─── Step type metadata ──────────────────────────────────────────────────────
 

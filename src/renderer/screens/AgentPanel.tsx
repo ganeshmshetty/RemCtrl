@@ -15,6 +15,7 @@ import { useUIStore } from '../stores/useUIStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import './AgentPanel.css';
 
 function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[] } {
   const workflowSteps: WorkflowStep[] = [];

@@ -15,6 +15,7 @@ import { useAgentStore } from '../stores/useAgentStore';
 import { useControllerWebRTC, useHostWebRTC } from '../hooks/useWebRTC';
 import { ChatInputBar } from './ChatInputBar';
 import type { TabInfo, AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, AgentCheckpointPayload } from '../../shared/types';
+import './BrowserPanel.css';
 
 function useLocalScreencast(isLocal: boolean) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

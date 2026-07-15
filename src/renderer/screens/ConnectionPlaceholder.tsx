@@ -14,6 +14,7 @@ import { useWorkflowStore } from '../stores/useWorkflowStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useUIStore } from '../stores/useUIStore';
 import type { LocalWorkflow } from '../../shared/types';
+import './ConnectionPlaceholder.css';
 
 export function ConnectionPlaceholder() {
   const [pinInput, setPinInput] = useState('');
