@@ -48,7 +48,7 @@ export function LocalSession() {
             }}
           />
 
-          <div style={{ width: rightPanelWidth, height: '100%', flexShrink: 0 }}>
+          <div className="workspace-sidepanel" style={{ width: rightPanelWidth }}>
             <RightPanelLayout />
           </div>
         </>
@@ -56,4 +56,3 @@ export function LocalSession() {
     </>
   );
 }
-

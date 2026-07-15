@@ -8,7 +8,7 @@
  * Key exports: TopNav (function component).
  */
 
-import { Settings, PanelRight } from 'lucide-react';
+import { Command, PanelRight, Settings } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 
@@ -24,6 +24,14 @@ export function TopNav() {
     hostState === 'AWAITING_HOST_APPROVAL' ||
     controllerState === 'SESSION_ACTIVE' ||
     controllerState === 'CONTROLLING_REMOTELY';
+
+  const workspaceLabel = role === 'local'
+    ? 'Local workspace'
+    : role === 'host'
+      ? 'Host session'
+      : role === 'controller'
+        ? 'Remote session'
+        : 'Ready';
 
   function handleDisconnect() {
     if (window.RemoteCtrlAPI) {
@@ -47,13 +55,18 @@ export function TopNav() {
   return (
     <div className="top-nav">
       <div className="top-nav-left drag-region">
+        <div className="top-nav-brand">
+          <span className="top-nav-brand-mark"><Command size={14} /></span>
+          <span>RemoteCtrl</span>
+        </div>
+        <span className="top-nav-context">{workspaceLabel}</span>
       </div>
       <div className="top-nav-right no-drag">
         {role === 'local' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.8 }}>
+          <div className="session-actions">
+            <div className="session-indicator">
               <div className="connection-pill-dot connected"></div>
-              <span style={{ fontWeight: 500, fontSize: 13 }}>Local Session</span>
+              <span>Local session</span>
             </div>
             <button
               className="top-nav-mini-btn"
@@ -73,8 +86,8 @@ export function TopNav() {
         ) : isConnected ? (
           <div className="connection-pill">
             <div className="connection-pill-dot connected"></div>
-            <span style={{ fontWeight: 500, marginRight: 4 }}>Connected:</span>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>{pin}</span>
+            <span className="connection-pill-label">Connected</span>
+            <span className="connection-pill-pin">{pin}</span>
             <button 
               className="disconnect-btn"
               onClick={handleDisconnect}
@@ -83,12 +96,7 @@ export function TopNav() {
               Disconnect
             </button>
           </div>
-        ) : (
-          <div className="connection-pill" style={{ opacity: 0.7 }}>
-            <div className="connection-pill-dot"></div>
-            <span>Not connected</span>
-          </div>
-        )}
+        ) : null}
         {role !== 'idle' && (
           <button 
             className={`icon-btn ${isSidebarOpen ? 'active' : ''}`} 
@@ -105,4 +113,3 @@ export function TopNav() {
     </div>
   );
 }
-

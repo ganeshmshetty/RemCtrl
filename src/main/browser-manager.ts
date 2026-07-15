@@ -29,6 +29,7 @@ import os from 'os';
 import path from 'path';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
+const NEW_TAB_URL = 'https://duckduckgo.com/';
 
 interface PageEntry {
   id: string;
@@ -62,6 +63,10 @@ let context: BrowserContext | null = null;
 let pages: PageEntry[] = [];
 let activePageEntry: PageEntry | null = null;
 let notifyWindow: BrowserWindow | null = null;
+let isClosingBrowser = false;
+// Page creation emits the context `page` event before newPage() resolves. Keep
+// track of app-initiated tabs so that event does not foreground Chrome.
+let suppressNewTabFocus = 0;
 /** Resolved ws:// debugger URL passed to Stagehand — populated on launch. */
 let cdpWsUrl: string | null = null;
 
@@ -84,26 +89,31 @@ function emitTabsChange() {
   }, 100);
 }
 
-async function forceTabActivation(page: Page) {
-  // 1. Steal OS focus to un-throttle Chromium's rendering pipeline
-  await page.bringToFront().catch(() => {});
-  
-  // 2. Instantly reclaim focus for our Electron app explicitly to the source that requested it
-  if (activeSourceWindow && !activeSourceWindow.isDestroyed() && activeSourceWindow.isVisible()) {
-    activeSourceWindow.focus();
+function restoreAppFocus() {
+  const target = activeSourceWindow && !activeSourceWindow.isDestroyed() && activeSourceWindow.isVisible()
+    ? activeSourceWindow
+    : notifyWindow && !notifyWindow.isDestroyed() && notifyWindow.isVisible()
+      ? notifyWindow
+      : null;
+
+  if (target) {
+    target.focus();
     setTimeout(() => {
-      if (activeSourceWindow && !activeSourceWindow.isDestroyed() && activeSourceWindow.isVisible()) {
-        activeSourceWindow.focus();
-      }
-    }, 100);
-  } else if (notifyWindow && !notifyWindow.isDestroyed() && notifyWindow.isVisible()) {
-    notifyWindow.focus();
-    setTimeout(() => {
-      if (notifyWindow && !notifyWindow.isDestroyed() && notifyWindow.isVisible()) {
-        notifyWindow.focus();
+      if (!target.isDestroyed() && target.isVisible()) {
+        target.focus();
       }
     }, 100);
   }
+}
+
+async function forceTabActivation(page: Page, foregroundChrome = true) {
+  // Existing-tab switches need to make Chrome's selected page active so its
+  // screencast keeps rendering. Newly created tabs skip this to avoid Chrome
+  // taking the operating-system focus away from RemoteCtrl.
+  if (foregroundChrome) {
+    await page.bringToFront().catch(() => {});
+  }
+  restoreAppFocus();
 }
 
 export function getTabs(): TabInfo[] {
@@ -159,29 +169,28 @@ export async function closeTab(tabId: string): Promise<void> {
 }
 
 export async function newTab(): Promise<void> {
-  if (context) {
-    try {
-      if (activePageEntry) {
-        const pagePromise = context.waitForEvent('page');
-        const client = await context.newCDPSession(activePageEntry.page);
-        await client.send('Target.createTarget', {
-          url: 'about:blank',
-          background: true,
-        });
-        await pagePromise;
-        await client.detach().catch(() => {});
-      } else {
-        const page = await context.newPage();
-        await page.goto('about:blank');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Target.createTarget') || msg.includes('Browser has been closed')) {
-        // Expected race condition if browser is shutting down
-        return;
-      }
+  const currentContext = context;
+  if (!currentContext || isClosingBrowser) return;
+
+  suppressNewTabFocus += 1;
+  try {
+    // Playwright owns the context, so creating the page directly is reliable in
+    // persistent and CDP-connected modes. The former CDP background-target path
+    // could time out waiting for a page event that Chrome never emitted.
+    const page = await currentContext.newPage();
+    if (isClosingBrowser || context !== currentContext || page.isClosed()) {
+      await page.close().catch(() => {});
+      return;
+    }
+    await page.goto(NEW_TAB_URL, { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
+    restoreAppFocus();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!isClosingBrowser && !msg.includes('Browser has been closed') && !msg.includes('Target page, context or browser has been closed')) {
       console.error('[browser] failed to open new tab:', err);
     }
+  } finally {
+    suppressNewTabFocus = Math.max(0, suppressNewTabFocus - 1);
   }
 }
 
@@ -189,23 +198,32 @@ function registerPage(p: Page) {
   const entry: PageEntry = { id: crypto.randomUUID(), page: p, title: 'Loading...' };
   pages.push(entry);
 
-  p.on('close', async () => {
-    pages = pages.filter(x => x !== entry);
-    if (activePageEntry === entry) {
-      activePageEntry = pages[pages.length - 1] || null;
-      if (activePageEntry) {
-        await forceTabActivation(activePageEntry.page);
-        await startScreencast(activePageEntry.page);
+  p.on('close', () => {
+    void handlePageClosed(entry).catch((err) => {
+      if (!isClosingBrowser) console.warn('[browser] page-close cleanup failed:', err);
+    });
+  });
+
+  async function handlePageClosed(closedEntry: PageEntry) {
+    pages = pages.filter(x => x !== closedEntry);
+    if (activePageEntry === closedEntry) {
+      const nextEntry = pages[pages.length - 1] || null;
+      activePageEntry = nextEntry;
+      if (nextEntry && !isClosingBrowser && !nextEntry.page.isClosed()) {
+        await forceTabActivation(nextEntry.page);
+        if (activePageEntry === nextEntry && !nextEntry.page.isClosed()) {
+          await startScreencast(nextEntry.page);
+        }
       } else {
         await stopScreencast();
         // If last tab is closed, automatically open a new one
-        if (context) {
-          newTab().catch(() => {});
+        if (context && !isClosingBrowser) {
+          void newTab();
         }
       }
     }
     emitTabsChange();
-  });
+  }
 
   p.on('load', async () => {
     try { entry.title = await p.title(); } catch { }
@@ -419,6 +437,8 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     return BROWSER_TITLE;
   }
 
+  isClosingBrowser = false;
+
   const mode = getBrowserMode();
 
   if (mode === 'local_chrome') {
@@ -576,14 +596,22 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
   context.on('page', (p: Page) => {
     const entry = registerPage(p);
     activePageEntry = entry;
+    const isAppInitiatedNewTab = suppressNewTabFocus > 0;
     // Skip auto-start for the very first page — launchBrowser() awaits it
     // explicitly below to avoid a double-start race.
-    if (!launchingInitialPage) {
-      forceTabActivation(p).then(() => startScreencast(p)).then(() => emitTabsChange()).catch(() => {});
+    if (!launchingInitialPage && !isClosingBrowser && !p.isClosed()) {
+      void (async () => {
+        await forceTabActivation(p, !isAppInitiatedNewTab);
+        if (!isClosingBrowser && !p.isClosed()) {
+          await startScreencast(p);
+          emitTabsChange();
+        }
+      })().catch(() => {});
     }
   });
 
   context.on('close', () => {
+    isClosingBrowser = true;
     console.log('[browser] Chrome context closed unexpectedly or by user');
     browser = null;
     context = null;
@@ -624,6 +652,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 }
 
 export async function closeBrowser(): Promise<void> {
+  isClosingBrowser = true;
   await stopScreencast();
   try {
     await closeAutomationPool().catch(() => {});

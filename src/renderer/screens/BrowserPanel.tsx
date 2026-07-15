@@ -288,7 +288,8 @@ export function BrowserPanel() {
 
   return (
     <div className="browser-panel">
-      <div className={`browser-window ${isTakeoverActive ? 'takeover-active' : ''}`}>
+      <div className="browser-stage">
+        <div className={`browser-window ${isTakeoverActive ? 'takeover-active' : ''}`}>
         {/* Browser Nav / Tabs */}
         {isConnected && tabs.length > 0 && (
         <div className="ctrl-toolbar">
@@ -429,6 +430,7 @@ export function BrowserPanel() {
             </button>
           </div>
         )}
+      </div>
       </div>
       </div>
       <ChatInputBar />

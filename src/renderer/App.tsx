@@ -32,6 +32,15 @@ export default function App() {
     loadSettings();
   }, []);
 
+
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const isMac = /mac/i.test(navigator.platform);
+    root.classList.toggle('platform-macos', isMac);
+    return () => root.classList.remove('platform-macos');
+  }, []);
+
   // Theme observer
   useEffect(() => {
     const root = document.documentElement;
@@ -80,9 +89,18 @@ export default function App() {
         setTimeout(() => setShowFirstLaunchBanner(false), 12000);
       }),
       window.RemoteCtrlAPI.on.startLocalSession(() => {
-        useConnectionStore.getState().setRole('local');
-        window.RemoteCtrlAPI?.browser.launch();
-        window.RemoteCtrlAPI?.app.showMiniWindow(true);
+        void (async () => {
+          useConnectionStore.getState().setRole('local');
+          try {
+            await window.RemoteCtrlAPI?.browser.launch();
+            await window.RemoteCtrlAPI?.app.showMiniWindow(true);
+          } catch (err) {
+            useConnectionStore.getState().reset();
+            useConnectionStore.getState().setError(
+              `Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        })();
       }),
       window.RemoteCtrlAPI.on.themeChanged((newTheme) => {
         useSettingsStore.setState({ theme: newTheme as any });

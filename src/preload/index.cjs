@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     hideMiniWindow: () => ipcRenderer.invoke('app:hideMiniWindow'),
     showMiniWindow: (hideMain) => ipcRenderer.invoke('app:showMiniWindow', hideMain),
     setIgnoreMouseEvents: (ignore) => ipcRenderer.invoke('app:setIgnoreMouseEvents', ignore),
+    resizeToContent: (contentHeight) => ipcRenderer.invoke('app:resizeToContent', contentHeight),
   },
 
   // ── Settings ──────────────────────────────────────────────────────────────

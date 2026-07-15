@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, GripVertical, X, Activity } from 'lucide-react';
+import { Play, Square, Sparkles, X, Activity } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload } from '../../shared/types';
 
@@ -221,7 +221,7 @@ export function MiniWindow() {
 
         {/* Search Input Bar (acts as window drag region except for controls) */}
         <div className="mini-input-bar drag-region">
-          <span className="mini-logo-icon"><GripVertical size={16} /></span>
+          <span className="mini-logo-icon"><Sparkles size={15} /></span>
           <textarea
             ref={inputRef}
             className="mini-prompt-input no-drag"

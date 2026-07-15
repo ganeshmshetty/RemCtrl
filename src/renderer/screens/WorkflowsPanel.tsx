@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Play, Eye, Trash2, Wand2, Bot } from 'lucide-react';
+import { Play, Eye, Trash2, Wand2, Bot, Plus } from 'lucide-react';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
@@ -16,7 +16,7 @@ import { useConnectionStore } from '../stores/useConnectionStore';
 
 export function WorkflowsPanel() {
   const { workflows, isLoading, error, loadWorkflows, deleteWorkflow } = useWorkflowStore();
-  const { openWorkflowEditor: onView } = useUIStore();
+  const { openWorkflowEditor } = useUIStore();
   
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
@@ -31,10 +31,6 @@ export function WorkflowsPanel() {
 
   return (
     <div className="workflows-panel">
-      <div className="workflows-header">
-        <h2 className="workflows-header-title">Workflows</h2>
-      </div>
-
       <div className="workflows-list">
         {isLoading && <div className="workflows-empty">Loading workflows...</div>}
         {error && <div className="workflows-empty" style={{ color: 'var(--danger)' }}>{error}</div>}
@@ -44,11 +40,14 @@ export function WorkflowsPanel() {
             <div className="workflows-empty-icon">
               <Bot size={24} />
             </div>
-            <p>No workflows yet.</p>
+            <p>No saved workflows yet.</p>
             <p style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Run an agent task, then click<br />
-              <strong style={{ color: 'var(--text-secondary)' }}>"Save as Workflow"</strong> to record it.
+              Create a workflow to turn a repeatable task<br />
+              into an automation.
             </p>
+            <button className="workflows-create-btn" onClick={() => openWorkflowEditor()}>
+              <Plus size={14} /> Create workflow
+            </button>
           </div>
         )}
 
@@ -57,7 +56,7 @@ export function WorkflowsPanel() {
             key={wf.id}
             workflow={wf}
             confirmingDelete={confirmingDelete === wf.id}
-            onView={() => onView(wf.id)}
+            onView={() => openWorkflowEditor(wf.id)}
             onDelete={() => setConfirmingDelete(wf.id)}
             onConfirmDelete={() => handleDelete(wf.id)}
             onCancelDelete={() => setConfirmingDelete(null)}

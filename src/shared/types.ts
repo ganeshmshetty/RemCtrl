@@ -303,6 +303,7 @@ export interface RemoteCtrlAPI {
     hideMiniWindow: () => Promise<void>;
     showMiniWindow: (hideMain?: boolean) => Promise<void>;
     setIgnoreMouseEvents: (ignore: boolean) => Promise<void>;
+    resizeToContent: (contentHeight: number) => Promise<void>;
   };
   host: {
     start: () => Promise<void>;

@@ -42,11 +42,17 @@ let miniWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 let forceQuit = false;
+let cleanupPromise: Promise<void> | null = null;
+
+// A self-contained fallback keeps the tray usable in packaged builds even when
+// a platform-specific icon has not been bundled yet.
+const FALLBACK_TRAY_ICON_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9J7HYAAAAASUVORK5CYII=';
 
 // ── Tray ──────────────────────────────────────────────────────────────────────
 function createTray() {
-  // Create a minimal 16x16 monochrome icon in memory using raw PNG data.
-  // In production, replace with a proper .ico / .png asset from your resources dir.
+  // Prefer a platform-specific asset when one is bundled, but keep a valid
+  // in-memory fallback so creating the tray never depends on package contents.
   const iconPath = isDev
     ? path.join(__dirname, '../../resources/tray-icon.png')
     : path.join(process.resourcesPath, 'tray-icon.png');
@@ -56,8 +62,7 @@ function createTray() {
     icon = nativeImage.createFromPath(iconPath);
     if (icon.isEmpty()) throw new Error('empty');
   } catch {
-    // Fallback: create a tiny transparent 16x16 icon from a minimal PNG buffer
-    icon = nativeImage.createEmpty();
+    icon = nativeImage.createFromBuffer(Buffer.from(FALLBACK_TRAY_ICON_PNG, 'base64'));
   }
 
   // On macOS, mark as template so it adapts to dark/light menu bar
@@ -189,7 +194,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     minWidth: 900,
-    minHeight: 600,
+    minHeight: 380,
     frame: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#0a0a0f',
@@ -396,6 +401,26 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('app:resizeToContent', (event, requestedHeight: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (
+      !win
+      || win !== mainWindow
+      || win.isDestroyed()
+      || win.isMaximized()
+      || typeof requestedHeight !== 'number'
+      || !Number.isFinite(requestedHeight)
+    ) {
+      return;
+    }
+
+    // The renderer can request only a sensible content-area height. This keeps
+    // the compact idle screen snug without allowing arbitrary window changes.
+    const contentHeight = Math.round(Math.min(900, Math.max(350, Number(requestedHeight))));
+    const [contentWidth] = win.getContentSize();
+    win.setContentSize(contentWidth, contentHeight);
+  });
+
   // ── Auto Updater configuration (Commented out until Code Signing is setup) ──
   /*
   autoUpdater.autoDownload = false; // Prompt user before downloading
@@ -457,20 +482,31 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (e) => {
   if (forceQuit) return;
   e.preventDefault();
-  cleanupAndQuit();
+  void cleanupAndQuit();
 });
 
-async function cleanupAndQuit() {
+function cleanupAndQuit(): Promise<void> {
+  if (cleanupPromise) return cleanupPromise;
+
   isQuitting = true;
-  stopExtensionBridgeServer();
-  globalShortcut.unregisterAll();
-  automationOrchestrator.cancelActiveTask();
-  await automationOrchestrator.closePool().catch(() => { });
-  if (!getKeepBrowserOpenOnQuit()) {
-    await closeBrowser().catch(() => { });
-  }
-  forceQuit = true;
-  app.quit();
+  cleanupPromise = (async () => {
+    try {
+      stopExtensionBridgeServer();
+      globalShortcut.unregisterAll();
+      automationOrchestrator.cancelActiveTask();
+      await automationOrchestrator.closePool().catch(() => { });
+      if (!getKeepBrowserOpenOnQuit()) {
+        await closeBrowser().catch(() => { });
+      }
+    } catch (err) {
+      console.error('[app] Shutdown cleanup failed:', err);
+    } finally {
+      forceQuit = true;
+      app.quit();
+    }
+  })();
+
+  return cleanupPromise;
 }
 
 // Security: block navigation away from the app

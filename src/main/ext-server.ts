@@ -35,9 +35,15 @@ export function startExtensionBridgeServer(port = 45456): void {
   if (wss) return;
 
   try {
-    wss = new WebSocketServer({ port, host: '127.0.0.1' });
+    const server = new WebSocketServer({ port, host: '127.0.0.1' });
+    wss = server;
 
-    wss.on('connection', (ws, req) => {
+    server.once('error', (err) => {
+      if (wss === server) wss = null;
+      console.error(`[ext-server] Failed to start WebSocket server on port ${port}:`, err);
+    });
+
+    server.on('connection', (ws, req) => {
       const origin = req.headers.origin;
       if (origin && !origin.startsWith('chrome-extension://')) {
         console.warn(`[ext-server] Unauthorized WebSocket connection attempt from origin: ${origin}`);
@@ -64,7 +70,9 @@ export function startExtensionBridgeServer(port = 45456): void {
       });
     });
 
-    console.log(`[ext-server] Chrome Extension bridge listening on ws://127.0.0.1:${port}`);
+    server.once('listening', () => {
+      console.log(`[ext-server] Chrome Extension bridge listening on ws://127.0.0.1:${port}`);
+    });
   } catch (err) {
     console.error('[ext-server] Failed to start WebSocket server:', err);
   }
