@@ -11,9 +11,11 @@ import { useEffect, useState } from 'react';
 import { Zap, Play, Radio, Plus, FolderPlus, ArrowRight } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
-import { useAgentStore } from '../stores/useAgentStore';
 import { useUIStore } from '../stores/useUIStore';
+import { useAgentStore } from '../stores/useAgentStore';
 import type { LocalWorkflow } from '../../shared/types';
+import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from '@/components/ui/input-otp';
+import { Button } from '@/components/ui/button';
 import './ConnectionPlaceholder.css';
 
 export function ConnectionPlaceholder() {
@@ -187,32 +189,52 @@ export function ConnectionPlaceholder() {
       </div>
 
       <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
-        <button
-          className="btn btn-outline"
-          style={{ flex: '1 1 240px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+        <Button
+          variant="outline"
+          style={{ flex: '1 1 240px', padding: '10px' }}
           onClick={handleHost}
         >
-          <Radio size={15} /> Host browser session
-        </button>
+          <Radio size={15} className="mr-2" /> Host browser session
+        </Button>
 
-        <form onSubmit={handleJoin} className="cp-pin-form" style={{ flex: '1 1 240px' }}>
-          <input
-            type="text"
-            className="cp-pin-input"
-            placeholder="PIN (9 digits)"
-            value={pinInput}
+        <form onSubmit={handleJoin} className="cp-pin-form" style={{ flex: '1 1 240px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <InputOTP
             maxLength={9}
-            onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
-            style={{ flex: 1, minWidth: 0 }}
-          />
-          <button
-            type="submit"
-            className={`btn cp-join-btn ${pinInput.length === 9 ? 'btn-primary' : 'btn-ghost'}`}
-            disabled={pinInput.length !== 9}
-            style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}
+            value={pinInput}
+            onChange={(val) => {
+              setPinInput(val);
+              if (val.length === 9) {
+                setRole('controller');
+                window.RemoteCtrlAPI?.controller.connect(val);
+              }
+            }}
           >
-            Join <ArrowRight size={14} />
-          </button>
+            <InputOTPGroup>
+              <InputOTPSlot index={0} />
+              <InputOTPSlot index={1} />
+              <InputOTPSlot index={2} />
+            </InputOTPGroup>
+            <InputOTPSeparator />
+            <InputOTPGroup>
+              <InputOTPSlot index={3} />
+              <InputOTPSlot index={4} />
+              <InputOTPSlot index={5} />
+            </InputOTPGroup>
+            <InputOTPSeparator />
+            <InputOTPGroup>
+              <InputOTPSlot index={6} />
+              <InputOTPSlot index={7} />
+              <InputOTPSlot index={8} />
+            </InputOTPGroup>
+          </InputOTP>
+          <Button
+            type="submit"
+            className="w-full"
+            variant={pinInput.length === 9 ? 'default' : 'secondary'}
+            disabled={pinInput.length !== 9}
+          >
+            Join <ArrowRight size={14} className="ml-2" />
+          </Button>
         </form>
       </div>
     </div>

@@ -15,7 +15,7 @@ import { useUIStore } from '../stores/useUIStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
-import * as Accordion from '@radix-ui/react-accordion';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import './AgentPanel.css';
 
 function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[] } {
@@ -471,10 +471,9 @@ function CollapsableLogs({ logs, agentStatus, currentAction }: { logs: ChatMessa
 
   return (
     <div className="agent-msg-logs-collapsable animate-fade-in" style={{ margin: '6px 0', width: '100%' }}>
-      <Accordion.Root type="single" collapsible value={isOpen ? "logs" : ""} onValueChange={(v) => setIsOpen(v === "logs")}>
-        <Accordion.Item value="logs" style={{ border: 'none' }}>
-          <Accordion.Header style={{ margin: 0 }}>
-            <Accordion.Trigger
+      <Accordion type="single" collapsible value={isOpen ? "logs" : ""} onValueChange={(v) => setIsOpen(v === "logs")}>
+        <AccordionItem value="logs" style={{ border: 'none' }}>
+            <AccordionTrigger
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -491,26 +490,24 @@ function CollapsableLogs({ logs, agentStatus, currentAction }: { logs: ChatMessa
                 transition: 'all 0.2s ease',
               }}
             >
-              {isRunning && (
-                <Loader2 className="animate-spin" size={14} style={{ color: 'var(--accent)' }} />
-              )}
-              <div className="accordion-chevron-wrapper">
-                <ChevronDown size={12} className="accordion-chevron" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {isRunning && (
+                  <Loader2 className="animate-spin" size={14} style={{ color: 'var(--accent)' }} />
+                )}
+                <span>
+                  {isRunning ? (currentAction || 'Working...') : `Execution steps (${logs.length})`}
+                </span>
               </div>
-              <span>
-                {isRunning ? (currentAction || 'Working...') : `Execution steps (${logs.length})`}
-              </span>
-            </Accordion.Trigger>
-          </Accordion.Header>
-          <Accordion.Content className="accordion-content">
+            </AccordionTrigger>
+          <AccordionContent className="accordion-content">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 12, borderLeft: '1px dashed var(--border)' }}>
               {logs.map((log) => (
                 <ChatBubble key={log.id} msg={log} />
               ))}
             </div>
-          </Accordion.Content>
-        </Accordion.Item>
-      </Accordion.Root>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </div>
   );
 }

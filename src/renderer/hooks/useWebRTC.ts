@@ -14,6 +14,21 @@ import type { DataChannelMessage } from '../../shared/types';
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
 ];
 
 export type WebRTCStatus = 'idle' | 'launching' | 'capturing' | 'connecting' | 'streaming' | 'error';
@@ -65,17 +80,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
 
     let cancelled = false;
     let pc: RTCPeerConnection | null = null;
-    let stream: MediaStream | null = null;
-    let canvas: HTMLCanvasElement | null = document.createElement('canvas');
-    let ctx = canvas.getContext('2d');
-    canvas.width = 1920;
-    canvas.height = 1080;
-
-    // Paint initial black frame so the stream has data immediately
-    if (ctx) {
-      ctx.fillStyle = '#05050a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    let videoChannel: RTCDataChannel | null = null;
 
     let cleanupSignal: (() => void) | undefined;
     let cleanupAgentStatus: (() => void) | undefined;
@@ -90,54 +95,31 @@ export function useHostWebRTC(isSessionActive: boolean) {
       try {
         setStatus('launching');
 
-        // Register screencast frame listener BEFORE launching so no frames are
-        // dropped during the race between CDP screencast start and this handler.
-        cleanupScreencastFrame = window.RemoteCtrlAPI.on.screencastFrame((frameData: Uint8Array) => {
-          if (cancelled || !ctx || !canvas) return;
-          const blob = new Blob([frameData as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' });
-          createImageBitmap(blob).then((bitmap) => {
-            if (canvas && ctx) {
-              if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-                canvas.width = bitmap.width;
-                canvas.height = bitmap.height;
-              }
-              ctx.drawImage(bitmap, 0, 0);
-              bitmap.close();
-            }
-          }).catch(err => {
-            console.error('[host-webrtc] Failed to paint screencast frame', err);
-          });
-        });
-
         // 1. Launch Playwright browser (reuses if already running)
         await window.RemoteCtrlAPI.browser.launch();
         if (cancelled) return;
 
-        setStatus('capturing');
-
-        // 2. Create stream from canvas (30fps)
-        stream = canvas!.captureStream(30);
-
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-
-        console.log('[host-webrtc] Created canvas stream, tracks:', stream.getTracks().length);
-
         setStatus('connecting');
 
-        // 4. Create peer connection and add tracks
+        // 2. Create peer connection
         pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-
-        stream.getTracks().forEach((track) => pc!.addTrack(track, stream!));
-
         const iceQueue = makeIceQueue(pc);
 
         // Data Channels
         const reliableChannel = pc.createDataChannel('RemoteCtrl-reliable', { ordered: true });
         const inputChannel = pc.createDataChannel('RemoteCtrl-input', { ordered: false, maxRetransmits: 0 });
+        videoChannel = pc.createDataChannel('RemoteCtrl-video', { ordered: false, maxRetransmits: 0 });
+
+        // Register screencast frame listener
+        cleanupScreencastFrame = window.RemoteCtrlAPI.on.screencastFrame((frameData: Uint8Array) => {
+          if (cancelled || !videoChannel || videoChannel.readyState !== 'open') return;
+          try {
+            videoChannel.send(frameData as unknown as ArrayBuffer);
+          } catch (e) {
+            console.warn('[host-webrtc] Failed to send frame', e);
+          }
+        });
 
         const handleDataMessage = async (event: MessageEvent) => {
           try {
@@ -217,6 +199,21 @@ export function useHostWebRTC(isSessionActive: boolean) {
             } satisfies DataChannelMessage));
           } catch (err) {
             console.error('[host-webrtc] Failed to send initial tabs:', err);
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          if (pc?.iceConnectionState === 'disconnected' || pc?.iceConnectionState === 'failed') {
+            console.log('[host-webrtc] ICE disconnected/failed. Initiating ICE restart...');
+            pc.restartIce();
+            pc.createOffer({ iceRestart: true }).then(offer => {
+              pc!.setLocalDescription(offer);
+              window.RemoteCtrlAPI.webrtc.sendSignal({
+                type: 'offer',
+                sdpType: pc!.localDescription!.type,
+                sdpStr: pc!.localDescription!.sdp,
+              });
+            });
           }
         };
 
@@ -362,11 +359,8 @@ export function useHostWebRTC(isSessionActive: boolean) {
       cleanupScreencastFrame?.();
       cleanupTabsChange?.();
       cleanupAgentCheckpoint?.();
-      stream?.getTracks().forEach((t) => t.stop());
       pc?.close();
       pc = null;
-      canvas = null;
-      ctx = null;
       setStatus('idle');
       setError(null);
     };
@@ -374,7 +368,6 @@ export function useHostWebRTC(isSessionActive: boolean) {
 
   return { status, error, videoRef };
 }
-
 // ─── Controller-side WebRTC hook ───────────────────────────────────────────────
 // The PC and signal listener are created on mount (not gated by isSessionActive)
 // so they're always ready when the offer arrives from the host.
@@ -382,7 +375,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
 export function useControllerWebRTC(_isSessionActive: boolean) {
   const [status, setStatus] = useState<WebRTCStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reliableChannelRef = useRef<RTCDataChannel | null>(null);
   const inputChannelRef = useRef<RTCDataChannel | null>(null);
   const onMessageRef = useRef<((msg: DataChannelMessage) => void) | null>(null);
@@ -407,17 +400,26 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
         };
       } else if (channel.label === 'RemoteCtrl-input') {
         inputChannelRef.current = channel;
+      } else if (channel.label === 'RemoteCtrl-video') {
+        setStatus('streaming');
+        channel.onmessage = (ev) => {
+          if (!canvasRef.current || !ev.data) return;
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          const blob = new Blob([ev.data as ArrayBuffer], { type: 'image/jpeg' });
+          createImageBitmap(blob).then((bitmap) => {
+            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+              canvas.width = bitmap.width;
+              canvas.height = bitmap.height;
+            }
+            ctx.drawImage(bitmap, 0, 0);
+            bitmap.close();
+          }).catch(err => {
+            console.error('[ctrl-webrtc] Failed to paint remote frame', err);
+          });
+        };
       }
-    };
-
-    pc.ontrack = (e) => {
-      if (cancelled) return;
-      console.log(`[ctrl-webrtc] Got remote track: ${e.track.kind}`);
-      if (videoRef.current) {
-        videoRef.current.srcObject = e.streams[0];
-        videoRef.current.play().catch(() => { });
-      }
-      setStatus('streaming');
     };
 
     pc.onconnectionstatechange = () => {
@@ -475,7 +477,6 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
       cancelled = true;
       cleanupSignal();
       pc.close();
-      if (videoRef.current) videoRef.current.srcObject = null;
       reliableChannelRef.current = null;
       inputChannelRef.current = null;
       setStatus('idle');
@@ -496,5 +497,5 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
     onMessageRef.current = cb;
   }, []);
 
-  return { videoRef, status, error, sendData, onMessage };
+  return { canvasRef, status, error, sendData, onMessage };
 }

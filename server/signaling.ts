@@ -53,6 +53,25 @@ function deleteRoom(pin: string, reason = 'Session expired') {
   console.log(`[server] Room ${pin} deleted — ${reason}`);
 }
 
+const rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const record = rateLimits.get(ip);
+  if (!record || record.resetAt < now) return false;
+  return record.count >= 5;
+}
+
+function recordFailure(ip: string) {
+  const now = Date.now();
+  let record = rateLimits.get(ip);
+  if (!record || record.resetAt < now) {
+    rateLimits.set(ip, { count: 1, resetAt: now + 5 * 60 * 1000 });
+  } else {
+    record.count++;
+  }
+}
+
 // ─── Socket Handlers ──────────────────────────────────────────────────────────
 
 io.on('connection', (socket: Socket) => {
@@ -85,10 +104,18 @@ io.on('connection', (socket: Socket) => {
 
   // ── Controller: join PIN room ───────────────────────────────────────────
   socket.on('controller:join', (payload: { pin: string }, ack: (r: object) => void) => {
+    const ip = socket.handshake.address;
+    if (isRateLimited(ip)) {
+      return ack({ success: false, error: 'Too many connection attempts. Try again in 5 minutes.' });
+    }
+
     const { pin } = payload ?? {};
     const room = rooms.get(pin);
 
-    if (!room) return ack({ success: false, error: 'Session not found or expired' });
+    if (!room) {
+      recordFailure(ip);
+      return ack({ success: false, error: 'Session not found or expired' });
+    }
     if (room.controllerSocketId) return ack({ success: false, error: 'Session already has a controller' });
 
     room.controllerSocketId = socket.id;

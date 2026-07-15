@@ -80,22 +80,34 @@
   width: 100%;
 }
 
-.cp-pin-input {
-  flex: 1;
+.otp-slot {
+  width: 32px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--bg-overlay);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0 12px;
-  font-size: 14px;
+  font-size: 16px;
   font-family: var(--font-mono);
-  letter-spacing: 2px;
   color: var(--text-primary);
-  outline: none;
   transition: border-color var(--transition);
-  text-align: center;
+  position: relative;
 }
-.cp-pin-input:focus {
+.otp-slot.active {
   border-color: var(--accent);
+}
+.fake-caret {
+  position: absolute;
+  width: 2px;
+  height: 20px;
+  background-color: var(--text-primary);
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .cp-join-btn {

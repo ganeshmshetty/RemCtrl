@@ -83,12 +83,13 @@ export function BrowserPanel() {
   const isHost = hostState !== 'IDLE' && hostState !== 'REGISTERING_PIN' && hostState !== 'WAITING_FOR_CONTROLLER' && hostState !== 'AWAITING_HOST_APPROVAL';
   const isController = controllerState !== 'IDLE';
 
+  const [showHostStream, setShowHostStream] = useState(false);
   const hostRTC = useHostWebRTC(isConnected && isHost);
   const ctrlRTC = useControllerWebRTC(isConnected && isController);
-  const localCanvasRef = useLocalScreencast(isConnected && isLocal);
+  const localCanvasRef = useLocalScreencast((isConnected && isLocal) || (isHost && showHostStream));
 
-  const videoRef = isHost ? hostRTC.videoRef : ctrlRTC.videoRef;
-  const hostSendData = useCallback((msg: any) => {
+  const canvasRef = isController ? ctrlRTC.canvasRef : localCanvasRef;
+  const hostSendData = useCallback((msg: any, _reliable = true) => {
     if (msg.type === 'BROWSER_ACTION') {
       const { action, url, tabId } = msg.payload;
       if (action === 'navigate') window.RemoteCtrlAPI?.browser.navigate(url);
@@ -186,7 +187,7 @@ export function BrowserPanel() {
   }
 
   const getCoords = (clientX: number, clientY: number) => {
-    const el = isLocal ? localCanvasRef.current : videoRef.current;
+    const el = canvasRef.current;
     if (!el) return { xPercent: 0, yPercent: 0 };
     const rect = el.getBoundingClientRect();
     const relX = clientX - rect.left;
@@ -403,10 +404,19 @@ export function BrowserPanel() {
           </div>
         ) : isConnected ? (
           <>
-            {isLocal ? (
-              <canvas ref={localCanvasRef} className="browser-video" />
-            ) : (
-              <video ref={videoRef} className="browser-video" autoPlay muted playsInline />
+            {(isLocal || isController || showHostStream) && (
+              <canvas ref={canvasRef} className="browser-video" />
+            )}
+            {isHost && !showHostStream && (
+              <div className="browser-loading" style={{ flexDirection: 'column' }}>
+                <div style={{ marginBottom: 16 }}>Screen sharing is active.</div>
+                <button className="btn btn-primary" onClick={() => setShowHostStream(true)}>Preview Stream</button>
+              </div>
+            )}
+            {isHost && showHostStream && (
+              <button className="btn btn-ghost" style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, background: 'var(--bg-overlay)', backdropFilter: 'blur(8px)' }} onClick={() => setShowHostStream(false)}>
+                Hide Stream
+              </button>
             )}
             {!isLocal && rtcStatus !== 'streaming' && (
               <div className="browser-loading">
