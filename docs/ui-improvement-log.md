@@ -26,6 +26,7 @@ Verified:
 - Re-enabled Socket.IO reconnection with exponential delay and replayed host PIN/controller-intent handshakes after transport recovery.
 - Changed remote connection interruption copy from a terminal-looking error to an explicit automatic-reconnect state when signaling is retrying.
 - Fixed the command-palette new-session path so clearing the renderer also clears the main-process prompt context; a visually new chat no longer inherits old turns.
+- Keyed model-history context by the renderer session id so concurrent task windows do not share hidden prior turns.
 
 Verified:
 

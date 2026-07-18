@@ -305,6 +305,8 @@ export type AgentAction =
 
 export interface AgentPromptPayload {
   commandId: string;
+  /** Stable renderer/session scope used to isolate multi-turn model context. */
+  sessionId?: string;
   action: AgentAction;
   instruction: string;
   /** Local sessions are owned by the current user and do not use remote scope enforcement. */
@@ -329,6 +331,7 @@ export interface RecordingSessionState {
 export interface AgentRewindPayload {
   snapshotId: string;
   commandId: string;
+  sessionId?: string;
   action: 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action';
   newInstruction: string;
   executionMode?: 'local' | 'remote';
@@ -624,7 +627,7 @@ export interface RemoteCtrlAPI {
   };
   agent: {
     /** Clears transient model context only; saved session history is separate. */
-    clearHistory: () => Promise<{ ok: boolean }>;
+    clearHistory: (sessionId?: string) => Promise<{ ok: boolean }>;
     listRecoverableRuns: () => Promise<AutomationRunCheckpoint[]>;
     discardRecoverableRun: (id: string) => Promise<{ ok: boolean }>;
     resumeRecoverableRun: (id: string) => Promise<{ ok: boolean; error?: string }>;

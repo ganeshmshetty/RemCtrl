@@ -7,6 +7,7 @@
  */
 
 import { generateText } from 'ai';
+import type { LanguageModel } from 'ai';
 import { createDevelopmentLogger } from '../dev-logger.js';
 
 const terminalLog = createDevelopmentLogger('AgentHistory');
@@ -110,7 +111,7 @@ export class AgentHistoryManager {
   /**
    * Compacts older turns using the LLM if history grows large (> 5 turns or > 30k characters).
    */
-  async maybeCompactHistory(model: any): Promise<void> {
+  async maybeCompactHistory(model: LanguageModel): Promise<void> {
     if (this.turns.length <= 5) return;
 
     const fullHistoryText = this.turns
@@ -167,4 +168,46 @@ ${promptText}
   }
 }
 
-export const sessionHistory = new AgentHistoryManager();
+/**
+ * Keeps independent conversational contexts for each renderer/session. The
+ * registry remains lazy so idle sessions have no memory cost, and the default
+ * key keeps older callers compatible while they migrate to explicit ids.
+ */
+export class AgentHistoryRegistry {
+  private readonly sessions = new Map<string, AgentHistoryManager>();
+
+  private getOrCreate(sessionId = 'default'): AgentHistoryManager {
+    let history = this.sessions.get(sessionId);
+    if (!history) {
+      history = new AgentHistoryManager();
+      this.sessions.set(sessionId, history);
+    }
+    return history;
+  }
+
+  clear(sessionId?: string): void {
+    if (sessionId) {
+      this.sessions.delete(sessionId);
+      return;
+    }
+    this.sessions.clear();
+  }
+
+  buildPromptContext(sessionId: string | undefined, request: string): string {
+    return this.getOrCreate(sessionId).buildPromptContext(request);
+  }
+
+  recordTurn(sessionId: string | undefined, ...args: Parameters<AgentHistoryManager['recordTurn']>): void {
+    this.getOrCreate(sessionId).recordTurn(...args);
+  }
+
+  maybeCompactHistory(sessionId: string | undefined, ...args: Parameters<AgentHistoryManager['maybeCompactHistory']>): Promise<void> {
+    return this.getOrCreate(sessionId).maybeCompactHistory(...args);
+  }
+
+  rewindTo(sessionId: string | undefined, commandId: string): void {
+    this.getOrCreate(sessionId).rewindTo(commandId);
+  }
+}
+
+export const sessionHistory = new AgentHistoryRegistry();

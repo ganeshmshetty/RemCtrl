@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Page } from 'playwright';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildWorkflowStepSystemPrompt } from './agent-system-prompt.js';
 import { createBrowserTools } from './agent-tools.js';
-import { AgentHistoryManager } from './agent-history.js';
+import { AgentHistoryManager, AgentHistoryRegistry } from './agent-history.js';
 
 describe('agent prompt and history boundaries', () => {
   it('treats the goal as serialized task data and includes the untrusted-content rule', () => {
@@ -34,6 +34,14 @@ describe('agent prompt and history boundaries', () => {
     expect(context).toContain('"initialRequest":"Search example.com"');
     expect(context).toContain('<current_user_request encoding="json">\n\n"Open the first result"');
     expect(context).not.toContain('<past_session_history>');
+  });
+
+  it('keeps model context isolated between renderer sessions', () => {
+    const registry = new AgentHistoryRegistry();
+    registry.recordTurn('session-a', 'Open the billing page', 'Done', ['Navigating to /billing']);
+
+    expect(registry.buildPromptContext('session-a', 'Find the invoice')).toContain('Open the billing page');
+    expect(registry.buildPromptContext('session-b', 'Find the invoice')).not.toContain('Open the billing page');
   });
 
   it('gives workflow steps explicit bounded success and stopping criteria', () => {

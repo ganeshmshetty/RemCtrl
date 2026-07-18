@@ -81,6 +81,7 @@ export async function runAgent(
   onRecordStep?: (step: WorkflowStep) => void,
   securityMode: AutomationSecurityMode = 'policy-enforced',
   onCompleted?: (result: AgentLoopResult) => Promise<void>,
+  sessionId = 'default',
 ): Promise<AgentRunResult> {
   const previousRun = getAutomationSession('agent');
   if (previousRun?.isActive) {
@@ -137,7 +138,7 @@ export async function runAgent(
     };
 
     const runLoop = async () => {
-      const fullInstruction = sessionHistory.buildPromptContext(instruction);
+      const fullInstruction = sessionHistory.buildPromptContext(sessionId, instruction);
       return await runToolLoop({
         commandId,
         instruction: fullInstruction,
@@ -191,7 +192,7 @@ export async function runAgent(
       return { state: 'cancelled', goalAchieved: false };
     } else if (!loopResult.goalAchieved && !loopResult.isConversationalResponse) {
       const error = loopResult.finalMessage || 'Agent stopped without confirming that the task was completed.';
-      sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions, commandId);
+      sessionHistory.recordTurn(sessionId, instruction, loopResult.finalMessage, loopResult.actions, commandId);
       executionLogger.fail();
       session.fail(new Error(error));
       log(
@@ -204,8 +205,8 @@ export async function runAgent(
       onStatus({ commandId, state: 'failed', error, result: { ...loopResult, originalInstruction: instruction } });
       return { state: 'failed', goalAchieved: false, error };
     } else {
-      sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions, commandId);
-      await sessionHistory.maybeCompactHistory(resolveModel(provider, apiKey)).catch(() => {});
+      sessionHistory.recordTurn(sessionId, instruction, loopResult.finalMessage, loopResult.actions, commandId);
+      await sessionHistory.maybeCompactHistory(sessionId, resolveModel(provider, apiKey)).catch(() => {});
       // Recording persistence happens before the terminal success event so a
       // workflow is never shown as successfully created when saving failed.
       if (loopResult.goalAchieved) await onCompleted?.(loopResult);

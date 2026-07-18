@@ -112,6 +112,7 @@ export function registerAgentIpc() {
           // discarded its recording session while the run was winding down.
           recordingSession.append(payload.recordingSessionId, payload.instruction, loopResult.executionTrace);
         },
+        payload.sessionId,
       )
       .catch((err) => {
         // runAgent normally converts failures to status events. This is a last
@@ -178,8 +179,9 @@ export function registerAgentIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle('agent:clearHistory', async () => {
-    sessionHistory.clear();
+  ipcMain.handle('agent:clearHistory', async (_event, rawSessionId: unknown) => {
+    const sessionId = typeof rawSessionId === 'string' && rawSessionId.length <= 120 ? rawSessionId : undefined;
+    sessionHistory.clear(sessionId);
     return { ok: true };
   });
 
@@ -283,7 +285,7 @@ export function registerAgentIpc() {
     const { securityMode, provider, apiKey } = preflight;
 
     try {
-      await sessionHistory.rewindTo(payload.snapshotId);
+      sessionHistory.rewindTo(payload.sessionId, payload.snapshotId);
       await runAgent(
         payload.commandId,
         payload.action,
@@ -294,6 +296,8 @@ export function registerAgentIpc() {
         (log) => broadcast('agent:log', { ...log, commandId: payload.commandId }),
         (step) => broadcast('workflow:recordedStep', step),
         securityMode,
+        undefined,
+        payload.sessionId,
       );
       return { ok: true };
     } catch (err) {

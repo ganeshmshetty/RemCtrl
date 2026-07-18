@@ -16,6 +16,8 @@ import type { AgentCheckpointPayload, PolicyApprovalRequest, TaskScope } from '.
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import './AgentPanel.css';
 
+const timestampNow = () => Date.now();
+
 export function AgentPanel() {
   const { 
     chatHistory,
@@ -47,16 +49,18 @@ export function AgentPanel() {
     if (!text) return;
     const commandId = crypto.randomUUID();
     useAgentStore.getState().startNewExecution('agent', commandId, text);
+    const sessionId = useAgentStore.getState().activeSessionId ?? `session-${commandId}`;
     useAgentStore.getState().appendMessage({
       id: `user-${commandId}`,
       sender: 'user',
       type: 'prompt',
       text,
-      timestamp: Date.now(),
+      timestamp: timestampNow(),
     });
 
     const payload = {
       commandId,
+      sessionId,
       action: 'act' as const,
       instruction: text,
       executionMode: role === 'local' ? 'local' as const : 'remote' as const,
@@ -67,7 +71,7 @@ export function AgentPanel() {
       sendData({
         type: 'AGENT_PROMPT',
         version: '1.0',
-        timestamp: Date.now(),
+        timestamp: timestampNow(),
         id: commandId,
         payload,
       }, true);
@@ -83,7 +87,7 @@ export function AgentPanel() {
       sendData({
         type: 'AGENT_CHECKPOINT_RESPONSE',
         version: '1.0',
-        timestamp: Date.now(),
+        timestamp: timestampNow(),
         payload: { checkpointId, response: { selectedOptionId } },
       }, true);
     } else if (hostState !== 'IDLE' || role === 'local') {
@@ -98,11 +102,11 @@ export function AgentPanel() {
     if (result?.ok) {
       useAgentStore.getState().clearRecordingState();
       useAgentStore.getState().appendMessage({
-        id: `recording-saved-${Date.now()}`,
+        id: `recording-saved-${timestampNow()}`,
         sender: 'agent',
         type: 'workflow',
         text: `Workflow saved: ${result.workflow?.name ?? 'Recorded workflow'}`,
-        timestamp: Date.now(),
+        timestamp: timestampNow(),
       });
     } else {
       useAgentStore.getState().setRecordingState({ recordingState: 'error', recordingError: result?.error ?? 'Unable to save workflow.' });
@@ -146,16 +150,18 @@ export function AgentPanel() {
                 const snapshotId = msg.id.replace('user-', '');
                 const commandId = crypto.randomUUID();
                 useAgentStore.getState().startNewExecution('agent', commandId, newInstruction);
+                const sessionId = useAgentStore.getState().activeSessionId ?? `session-${commandId}`;
                 useAgentStore.getState().appendMessage({
                   id: `user-${commandId}`,
                   sender: 'user',
                   type: 'prompt',
                   text: newInstruction,
-                  timestamp: Date.now(),
+                  timestamp: timestampNow(),
                 });
                 window.RemoteCtrlAPI?.browser.rewindAndRerunAgent({
                   snapshotId,
                   commandId,
+                  sessionId,
                   action: 'act',
                   newInstruction,
                   executionMode: role === 'local' ? 'local' : 'remote',

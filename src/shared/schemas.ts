@@ -209,6 +209,7 @@ const AgentActionSchema = z.enum(['act', 'observe', 'extract', 'clipboard_read',
 
 export const AgentPromptPayloadSchema = z.object({
   commandId: z.string().uuid(),
+  sessionId: z.string().min(1).max(120).optional(),
   action: AgentActionSchema,
   instruction: z.string().min(1).max(5000),
   executionMode: z.enum(['local', 'remote']).default('remote'),
@@ -224,6 +225,7 @@ export const RecordingSessionStartSchema = z.object({
 export const AgentRewindPayloadSchema = z.object({
   snapshotId: z.string().min(1),
   commandId: z.string().uuid(),
+  sessionId: z.string().min(1).max(120).optional(),
   action: AgentActionSchema,
   newInstruction: z.string().min(1).max(5000),
   executionMode: z.enum(['local', 'remote']).default('remote'),

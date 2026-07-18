@@ -12,7 +12,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 
 - [x] Agent runs have a hard three-minute timeout, which is too short for real browser work and can leave an in-flight model call detached.
 - [x] Agent and workflow lifecycle state is process-memory-only; a renderer restart cannot recover or explain an active run.
-- [ ] Agent history is a singleton and is not keyed by session, so separate sessions can contaminate one another.
+- [x] Agent history is a singleton and is not keyed by session, so separate sessions can contaminate one another.
 - [x] Cancellation and pause handling are not uniformly interruptible: waits, retry backoff, and some browser operations do not observe the abort signal.
 - [x] Workflow retry exists but is journaled as a resumable checkpoint and surfaces a durable recovery action to the user.
 - [ ] The renderer has a working command palette and state cards, but activity, errors, and run history are still visually fragmented and partly inline-styled.
@@ -34,7 +34,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 
 - [x] Establish shared surface, typography, status, focus, and motion tokens from the existing Geist foundation.
 - [x] Consolidate activity into a deliberate timeline with expandable details, elapsed time, and clear terminal states.
-- [ ] Replace remaining generic/inline controls in the core task and workflow surfaces with consistent primitives.
+- [x] Replace remaining generic/inline controls in the core task and workflow surfaces with consistent primitives.
 - [x] Improve remote session connection/reconnect/takeover flows with explicit next actions.
 
 ### Capability polish
@@ -47,3 +47,4 @@ This is the active memory for the ongoing product pass. Items are checked off on
 
 - Initial baseline: `npm test`, typechecks, renderer build, and focused lint were previously green for the existing pass; full lint still contains unrelated baseline findings.
 - Reference clones are ignored by `.gitignore` and must not be edited.
+- Final stability/design increment: 49 tests passed; typecheck and both production builds passed; changed-seam lint is clean except the pre-existing `ExecutionSummary` cast.
