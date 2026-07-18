@@ -78,13 +78,13 @@ export function WorkflowsPanel() {
     <div className="workflows-panel">
       <div className="workflows-list">
         {isLoading && <div className="workflows-empty">Loading workflows...</div>}
-        {error && <div className="workflows-empty" style={{ color: 'var(--danger)' }}>{error}</div>}
+        {error && <div className="workflows-empty workflows-error">{error}</div>}
 
         {!isLoading && !error && workflows.length === 0 && (
           <div className="workflows-empty">
             <div className="workflows-empty-icon"><Bot size={24} /></div>
             <p>No saved workflows yet.</p>
-            <p style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            <p className="workflows-empty-help">
               Describe and run a task with the agent, then save its<br />
               recorded steps as a workflow.
             </p>
@@ -325,27 +325,27 @@ function WorkflowCard({
   return (
     <div className="workflow-card">
       <div className="workflow-card-header">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="workflow-card-heading">
+          <div className="workflow-card-title-row">
             {isAiRecorded && <span className="wf-card-ai-badge" title="Auto-recorded from AI agent run"><Wand2 size={10} /></span>}
             <h3 className="workflow-card-name">{workflow.name}</h3>
           </div>
         </div>
         <div className="workflow-card-actions">
-          <button className="workflow-card-action-btn" onClick={onView} title="View"><Eye size={14} /></button>
+          <button className="workflow-card-action-btn" onClick={onView} title="View" aria-label={`View ${workflow.name}`}><Eye size={14} /></button>
           {confirmingDelete ? (
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button className="workflow-card-action-btn danger" onClick={onConfirmDelete}>✓</button>
-              <button className="workflow-card-action-btn" onClick={onCancelDelete}>✗</button>
+            <div className="workflow-card-confirm-actions">
+              <button className="workflow-card-action-btn danger" onClick={onConfirmDelete} aria-label={`Delete ${workflow.name}`}>✓</button>
+              <button className="workflow-card-action-btn" onClick={onCancelDelete} aria-label="Cancel delete">✗</button>
             </div>
-          ) : <button className="workflow-card-action-btn" onClick={onDelete} title="Delete"><Trash2 size={14} /></button>}
+          ) : <button className="workflow-card-action-btn" onClick={onDelete} title="Delete" aria-label={`Delete ${workflow.name}`}><Trash2 size={14} /></button>}
         </div>
       </div>
 
-      {workflow.description && <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.4 }}>
+      {workflow.description && <p className="workflow-card-description">
         {workflow.description.length > 80 ? workflow.description.slice(0, 80) + '…' : workflow.description}
       </p>}
-      <div className="workflow-card-meta" style={{ display: 'flex', gap: 10 }}>
+      <div className="workflow-card-meta">
         <span>{workflow.steps.length} step{workflow.steps.length === 1 ? '' : 's'}</span>
       </div>
       <button className="workflow-card-run-btn" onClick={onRun} disabled={!isConnected}>

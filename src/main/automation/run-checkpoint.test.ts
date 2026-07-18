@@ -14,6 +14,7 @@ describe('run checkpoints', () => {
       id,
       kind: 'agent',
       commandId: id,
+      workflowId: 'workflow-1',
       title: 'Find the latest invoice',
       startedAt: 1,
       updatedAt: 2,
@@ -26,6 +27,7 @@ describe('run checkpoints', () => {
       id,
       status: 'interrupted',
       currentStep: 4,
+      workflowId: 'workflow-1',
     });
 
     await removeRunCheckpoint(id);

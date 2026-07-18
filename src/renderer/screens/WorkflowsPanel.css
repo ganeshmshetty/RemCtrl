@@ -41,6 +41,9 @@
   padding: 32px;
 }
 
+.workflows-error { color: var(--danger); }
+.workflows-empty-help { margin-top: 4px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+
 .workflows-empty-icon {
   width: 48px;
   height: 48px;
@@ -71,6 +74,11 @@
   margin-bottom: 8px;
 }
 
+.workflow-card-heading { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.workflow-card-title-row { display: flex; align-items: center; gap: 6px; }
+.workflow-card-confirm-actions { display: flex; gap: 4px; }
+.workflow-card-description { margin: 0 0 10px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+
 .workflow-card-name {
   font-size: 14px;
   font-weight: 600;
@@ -78,6 +86,8 @@
 }
 
 .workflow-card-meta {
+  display: flex;
+  gap: 10px;
   font-size: 12px;
   color: var(--text-muted);
 }
