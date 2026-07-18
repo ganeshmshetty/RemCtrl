@@ -28,6 +28,7 @@ import { webRTCManager } from '../webrtc-manager.js';
 import { prepareAgentRun } from './agent-preflight.js';
 import { broadcastToRenderers as broadcast } from './renderer-events.js';
 import { recordingSession } from '../automation/recording-session.js';
+import { listRunCheckpoints, removeRunCheckpoint } from '../automation/run-checkpoint.js';
 
 export function registerAgentIpc() {
   recordingSession.setListener((state) => broadcast('workflow:recordingState', state));
@@ -179,6 +180,15 @@ export function registerAgentIpc() {
 
   ipcMain.handle('agent:clearHistory', async () => {
     sessionHistory.clear();
+    return { ok: true };
+  });
+
+  ipcMain.handle('agent:listRecoverableRuns', async () => listRunCheckpoints());
+
+  ipcMain.handle('agent:discardRecoverableRun', async (_event, rawId: unknown) => {
+    const id = z.string().min(1).safeParse(rawId);
+    if (!id.success) return { ok: false };
+    await removeRunCheckpoint(id.data);
     return { ok: true };
   });
 

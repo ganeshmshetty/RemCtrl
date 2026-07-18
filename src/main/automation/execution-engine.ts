@@ -87,7 +87,7 @@ export async function runAgent(
     previousRun.cancel();
   }
 
-  const session = new TaskSession({ initialGoal: instruction, commandId });
+  const session = new TaskSession({ initialGoal: instruction, commandId, kind: 'agent', title: instruction });
   beginAutomationRun('agent', session);
   session.start();
   const stopWatchdog = session.startWatchdog({
@@ -105,8 +105,8 @@ export async function runAgent(
     const browserError = err instanceof BrowserNotReadyError
       ? err
       : new BrowserNotReadyError('Launch a browser from the Host session first.');
+    session.fail(browserError);
     finishAutomationRun(session);
-    session.cancel();
     log(onLog, 'error', browserError.message);
     onStatus({ commandId, state: 'failed', error: browserError.message });
     return { state: 'failed', goalAchieved: false, error: browserError.message };
@@ -176,6 +176,7 @@ export async function runAgent(
       const error = loopResult.finalMessage || 'Agent stopped without confirming that the task was completed.';
       sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions, commandId);
       executionLogger.fail();
+      session.fail(new Error(error));
       log(
         onLog,
         'warn',
@@ -206,6 +207,8 @@ export async function runAgent(
         summary.finalMessage = loopResult.finalMessage;
       }
 
+      session.complete();
+
       log(
         onLog,
         'info',
@@ -234,6 +237,7 @@ export async function runAgent(
       onStatus({ commandId, state: 'cancelled' });
       return { state: 'cancelled', goalAchieved: false };
     } else {
+      if (!session.isFailed) session.fail(new Error(recoveryMessage));
       log(onLog, 'error', `Pipeline failed: ${recoveryMessage}`);
       onStatus({ commandId, state: 'failed', error: recoveryMessage });
       return { state: 'failed', goalAchieved: false, error: recoveryMessage };

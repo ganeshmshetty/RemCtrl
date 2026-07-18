@@ -17,6 +17,7 @@ import type {
   AutomationRunChatMessage,
   AgentActivityEntry,
   RecordedAgentStep,
+  AutomationRunCheckpoint,
 } from '../../shared/types';
 
 export interface ChatMessage {
@@ -57,6 +58,7 @@ interface AgentState {
 
   // Run History & Lifecycle
   runHistory: AutomationRunHistoryItem[];
+  recoverableRuns: AutomationRunCheckpoint[];
   currentRunTitle: string | null;
   currentRunStartTime: number | null;
   activeSessionId: string | null;
@@ -77,6 +79,8 @@ interface AgentState {
   resumeRunHistory: (item: AutomationRunHistoryItem) => void;
   deleteRunHistory: (id: string) => Promise<void>;
   clearRunHistory: () => Promise<void>;
+  loadRecoverableRuns: () => Promise<void>;
+  dismissRecoverableRun: (id: string) => Promise<void>;
 
   // Actions
   setTakeoverActive: (active: boolean) => void;
@@ -113,6 +117,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   recordingError: null,
 
   runHistory: [],
+  recoverableRuns: [],
   currentRunTitle: null,
   currentRunStartTime: null,
   activeSessionId: null,
@@ -436,6 +441,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   clearRunHistory: async () => {
     await window.RemoteCtrlAPI?.agent.clearRunHistory();
     set({ runHistory: [] });
+  },
+
+  loadRecoverableRuns: async () => {
+    const recoverableRuns = await window.RemoteCtrlAPI?.agent.listRecoverableRuns() ?? [];
+    set({ recoverableRuns });
+  },
+
+  dismissRecoverableRun: async (id) => {
+    await window.RemoteCtrlAPI?.agent.discardRecoverableRun(id);
+    set((state) => ({ recoverableRuns: state.recoverableRuns.filter((run) => run.id !== id) }));
   },
 
   clearWorkflow: () =>

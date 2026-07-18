@@ -386,6 +386,23 @@ export interface AutomationRunHistoryItem {
   error?: string;
 }
 
+export type AutomationCheckpointStatus = 'running' | 'paused' | 'failed' | 'interrupted';
+
+/** Minimal, redacted metadata for recovering a run after renderer/main restart. */
+export interface AutomationRunCheckpoint {
+  id: string;
+  kind: 'agent' | 'workflow';
+  commandId: string;
+  title: string;
+  startedAt: number;
+  updatedAt: number;
+  status: AutomationCheckpointStatus;
+  currentStep?: number;
+  currentAction?: string;
+  completedSteps?: number;
+  error?: string;
+}
+
 /** A serialisable chat entry stored with a local automation session. */
 export interface AutomationRunChatMessage {
   id: string;
@@ -605,6 +622,8 @@ export interface RemoteCtrlAPI {
   agent: {
     /** Clears transient model context only; saved session history is separate. */
     clearHistory: () => Promise<{ ok: boolean }>;
+    listRecoverableRuns: () => Promise<AutomationRunCheckpoint[]>;
+    discardRecoverableRun: (id: string) => Promise<{ ok: boolean }>;
     listRunHistory: () => Promise<AutomationRunHistoryItem[]>;
     saveRunHistory: (item: AutomationRunHistoryItem) => Promise<{ ok: boolean; error?: string }>;
     deleteRunHistory: (id: string) => Promise<{ ok: boolean }>;

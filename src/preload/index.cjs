@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
   // ── Agent Session Management ──────────────────────────────────────────────
   agent: {
     clearHistory: () => ipcRenderer.invoke('agent:clearHistory'),
+    listRecoverableRuns: () => ipcRenderer.invoke('agent:listRecoverableRuns'),
+    discardRecoverableRun: (id) => ipcRenderer.invoke('agent:discardRecoverableRun', id),
     listRunHistory: () => ipcRenderer.invoke('agent:listRunHistory'),
     saveRunHistory: (item) => ipcRenderer.invoke('agent:saveRunHistory', item),
     deleteRunHistory: (id) => ipcRenderer.invoke('agent:deleteRunHistory', id),

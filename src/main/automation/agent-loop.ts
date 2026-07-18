@@ -100,6 +100,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
   }), securityMode, (toolName, input) => {
     if (['think', 'notifyUser', 'done'].includes(toolName)) return;
     session.touch();
+    session.checkpoint({ currentStep: actions.length + 1, currentAction: formatToolAction(toolName, input) });
     toolStartedAt.set(toolName, Date.now());
     terminalLog.info('tool.start', {
       commandId,
@@ -127,6 +128,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
       if (session.isCancelled || session.isFailed) return;
       session.touch();
       const stepNum = actions.length + 1;
+      session.checkpoint({ currentStep: stepNum, completedSteps: actions.length });
       const hasDone = event.toolCalls?.some((tc: any) => tc.toolName === 'done');
       const hasToolCalls = (event.toolCalls?.length ?? 0) > 0;
 

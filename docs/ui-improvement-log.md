@@ -49,6 +49,12 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 - Kept manual takeover pauses open-ended so a user is not disconnected while completing a slow approval or human step.
 - Added focused coverage for abort behavior, pause/resume, and failure-vs-cancellation state.
 
+## 2026-07-19 · Interrupted-run recovery
+
+- Added atomic per-run checkpoint metadata alongside the existing action journal. A stale `running` checkpoint is surfaced as `interrupted` after restart with its last step and action.
+- Added main/preload APIs to list and dismiss recoverable runs.
+- Added an agent-panel recovery banner that offers a state-aware continuation prompt for interrupted agent tasks and a clear notice for workflow checkpoints that still need a workflow-specific resume path.
+
 Verified:
 
 - `npm test` — 18 files, 47 tests passed

@@ -76,7 +76,7 @@ export async function runWorkflow(
     previousRun.cancel();
   }
 
-  const session = new TaskSession({ commandId: workflowRunId });
+  const session = new TaskSession({ commandId: workflowRunId, kind: 'workflow', title: name });
   beginAutomationRun('workflow', session);
   session.start();
   const stopWatchdog = session.startWatchdog({
@@ -175,6 +175,7 @@ export async function runWorkflow(
             if (resolvedStep.onFalse !== undefined && resolvedStep.onFalse !== null) {
               jumpToStepId = resolvedStep.onFalse;
             } else {
+              session.fail(new Error('Check step failed and no alternative path was provided.'));
               onRunStatus({ workflowRunId, state: 'failed', error: 'Check step failed and no alternative path was provided.' });
               return;
             }
@@ -187,6 +188,7 @@ export async function runWorkflow(
             }
           }
           onStepStatus({ workflowRunId, stepId: step.id, index, state: 'completed', result });
+          session.checkpoint({ currentStep: index, completedSteps: index + 1, currentAction: stepLabel });
           jumpToStepId = steps[index + 1]?.id ?? null;
         }
 
@@ -212,6 +214,7 @@ export async function runWorkflow(
     }
 
     emitLog(onLog, 'info', `Workflow "${name}" completed successfully ✓`, '[Workflow]');
+    session.complete();
     onRunStatus({ workflowRunId, state: 'completed' });
   } catch (err) {
     const errorInfo = extractError(err);
@@ -219,6 +222,7 @@ export async function runWorkflow(
       emitLog(onLog, 'info', 'Workflow cancelled.', '[Workflow]');
       onRunStatus({ workflowRunId, state: 'cancelled' });
     } else {
+      if (!session.isFailed) session.fail(new Error(errorInfo.message));
       emitLog(onLog, 'error', `Workflow failed: ${errorInfo.message}`, '[Workflow]');
       onRunStatus({ workflowRunId, state: 'failed', error: errorInfo.message });
     }

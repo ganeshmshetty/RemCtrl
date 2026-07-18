@@ -5,6 +5,54 @@
   height: 100%;
 }
 
+.agent-recovery-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 9%, var(--bg-elevated));
+}
+
+.agent-recovery-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.agent-recovery-copy strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.agent-recovery-copy span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-recovery-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .agent-recovery-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agent-recovery-actions {
+    justify-content: flex-end;
+  }
+}
+
 .agent-chat-area {
   flex: 1;
   overflow-y: auto;

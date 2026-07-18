@@ -23,7 +23,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 
 ### Stability first
 
-- [ ] Introduce a durable automation-run journal/checkpoint seam with bounded event retention and atomic writes.
+- [x] Introduce a durable automation-run journal/checkpoint seam with bounded event retention and atomic writes.
 - [ ] Make task cancellation, retry backoff, waits, and browser readiness abort-aware.
 - [x] Replace the fixed agent timeout with inactivity/step watchdogs and explicit long-run limits.
 - [ ] Add safe retry classification for transient provider/browser failures and preserve partial results.

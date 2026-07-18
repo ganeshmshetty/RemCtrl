@@ -25,16 +25,22 @@ export function AgentPanel() {
     recordingTask,
     recordingStepCount,
     recordingError,
+    recoverableRuns,
   } = useAgentStore();
   
   const { role, controllerState, hostState, sendData } = useConnectionStore();
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const firstRecoverableRun = recoverableRuns[0];
   
 
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, workflowRunState]);
+
+  useEffect(() => {
+    void useAgentStore.getState().loadRecoverableRuns();
+  }, []);
 
   function handleSendPrompt(text: string) {
     if (!text) return;
@@ -107,6 +113,12 @@ export function AgentPanel() {
     useAgentStore.getState().clearRecordingState();
   }
 
+  async function retryInterruptedRun(run: (typeof recoverableRuns)[number]) {
+    await useAgentStore.getState().dismissRecoverableRun(run.id);
+    if (run.kind !== 'agent') return;
+    handleSendPrompt(`Continue the interrupted task: ${run.title}. The previous run stopped near step ${run.currentStep ?? 'an unknown step'} after "${run.currentAction ?? 'an unknown action'}". Re-check the current browser state before taking action.`);
+  }
+
   const renderChatHistory = () => {
     const visibleMessages = chatHistory.filter((msg) => msg.type !== 'log');
     return visibleMessages.map((msg, index) => (
@@ -145,6 +157,24 @@ export function AgentPanel() {
 
   return (
     <div className="agent-panel">
+      {recoverableRuns.length > 0 && (
+        <section className="agent-recovery-banner" aria-live="polite">
+          <div className="agent-recovery-copy">
+            <strong>{recoverableRuns.length === 1 ? 'Interrupted task found' : `${recoverableRuns.length} interrupted tasks found`}</strong>
+            <span>{recoverableRuns[0]?.title} · stopped near step {recoverableRuns[0]?.currentStep ?? '—'}</span>
+          </div>
+          <div className="agent-recovery-actions">
+            {firstRecoverableRun?.kind === 'agent' && (
+              <button className="btn btn-primary btn-sm" onClick={() => void retryInterruptedRun(firstRecoverableRun)}>
+                Continue task
+              </button>
+            )}
+            {firstRecoverableRun && <button className="btn btn-ghost btn-sm" onClick={() => void useAgentStore.getState().dismissRecoverableRun(firstRecoverableRun.id)}>
+              {firstRecoverableRun.kind === 'agent' ? 'Dismiss' : 'Clear notice'}
+            </button>}
+          </div>
+        </section>
+      )}
       {recordingState !== 'idle' && (
         <section className="agent-recording-banner" aria-live="polite">
           <div className="agent-recording-copy">
