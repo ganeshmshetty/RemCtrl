@@ -251,18 +251,26 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             const runningIndex = (indexedActivities.find(({ entry }) => entry.state === 'running' && entry.text === payload.message)
               ?? indexedActivities.find(({ entry }) => entry.state === 'running'))?.index;
             if (payload.phase === 'started' || runningIndex === undefined) {
+              const startedAt = Date.now();
               return {
                 ...message,
                 activity: [...current, {
-                  id: `activity-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  id: `activity-${startedAt}-${Math.random().toString(36).slice(2)}`,
                   text: payload.message,
                   state: 'running',
-                  timestamp: Date.now(),
+                  timestamp: startedAt,
                 }],
               };
             }
+            const completedAt = Date.now();
             const activity = current.map((entry, index) => index === runningIndex
-              ? { ...entry, text: payload.message, state: payload.level === 'error' || payload.phase === 'failed' ? 'failed' as const : 'completed' as const }
+              ? {
+                  ...entry,
+                  text: payload.message,
+                  state: payload.level === 'error' || payload.phase === 'failed' ? 'failed' as const : 'completed' as const,
+                  completedAt,
+                  durationMs: Math.max(0, completedAt - entry.timestamp),
+                }
               : entry);
             return { ...message, activity };
           })

@@ -32,8 +32,8 @@ This is the active memory for the ongoing product pass. Items are checked off on
 
 ### Design language and UX
 
-- [ ] Establish shared surface, typography, status, focus, and motion tokens from the existing Geist foundation.
-- [ ] Consolidate activity into a deliberate timeline with expandable details, elapsed time, and clear terminal states.
+- [x] Establish shared surface, typography, status, focus, and motion tokens from the existing Geist foundation.
+- [x] Consolidate activity into a deliberate timeline with expandable details, elapsed time, and clear terminal states.
 - [ ] Replace remaining generic/inline controls in the core task and workflow surfaces with consistent primitives.
 - [ ] Improve remote session connection/reconnect/takeover flows with explicit next actions.
 

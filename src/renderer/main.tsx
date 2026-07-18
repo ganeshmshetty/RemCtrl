@@ -7,6 +7,7 @@
  */
 
 import ReactDOM from 'react-dom/client';
+import '@fontsource-variable/geist';
 import App from './App';
 // @ts-ignore
 import './index.css';

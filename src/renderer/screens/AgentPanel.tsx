@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Zap, MousePointer, Globe, Eye, FileText, CheckCircle2, ChevronDown, Edit3, Keyboard, ArrowUpDown, Search, CircleDot, Copy, RotateCcw, Save, X, Sparkles } from 'lucide-react';
+import { Bot, Zap, MousePointer, Globe, Eye, FileText, CheckCircle2, CircleAlert, ChevronDown, Edit3, Keyboard, ArrowUpDown, Search, CircleDot, Copy, RotateCcw, Save, X, Sparkles, Loader2 } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import type { ChatMessage } from '../stores/useAgentStore';
@@ -235,21 +235,39 @@ export function AgentPanel() {
 function PromptActivity({ activities }: { activities: NonNullable<ChatMessage['activity']> }) {
   const [expanded, setExpanded] = useState(true);
   const hasRunning = activities.some((activity) => activity.state === 'running');
+  const totalDuration = activities.reduce((sum, activity) => sum + (activity.durationMs ?? 0), 0);
+  const summary = hasRunning
+    ? `Working · ${activities.length} step${activities.length === 1 ? '' : 's'}`
+    : `${activities.length} step${activities.length === 1 ? '' : 's'} · ${formatDuration(totalDuration)}`;
 
   if (!activities.length) return null;
   return <section className="agent-activity prompt-activity" aria-live="polite">
     <button className="agent-activity-summary" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
       <Bot size={15} />
-      <span>{hasRunning ? 'Working on this request…' : 'Activity'}</span>
+      <span>{summary}</span>
       <ChevronDown className={expanded ? 'expanded' : ''} size={15} />
     </button>
     {expanded && <div className="agent-activity-list">
-      {activities.map((activity) => <div className={`agent-activity-row ${activity.state}`} key={activity.id}>
-        <ActivityIcon text={activity.text} />
-        <span>{activity.text}</span>
+      {activities.map((activity, index) => <div className={`agent-activity-row ${activity.state}`} key={activity.id}>
+        <span className="agent-activity-index">{index + 1}</span>
+        <span className="agent-activity-state" aria-hidden="true"><ActivityStateIcon state={activity.state} text={activity.text} /></span>
+        <span className="agent-activity-text">{activity.text}</span>
+        <time>{activity.state === 'running' ? 'now' : formatDuration(activity.durationMs ?? 0)}</time>
       </div>)}
     </div>}
   </section>;
+}
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) return '<1s';
+  if (durationMs < 60_000) return `${Math.round(durationMs / 1000)}s`;
+  return `${Math.floor(durationMs / 60_000)}m ${Math.round((durationMs % 60_000) / 1000)}s`;
+}
+
+function ActivityStateIcon({ state, text }: { state: NonNullable<ChatMessage['activity']>[number]['state']; text: string }) {
+  if (state === 'running') return <Loader2 size={13} className="agent-activity-spinner" />;
+  if (state === 'failed') return <CircleAlert size={13} />;
+  return <ActivityIcon text={text} />;
 }
 
 function ActivityIcon({ text }: { text: string }) {

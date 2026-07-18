@@ -354,6 +354,8 @@ export interface AgentActivityEntry {
   text: string;
   state: 'running' | 'completed' | 'failed';
   timestamp: number;
+  completedAt?: number;
+  durationMs?: number;
 }
 
 export interface AgentCheckpointPayload {

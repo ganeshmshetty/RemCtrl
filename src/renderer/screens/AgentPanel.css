@@ -259,7 +259,7 @@
 .agent-activity-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   margin: 8px 0 2px 23px;
   padding-left: 10px;
   border-left: 1px solid var(--border);
@@ -268,7 +268,8 @@
 .agent-activity-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  min-height: 24px;
   min-width: 0;
   font-size: 12px;
   color: var(--text-muted);
@@ -280,10 +281,37 @@
   opacity: .8;
 }
 
-.agent-activity-row span {
+.agent-activity-index {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.agent-activity-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.agent-activity-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-activity-row time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .prompt-activity {
@@ -293,6 +321,9 @@
 }
 .agent-activity-row.failed { color: var(--danger); }
 .agent-activity-row.running { color: var(--text-secondary); }
+.agent-activity-row.running .agent-activity-index { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
+.agent-activity-row.failed .agent-activity-index { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); color: var(--danger); }
+.agent-activity-spinner { animation: spin 0.9s linear infinite; }
 
 .agent-completion-actions {
   display: flex;

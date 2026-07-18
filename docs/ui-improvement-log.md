@@ -55,6 +55,19 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 - Added main/preload APIs to list and dismiss recoverable runs.
 - Added an agent-panel recovery banner that offers a state-aware continuation prompt for interrupted agent tasks and a clear notice for workflow checkpoints that still need a workflow-specific resume path.
 
+## 2026-07-19 · Activity language and typography
+
+- Activated the bundled Geist variable font and made it the shared application typeface instead of relying on a platform-dependent fallback.
+- Refined agent activity into a compact numbered timeline with explicit running/completed/failed icons, per-step elapsed time, and an overall step-duration summary.
+- Kept the activity disclosure behavior from the existing agent panel while borrowing the compact tool/reasoning hierarchy from OpenCode and Onlook.
+
+Verified:
+
+- Fresh local renderer smoke test in the in-app browser after starting a local session.
+- `npm test` — 19 files, 48 tests passed
+- `npm run typecheck`
+- `npm run build:renderer`
+
 Verified:
 
 - `npm test` — 18 files, 47 tests passed
