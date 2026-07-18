@@ -29,6 +29,10 @@ export class SignalingClient {
   private socket: Socket | null = null;
   private role: 'host' | 'controller' | null = null;
   private trustedHost = false;
+  private hostPin: string | null = null;
+  private controllerPin: string | null = null;
+  private controllerIntent: string | null = null;
+  private handshakeComplete = false;
 
   constructor(private readonly win: BrowserWindow) {}
 
@@ -53,6 +57,10 @@ export class SignalingClient {
   async startHost(signalingUrl: string, trusted = false): Promise<void> {
     this.role = 'host';
     this.trustedHost = trusted;
+    this.hostPin = null;
+    this.controllerPin = null;
+    this.controllerIntent = null;
+    this.handshakeComplete = false;
     this.pushHostState('REGISTERING_PIN');
 
     const socket = this.createSocket(signalingUrl);
@@ -110,6 +118,8 @@ export class SignalingClient {
         }
 
         this.send('host:pin', pin);
+        this.hostPin = pin;
+        this.handshakeComplete = true;
         this.pushHostState('WAITING_FOR_CONTROLLER');
         resolve();
       });
@@ -140,7 +150,7 @@ export class SignalingClient {
       socket.on('disconnect', (reason) => {
         if (reason !== 'io client disconnect') {
           this.pushHostState('DISCONNECTED');
-          this.pushError('Lost connection to signaling server');
+          this.pushError('Lost connection to signaling server. Retrying…');
         }
       });
     });
@@ -160,6 +170,9 @@ export class SignalingClient {
 
   async connectAsController(signalingUrl: string, pin: string, intent: string): Promise<void> {
     this.role = 'controller';
+    this.controllerPin = pin;
+    this.controllerIntent = intent;
+    this.handshakeComplete = false;
     this.pushCtrlState('SIGNALING_CONNECTING');
 
     const socket = this.createSocket(signalingUrl);
@@ -179,6 +192,7 @@ export class SignalingClient {
               return reject(new Error(msg));
             }
             this.pushCtrlState('WAITING_FOR_HOST_APPROVAL');
+            this.handshakeComplete = true;
             resolve();
           }
         );
@@ -217,7 +231,7 @@ export class SignalingClient {
       socket.on('disconnect', (reason) => {
         if (reason !== 'io client disconnect') {
           this.pushCtrlState('DISCONNECTED');
-          this.pushError('Lost connection to signaling server');
+          this.pushError('Lost connection to signaling server. Retrying…');
         }
       });
     });
@@ -241,6 +255,10 @@ export class SignalingClient {
     const wasRole = this.role;
     this.role = null;
     this.trustedHost = false;
+    this.hostPin = null;
+    this.controllerPin = null;
+    this.controllerIntent = null;
+    this.handshakeComplete = false;
     if (wasRole === 'host') this.pushHostState('IDLE');
     else if (wasRole === 'controller') this.pushCtrlState('IDLE');
   }
@@ -250,16 +268,51 @@ export class SignalingClient {
   private createSocket(url: string): Socket {
     console.log(`[signaling] Connecting to ${url}...`);
     const socket = io(url, {
-      // Reconnection is disabled because registration uses once('connect').
-      // After a network drop, re-registration would be skipped on auto-reconnect,
-      // silently losing room membership. The caller is responsible for re-initiating.
-      reconnection: false,
+      // Reconnect is safe because the established handshake is replayed below.
+      // Without replaying the room registration, Socket.IO would reconnect a
+      // transport while silently losing the host/controller membership.
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10_000,
+      randomizationFactor: 0.2,
       timeout: 10000,
       transports: ['websocket'],
     });
 
     socket.on('connect', () => {
       console.log(`[signaling] Connected to ${url} (ID: ${socket.id})`);
+      if (!this.handshakeComplete || socket !== this.socket) return;
+
+      if (this.role === 'host' && this.hostPin) {
+        this.pushHostState('REGISTERING_PIN');
+        socket.emit(
+          'host:register',
+          { pin: this.hostPin, capabilities: { version: '0.1.0', platform: process.platform } },
+          (ack: { success: boolean; error?: string }) => {
+            if (ack.success) {
+              this.pushHostState('WAITING_FOR_CONTROLLER');
+            } else {
+              this.pushError(`Could not restore host session: ${ack.error ?? 'registration rejected'}`);
+              this.pushHostState('DISCONNECTED');
+            }
+          },
+        );
+      } else if (this.role === 'controller' && this.controllerPin && this.controllerIntent) {
+        this.pushCtrlState('SIGNALING_CONNECTING');
+        socket.emit(
+          'controller:join',
+          { pin: this.controllerPin, intent: this.controllerIntent },
+          (ack: { success: boolean; error?: string }) => {
+            if (ack.success) {
+              this.pushCtrlState('WAITING_FOR_HOST_APPROVAL');
+            } else {
+              this.pushError(`Could not restore controller session: ${ack.error ?? 'join rejected'}`);
+              this.pushCtrlState('DISCONNECTED');
+            }
+          },
+        );
+      }
     });
 
     socket.on('connect_error', (err) => {

@@ -36,6 +36,7 @@ import type {
 import { acquireReadyPage } from './browser/runtime.js';
 import { createDevelopmentLogger } from '../dev-logger.js';
 import type { AutomationSecurityMode } from './security-mode.js';
+import { waitFor } from './abortable.js';
 
 export type AgentStatusCb = (payload: AgentStatusPayload) => void;
 export type AgentLogCb = (payload: AgentLogPayload) => void;
@@ -155,7 +156,23 @@ export async function runAgent(
       });
     };
 
-    const loopResult = await runLoop();
+    let loopResult: AgentLoopResult;
+    let retryAttempt = 0;
+    while (true) {
+      try {
+        loopResult = await runLoop();
+        break;
+      } catch (loopError) {
+        const errorInfo = extractError(loopError);
+        const canRetry = errorInfo.retryable && !session.isCancelled && !session.isFailed && retryAttempt < 2;
+        if (!canRetry) throw loopError;
+        retryAttempt += 1;
+        session.touch();
+        const delay = Math.min(2_000 * (2 ** (retryAttempt - 1)), 10_000);
+        log(onLog, 'warn', `Temporary agent failure (${errorInfo.code}). Preserving browser state and retrying in ${delay / 1000}s (${retryAttempt}/2)…`);
+        await waitFor(delay, session.abortSignal);
+      }
+    }
 
     log(
       onLog,

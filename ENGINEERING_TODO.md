@@ -26,7 +26,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - [x] Introduce a durable automation-run journal/checkpoint seam with bounded event retention and atomic writes.
 - [ ] Make task cancellation, retry backoff, waits, and browser readiness abort-aware.
 - [x] Replace the fixed agent timeout with inactivity/step watchdogs and explicit long-run limits.
-- [ ] Add safe retry classification for transient provider/browser failures and preserve partial results.
+- [x] Add safe retry classification for transient provider/browser failures and preserve partial results.
 - [ ] Add resume/recover APIs and UI actions for interrupted agent/workflow runs.
 - [x] Add focused tests for cancellation, timeout, journal recovery, and retry behavior.
 
@@ -35,7 +35,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - [x] Establish shared surface, typography, status, focus, and motion tokens from the existing Geist foundation.
 - [x] Consolidate activity into a deliberate timeline with expandable details, elapsed time, and clear terminal states.
 - [ ] Replace remaining generic/inline controls in the core task and workflow surfaces with consistent primitives.
-- [ ] Improve remote session connection/reconnect/takeover flows with explicit next actions.
+- [x] Improve remote session connection/reconnect/takeover flows with explicit next actions.
 
 ### Capability polish
 

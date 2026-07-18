@@ -20,6 +20,20 @@ Verified:
 - Preserved original workflow creation timestamps when editing an existing workflow.
 - Made condition polling observe the automation abort signal, avoiding hidden polling after cancellation.
 
+## 2026-07-19 · Network and provider recovery
+
+- Added bounded retries around transient agent-loop failures, preserving the current browser state and journaled actions between attempts.
+- Re-enabled Socket.IO reconnection with exponential delay and replayed host PIN/controller-intent handshakes after transport recovery.
+- Changed remote connection interruption copy from a terminal-looking error to an explicit automatic-reconnect state when signaling is retrying.
+
+Verified:
+
+- `npm test` — 19 files, 48 tests passed
+- `npm run typecheck:all`
+- `npm run build:renderer`
+- `npm run build:main`
+- Focused lint for signaling and execution seams; the execution file retains one pre-existing `any` warning in its summary cast.
+
 Verified:
 
 - `npm test` — 19 files, 48 tests passed
