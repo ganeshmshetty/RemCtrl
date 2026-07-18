@@ -22,7 +22,7 @@ function enqueue(id: string, operation: () => Promise<void>): Promise<void> {
   writes.set(id, next);
   void next.finally(() => {
     if (writes.get(id) === next) writes.delete(id);
-  });
+  }).catch(() => {});
   return next;
 }
 

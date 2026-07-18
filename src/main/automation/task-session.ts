@@ -59,7 +59,7 @@ export class TaskSession {
     if (!this.isActive && this._status !== 'idle') return;
     this._status = 'cancelled';
     this._abortController.abort(reason);
-    void removeRunCheckpoint(this.checkpointId);
+    void removeRunCheckpoint(this.checkpointId).catch(() => {});
   }
 
   fail(reason: Error): void {
@@ -93,7 +93,7 @@ export class TaskSession {
   complete(): void {
     if (!this.isActive) return;
     this._status = 'completed';
-    void removeRunCheckpoint(this.checkpointId);
+    void removeRunCheckpoint(this.checkpointId).catch(() => {});
   }
 
   checkpoint(progress: { currentStep?: number; currentAction?: string; completedSteps?: number }): void {
@@ -163,7 +163,7 @@ export class TaskSession {
       updatedAt: Date.now(),
       status,
       ...overrides,
-    });
+    }).catch(() => {});
   }
 
 }
