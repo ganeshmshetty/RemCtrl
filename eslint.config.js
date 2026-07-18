@@ -9,7 +9,7 @@ export default defineConfig([
   // research/stagehand is a separately maintained research checkout with its
   // own ESLint configuration and dependency graph; root linting must not load
   // that configuration as though it were part of the Electron application.
-  globalIgnores(['dist', 'research/**']),
+  globalIgnores(['dist', 'research/**', 'reference/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
