@@ -18,6 +18,7 @@ import { ConnectionPlaceholder } from './screens/ConnectionPlaceholder';
 import { Settings } from './screens/Settings';
 import { MiniWindow } from './screens/MiniWindow';
 import { WorkflowEditorModal } from './screens/WorkflowEditorModal';
+import { CommandPalette } from './screens/CommandPalette';
 import { useSettingsStore } from './stores/useWorkflowStore';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import './screens/App.css';
@@ -190,6 +191,7 @@ export default function App() {
         </div>
         {isSettingsOpen && <Settings />}
         <WorkflowEditorModal />
+        <CommandPalette />
       </div>
     </Tooltip.Provider>
   );

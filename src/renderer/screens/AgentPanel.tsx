@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Zap, MousePointer, Globe, Eye, FileText, CheckCircle2, ChevronDown, Edit3, Keyboard, ArrowUpDown, Search, CircleDot, Copy, RotateCcw, Save, X } from 'lucide-react';
+import { Bot, Zap, MousePointer, Globe, Eye, FileText, CheckCircle2, ChevronDown, Edit3, Keyboard, ArrowUpDown, Search, CircleDot, Copy, RotateCcw, Save, X, Sparkles } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import type { ChatMessage } from '../stores/useAgentStore';
@@ -162,27 +162,29 @@ export function AgentPanel() {
       <div className="agent-chat-area">
         {chatHistory.length === 0 && workflowRunState === 'idle' && (
           <div className="agent-chat-empty">
-            <div style={{ fontWeight: 500, fontSize: 16 }}>Agent is ready</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, marginBottom: 24 }}>What would you like to do?</div>
+            <div className="agent-ready-mark"><Bot size={20} /></div>
+            <div className="agent-ready-kicker"><Sparkles size={12} /> Browser coworker ready</div>
+            <div className="agent-ready-title">What should we work on?</div>
+            <div className="agent-ready-copy">Describe the outcome you want. The agent will show each browser step and pause when it needs you.</div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 300 }}>
+            <div className="agent-suggestions">
               <button 
                 className="btn btn-ghost" 
-                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)', gap: '8px' }}
+                aria-label="Try: find the top AI story on Hacker News"
                 onClick={() => handleSendPrompt('Go to hackernews and find the top story about AI')}
               >
                 <Globe size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Find top AI story on HackerNews
               </button>
               <button 
                 className="btn btn-ghost" 
-                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)', gap: '8px' }}
+                aria-label="Try: search flights to Miami"
                 onClick={() => handleSendPrompt('Go to google flights and find a weekend trip from NYC to MIA')}
               >
                 <MousePointer size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Search flights to Miami
               </button>
               <button 
                 className="btn btn-ghost" 
-                style={{ justifyContent: 'flex-start', textAlign: 'left', border: '1px solid var(--border)', gap: '8px' }}
+                aria-label="Try: extract article text"
                 onClick={() => handleSendPrompt('Extract the main article text from this page')}
               >
                 <FileText size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Extract article text

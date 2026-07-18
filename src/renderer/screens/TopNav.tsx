@@ -8,13 +8,15 @@
  * Key exports: TopNav (function component).
  */
 
-import { PanelRight, Settings } from 'lucide-react';
+import { Activity, CheckCircle2, CircleAlert, Command as CommandIcon, PanelRight, Pause, Settings, Wifi } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
+import { useAgentStore } from '../stores/useAgentStore';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
 export function TopNav() {
   const { role, hostState, controllerState, pin, reset } = useConnectionStore();
+  const { agentStatus, workflowRunState, chatHistory } = useAgentStore();
   const { openSettings, isSidebarOpen, toggleSidebar } = useUIStore();
 
   const isConnected = 
@@ -33,6 +35,8 @@ export function TopNav() {
       : role === 'controller'
         ? 'Remote session'
         : 'Ready';
+  const sessionStatus = getSessionStatus({ role, hostState, controllerState, agentStatus, workflowRunState, pendingApproval: chatHistory.some((message) => message.type === 'checkpoint') });
+  const StatusIcon = sessionStatus.Icon;
 
   function handleDisconnect() {
     if (window.RemoteCtrlAPI) {
@@ -60,8 +64,15 @@ export function TopNav() {
           <span>RemoteCtrl</span>
         </div>
         <span className="top-nav-context">{workspaceLabel}</span>
+        <span className={`top-nav-status ${sessionStatus.tone}`} aria-live="polite">
+          <StatusIcon size={12} aria-hidden="true" />
+          <span>{sessionStatus.label}</span>
+        </span>
       </div>
       <div className="top-nav-right no-drag">
+        <button className="top-nav-command-trigger" onClick={() => window.dispatchEvent(new Event('remotectrl:open-command-palette'))} aria-label="Open command palette">
+          <CommandIcon size={13} /><span>Command</span><kbd>⌘K</kbd>
+        </button>
         {role === 'local' ? (
           <div className="session-actions">
             <div className="session-indicator">
@@ -118,6 +129,22 @@ export function TopNav() {
       </div>
     </div>
   );
+}
+
+function getSessionStatus({ role, hostState, controllerState, agentStatus, workflowRunState, pendingApproval }: {
+  role: ReturnType<typeof useConnectionStore.getState>['role'];
+  hostState: ReturnType<typeof useConnectionStore.getState>['hostState'];
+  controllerState: ReturnType<typeof useConnectionStore.getState>['controllerState'];
+  agentStatus: ReturnType<typeof useAgentStore.getState>['agentStatus'];
+  workflowRunState: ReturnType<typeof useAgentStore.getState>['workflowRunState'];
+  pendingApproval: boolean;
+}) {
+  if (pendingApproval) return { label: 'Needs your input', tone: 'warning', Icon: CircleAlert };
+  if (agentStatus === 'running' || workflowRunState === 'running') return { label: 'Working', tone: 'active', Icon: Activity };
+  if (agentStatus === 'paused') return { label: 'Paused', tone: 'warning', Icon: Pause };
+  if (role === 'host' && hostState === 'WAITING_FOR_CONTROLLER') return { label: 'Waiting for controller', tone: 'idle', Icon: Wifi };
+  if (role !== 'idle' && (hostState !== 'IDLE' || controllerState !== 'IDLE' || role === 'local')) return { label: 'Ready', tone: 'success', Icon: CheckCircle2 };
+  return { label: 'Ready to start', tone: 'idle', Icon: CheckCircle2 };
 }
 
 function NavTooltip({ text, children }: { text: string; children: React.ReactNode }) {

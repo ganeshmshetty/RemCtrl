@@ -419,6 +419,9 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
   // Always-on: create PC and listen for signals on mount
   useEffect(() => {
     let cancelled = false;
+    if (!window.RemoteCtrlAPI) {
+      return () => { cancelled = true; };
+    }
     console.log('[ctrl-webrtc] Mounting, creating RTCPeerConnection');
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });

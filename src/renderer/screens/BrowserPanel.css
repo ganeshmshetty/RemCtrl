@@ -44,6 +44,53 @@
   z-index: 10;
 }
 
+.browser-state-card {
+  width: min(calc(100% - 32px), 430px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent) 8%);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, .24);
+  text-align: center;
+}
+.browser-state-card h3 { color: var(--text-primary); font-size: 17px; font-weight: 650; }
+.browser-state-card p { max-width: 340px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.browser-state-icon { display: grid; width: 38px; height: 38px; place-items: center; margin-bottom: 2px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border) 55%); border-radius: 12px; background: var(--accent-glow); color: var(--accent); }
+.browser-state-icon.warning { border-color: color-mix(in srgb, var(--warning) 45%, var(--border) 55%); background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+.browser-state-icon.danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--border) 55%); background: var(--danger-glow); color: var(--danger); }
+.browser-state-eyebrow { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.browser-state-eyebrow.warning { color: var(--warning); }
+.browser-state-eyebrow.danger { color: var(--danger); }
+.browser-pin-display { width: 100%; margin: 10px 0 4px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-base); text-align: left; }
+.browser-pin-display > span { display: block; color: var(--text-muted); font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+.browser-pin-value { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.browser-pin-value strong { color: var(--accent); font-family: var(--font-mono); font-size: 28px; letter-spacing: .12em; line-height: 1; }
+.browser-pin-placeholder { color: var(--text-muted) !important; letter-spacing: .08em !important; }
+.browser-pin-value .icon-btn { flex: 0 0 auto; border: 1px solid var(--border); }
+.browser-state-note { display: flex; align-items: flex-start; gap: 7px; margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.4; text-align: left; }
+.browser-state-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--success); }
+.browser-state-cancel { margin-top: 7px; color: var(--danger); }
+.browser-state-cancel:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border) 55%); }
+.browser-state-card-approval { border-color: color-mix(in srgb, var(--warning) 35%, var(--border) 65%); background: color-mix(in srgb, var(--bg-surface) 94%, var(--warning) 6%); }
+.browser-requester { margin-top: 0; }
+.browser-requester code { color: var(--text-primary); font-family: var(--font-mono); }
+.browser-requested-task { width: 100%; margin: 7px 0 5px; padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-base); text-align: left; }
+.browser-requested-task span { display: block; color: var(--text-muted); font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.browser-requested-task strong { display: block; margin-top: 5px; color: var(--text-primary); font-size: 12px; font-weight: 500; line-height: 1.45; }
+.browser-state-actions { display: flex; width: 100%; justify-content: flex-end; gap: 8px; margin-top: 5px; }
+.browser-state-card-compact { width: min(calc(100% - 32px), 360px); flex-direction: row; align-items: center; justify-content: center; text-align: left; }
+.browser-state-card-compact h3 { font-size: 14px; }
+.browser-state-card-compact p { margin-top: 2px; font-size: 11px; }
+.browser-state-card-compact > .btn { margin-left: auto; flex: 0 0 auto; }
+.browser-state-card-error { border-color: color-mix(in srgb, var(--danger) 35%, var(--border) 65%); background: color-mix(in srgb, var(--bg-surface) 94%, var(--danger) 6%); }
+.browser-state-card-error p { overflow-wrap: anywhere; }
+
+:root.light-theme .browser-state-card { box-shadow: 0 18px 45px rgba(15, 23, 42, .12); }
+
 .browser-video-container {
   position: relative;
   overflow: hidden;

@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, RotateCw, X, Plus, Loader2, Copy, Check } from 'lucide-react';
+import { AlertCircle, Check, ChevronLeft, ChevronRight, Copy, Link2, Loader2, Plus, Radio, RotateCw, ShieldCheck, X } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useControllerWebRTC, useHostWebRTC } from '../hooks/useWebRTC';
@@ -360,73 +360,46 @@ export function BrowserPanel() {
       {/* Video / Canvas Container */}
       <div className="browser-video-container">
         {isHostWaiting ? (
-          <div className="browser-loading" style={{ gap: 20 }}>
+          <div className="browser-loading" aria-live="polite">
             {['REGISTERING_PIN', 'SIGNALING_CONNECTING', 'WAITING_FOR_CONTROLLER'].includes(hostState) && (
-              <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <div style={{ fontSize: '18px', fontWeight: 600 }}>Waiting for Controller</div>
-                <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '8px' }}>Share this PIN to allow remote control:</div>
-                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', margin: '24px 0' }}>
-                  <div style={{ 
-                    fontSize: '48px', 
-                    fontFamily: 'var(--font-mono)', 
-                    fontWeight: 700, 
-                    letterSpacing: '0.1em',
-                    color: 'var(--accent)',
-                    minHeight: '60px',
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}>
-                    {pin ? (
-                      <span className="animate-pop-in">{pin}</span>
-                    ) : (
-                      <span className="animate-pulse" style={{ filter: 'blur(5px)', opacity: 0.4, userSelect: 'none' }}>000000000</span>
-                    )}
+              <div className="browser-state-card animate-fade-in">
+                <div className="browser-state-icon"><Radio size={18} /></div>
+                <div className="browser-state-eyebrow">Host session</div>
+                <h3>Waiting for a controller</h3>
+                <p>Share this one-time PIN with the person who should join your browser.</p>
+                <div className="browser-pin-display">
+                  <span>Session PIN</span>
+                  <div className="browser-pin-value">
+                    {pin ? <strong className="animate-pop-in">{pin}</strong> : <strong className="animate-pulse browser-pin-placeholder">000 000 000</strong>}
+                    <button className="icon-btn" onClick={handleCopyPin} disabled={!pin} title="Copy session PIN" aria-label="Copy session PIN">
+                      {hasCopiedPin ? <Check size={17} color="var(--success)" /> : <Copy size={17} />}
+                    </button>
                   </div>
-                  <button 
-                    className="icon-btn" 
-                    onClick={handleCopyPin}
-                    style={{ 
-                      position: 'absolute',
-                      left: 'calc(100% + 12px)',
-                      width: '36px', 
-                      height: '36px', 
-                      border: '1px solid var(--border)',
-                      opacity: pin ? 1 : 0.5,
-                      pointerEvents: pin ? 'auto' : 'none'
-                    }}
-                    title="Copy PIN"
-                  >
-                    {hasCopiedPin ? <Check size={18} color="var(--success)" /> : <Copy size={18} />}
-                  </button>
                 </div>
-                <button className="btn btn-ghost" onClick={handleStopHosting} style={{ color: 'var(--danger)' }}>
-                  Stop Hosting
-                </button>
+                <div className="browser-state-note"><ShieldCheck size={14} /> You will approve the controller and their stated task before access begins.</div>
+                <button className="btn btn-ghost browser-state-cancel" onClick={handleStopHosting}>Stop hosting</button>
               </div>
             )}
             {hostState === 'AWAITING_HOST_APPROVAL' && (
-              <div className="session-approval animate-fade-in" style={{
-                background: 'var(--bg-overlay)', padding: 24, borderRadius: 'var(--radius)',
-                border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 16
-              }}>
-                <div style={{ fontSize: '16px', fontWeight: 600 }}>Controller wants to connect</div>
-                <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                  {pendingControllerId}
-                </div>
-                <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
-                  <strong>Requested task:</strong> {pendingControllerIntent || 'No intent supplied'}
-                </div>
-                <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                  <button className="btn btn-danger" onClick={handleReject}>Reject</button>
-                  <button className="btn btn-primary" onClick={handleApprove}>Approve</button>
+              <div className="browser-state-card browser-state-card-approval animate-fade-in" role="dialog" aria-labelledby="controller-request-title">
+                <div className="browser-state-icon warning"><Link2 size={18} /></div>
+                <div className="browser-state-eyebrow warning">Approval required</div>
+                <h3 id="controller-request-title">A controller wants to connect</h3>
+                <p className="browser-requester">Request from <code>{pendingControllerId || 'Unknown controller'}</code></p>
+                <div className="browser-requested-task"><span>Requested task</span><strong>{pendingControllerIntent || 'No intent supplied'}</strong></div>
+                <div className="browser-state-actions">
+                  <button className="btn btn-ghost" onClick={handleReject}>Reject request</button>
+                  <button className="btn btn-primary" onClick={handleApprove}>Approve connection</button>
                 </div>
               </div>
             )}
           </div>
         ) : isConnecting ? (
-          <div className="browser-loading">
-            <Loader2 size={32} className="animate-spin" style={{ marginBottom: 8 }} />
-            <div>Connecting...</div>
+          <div className="browser-loading" role="status" aria-live="polite">
+            <div className="browser-state-card browser-state-card-compact">
+              <Loader2 size={20} className="animate-spin" />
+              <div><h3>Connecting to host</h3><p>Establishing a secure browser stream…</p></div>
+            </div>
           </div>
         ) : isConnected ? (
           <>
@@ -434,9 +407,12 @@ export function BrowserPanel() {
               <canvas ref={canvasRef} className="browser-video" />
             )}
             {isHost && !showHostStream && (
-              <div className="browser-loading" style={{ flexDirection: 'column' }}>
-                <div style={{ marginBottom: 16 }}>Screen sharing is active.</div>
-                <button className="btn btn-primary" onClick={() => setShowHostStream(true)}>Preview Stream</button>
+              <div className="browser-loading">
+                <div className="browser-state-card browser-state-card-compact">
+                  <div className="browser-state-icon"><Radio size={18} /></div>
+                  <div><h3>Screen sharing is active</h3><p>Your browser is ready for the connected controller.</p></div>
+                  <button className="btn btn-primary" onClick={() => setShowHostStream(true)}>Preview stream</button>
+                </div>
               </div>
             )}
             {isHost && showHostStream && (
@@ -455,9 +431,11 @@ export function BrowserPanel() {
               </div>
             )}
             {!isLocal && rtcStatus !== 'streaming' && (
-              <div className="browser-loading">
-                <Loader2 size={24} className="animate-spin" style={{ marginBottom: 8 }} />
-                <div>Waiting for stream...</div>
+              <div className="browser-loading" role="status" aria-live="polite">
+                <div className="browser-state-card browser-state-card-compact">
+                  <Loader2 size={20} className="animate-spin" />
+                  <div><h3>Waiting for browser stream</h3><p>The session is connected. The first frame will appear shortly.</p></div>
+                </div>
               </div>
             )}
             {isTakeoverActive && (
@@ -478,18 +456,21 @@ export function BrowserPanel() {
             )}
           </>
         ) : (
-          <div className="browser-loading" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
-            <div>{error ?? 'Disconnected'}</div>
-            <button 
-              className="btn btn-primary" 
+          <div className="browser-loading" role="alert">
+            <div className="browser-state-card browser-state-card-error">
+              <div className="browser-state-icon danger"><AlertCircle size={18} /></div>
+              <div className="browser-state-eyebrow danger">Session ended</div>
+              <h3>{error ? 'Connection interrupted' : 'Browser disconnected'}</h3>
+              <p>{error ?? 'The browser session is no longer available.'}</p>
+              <button className="btn btn-primary"
               onClick={() => {
                 useConnectionStore.getState().reset();
                 window.RemoteCtrlAPI?.browser.close();
                 window.RemoteCtrlAPI?.host.stop();
               }}
             >
-              Return to Home
-            </button>
+              Return to home</button>
+            </div>
           </div>
         )}
       </div>

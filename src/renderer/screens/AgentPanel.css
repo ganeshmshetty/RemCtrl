@@ -23,8 +23,16 @@
   text-align: center;
   color: var(--text-muted);
   font-size: 14px;
-  margin-top: 40px;
+  margin: 28px auto 0;
+  max-width: 310px;
 }
+
+.agent-ready-mark { display: grid; width: 42px; height: 42px; place-items: center; margin-bottom: 12px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border) 58%); border-radius: 13px; background: var(--accent-glow); color: var(--accent); }
+.agent-ready-kicker { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.agent-ready-title { margin-top: 7px; color: var(--text-primary); font-size: 16px; font-weight: 600; }
+.agent-ready-copy { margin: 7px 0 20px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.agent-suggestions { display: flex; width: 100%; flex-direction: column; gap: 7px; }
+.agent-suggestions .btn { justify-content: flex-start; gap: 8px; border: 1px solid var(--border); text-align: left; }
 
 .agent-ready-indicator {
   position: relative;

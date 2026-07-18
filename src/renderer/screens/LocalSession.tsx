@@ -8,6 +8,12 @@ export function LocalSession() {
   const isResizing = useRef(false);
   const { isSidebarOpen } = useUIStore();
 
+  function handleResizeKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    setRightPanelWidth((width) => Math.min(800, Math.max(300, width + (event.key === 'ArrowLeft' ? 16 : -16))));
+  }
+
   useEffect(() => {
     function handlePointerMove(e: PointerEvent) {
       if (!isResizing.current) return;
@@ -38,6 +44,14 @@ export function LocalSession() {
         <>
           <div 
             className="drag-handle-vertical"
+            role="separator"
+            tabIndex={0}
+            aria-label="Resize workspace sidebar"
+            aria-orientation="vertical"
+            aria-valuemin={300}
+            aria-valuemax={800}
+            aria-valuenow={rightPanelWidth}
+            onKeyDown={handleResizeKeyDown}
             onPointerDown={(e) => {
               isResizing.current = true;
               document.body.style.cursor = 'col-resize';
