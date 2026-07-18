@@ -25,6 +25,7 @@ Verified:
 - Added bounded retries around transient agent-loop failures, preserving the current browser state and journaled actions between attempts.
 - Re-enabled Socket.IO reconnection with exponential delay and replayed host PIN/controller-intent handshakes after transport recovery.
 - Changed remote connection interruption copy from a terminal-looking error to an explicit automatic-reconnect state when signaling is retrying.
+- Fixed the command-palette new-session path so clearing the renderer also clears the main-process prompt context; a visually new chat no longer inherits old turns.
 
 Verified:
 

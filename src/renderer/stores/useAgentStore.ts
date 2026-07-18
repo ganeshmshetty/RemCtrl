@@ -478,6 +478,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           : 'completed');
       state.archiveCurrentRun(lastStatus);
     }
+    // Keep the main-process prompt context in sync with the renderer's new
+    // conversation. Without this, a command-palette "New agent session"
+    // visually clears the chat while the next model call still sees old turns.
+    void window.RemoteCtrlAPI?.agent.clearHistory();
     set({
       chatHistory: [],
       executionLogs: [],
