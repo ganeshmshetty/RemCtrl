@@ -1,5 +1,6 @@
 import type { Page } from 'playwright';
 import type { WorkflowStep } from '../../shared/types.js';
+import { throwIfAborted, waitFor } from './abortable.js';
 
 export type WorkflowPostcondition = NonNullable<WorkflowStep['postcondition']>;
 type QueryNode = { textContent?: string | null; getAttribute(name: string): string | null };
@@ -14,6 +15,7 @@ export interface WorkflowConditionOptions {
   postconditionPollIntervalMs?: number;
   /** Injectable delay for deterministic tests. */
   sleep?: (ms: number) => Promise<void>;
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -29,12 +31,14 @@ export class WorkflowConditionEngine {
   private readonly pollIntervalMs: number;
   private readonly postconditionPollIntervalMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly abortSignal?: AbortSignal;
 
   constructor(private readonly page: Page, options: WorkflowConditionOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 3_000;
     this.pollIntervalMs = options.pollIntervalMs ?? 500;
     this.postconditionPollIntervalMs = options.postconditionPollIntervalMs ?? 150;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.abortSignal = options.abortSignal;
   }
 
   async verify(postcondition: WorkflowPostcondition): Promise<void> {
@@ -49,9 +53,12 @@ export class WorkflowConditionEngine {
   private async waitFor(predicate: () => Promise<boolean>, pollIntervalMs: number): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, this.timeoutMs);
     do {
+      throwIfAborted(this.abortSignal);
       if (await predicate()) return true;
       if (Date.now() >= deadline) break;
-      await this.sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
+      const delay = Math.min(pollIntervalMs, Math.max(0, deadline - Date.now()));
+      if (this.abortSignal) await waitFor(delay, this.abortSignal);
+      else await this.sleep(delay);
     } while (Date.now() < deadline);
     return false;
   }

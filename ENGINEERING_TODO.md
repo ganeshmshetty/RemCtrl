@@ -39,7 +39,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 
 ### Capability polish
 
-- [ ] Improve workflow builder review/run experience with step status, failure context, and recovery affordances.
+- [x] Improve workflow builder review/run experience with step status, failure context, and recovery affordances.
 - [ ] Verify packaged Electron behavior, renderer smoke flows, tests, typechecks, and builds.
 - [ ] Commit each coherent implementation increment with a descriptive message.
 

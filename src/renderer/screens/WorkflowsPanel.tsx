@@ -254,7 +254,20 @@ function WorkflowRunView({
             {handoffPending ? 'Switching to agent…' : 'Continue with agent'}
           </button>
         ) : (
-          <button className="workflow-run-secondary" onClick={onBack}><ArrowLeft size={14} /> Back to workflows</button>
+          <>
+            {workflowRunState !== 'completed' && (
+              <button className="workflow-run-secondary" onClick={() => void startWorkflow()} disabled={!isConnected}>
+                <Play size={14} /> Run again
+              </button>
+            )}
+            {workflowRunState !== 'completed' && workflowRunState !== 'cancelled' && (
+              <button className="workflow-run-secondary" onClick={() => void continueWithAgent()} disabled={handoffPending}>
+                {handoffPending ? <Loader2 className="spin" size={14} /> : <Bot size={14} />}
+                Continue with agent
+              </button>
+            )}
+            <button className="workflow-run-secondary" onClick={onBack}><ArrowLeft size={14} /> Back to workflows</button>
+          </>
         )}
       </div>
     </div>

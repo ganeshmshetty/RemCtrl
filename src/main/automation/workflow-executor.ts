@@ -99,7 +99,7 @@ export async function runWorkflow(
       networkIdleTimeoutMs: 10_000,
       abortSignal: session.abortSignal,
     });
-    const conditions = new WorkflowConditionEngine(localPage);
+    const conditions = new WorkflowConditionEngine(localPage, { abortSignal: session.abortSignal });
 
     const provider = getPreferredProvider();
     const requiresModel = steps.some((step) =>

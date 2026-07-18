@@ -75,7 +75,20 @@ function StepRow({ step, idx }: { step: WorkflowStep; idx: number }) {
   return (
     <div className="wf-editor-step">
       {/* Step header row */}
-      <div className="wf-editor-step-header" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer' }}>
+      <div
+        className="wf-editor-step-header"
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setExpanded((value) => !value);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        style={{ cursor: 'pointer' }}
+      >
         <div style={{ width: 20, color: 'var(--text-muted)', fontSize: 12, textAlign: 'center' }}>
           {idx + 1}
         </div>
@@ -196,7 +209,12 @@ export function WorkflowEditorModal() {
       setDescription('');
       setSteps([defaultStep()]);
     }
-  }, [isWorkflowEditorOpen, editingWorkflowId, prefillWorkflow, workflows]);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeWorkflowEditor();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isWorkflowEditorOpen, editingWorkflowId, prefillWorkflow, workflows, closeWorkflowEditor]);
 
   if (!isWorkflowEditorOpen) return null;
 
@@ -212,7 +230,7 @@ export function WorkflowEditorModal() {
         description: description.trim(),
         steps: steps,
         source: prefillWorkflow?.source ?? existing?.source ?? (isEditing ? undefined : ('manual' as const)),
-        createdAt: now,
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
       await saveWorkflow(wf as any);
@@ -229,7 +247,7 @@ export function WorkflowEditorModal() {
         if (e.target === e.currentTarget) closeWorkflowEditor();
       }}
     >
-      <div className="wf-editor-modal wf-editor-modal-v2">
+      <div className="wf-editor-modal wf-editor-modal-v2" role="dialog" aria-modal="true" aria-labelledby="workflow-editor-title">
         {/* ── Header ── */}
         <div className="wf-editor-header">
           <div className="wf-editor-header-left">
@@ -239,7 +257,7 @@ export function WorkflowEditorModal() {
                 <span>AI-Recorded</span>
               </div>
             )}
-            <h3 style={{ margin: 0, fontSize: 15 }}>
+            <h3 id="workflow-editor-title" style={{ margin: 0, fontSize: 15 }}>
               {isEditing
                 ? 'View Workflow'
                 : 'Review & Save Recording'}

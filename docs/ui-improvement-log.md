@@ -12,6 +12,20 @@ Verified:
 - `npm run typecheck`
 - `npm test` — 16 files, 43 tests passed
 - `npm run build:renderer`
+
+## 2026-07-19 · Workflow recovery and review polish
+
+- Added `Run again` and agent handoff actions to failed workflow runs so a failed deterministic step has a clear next move.
+- Made workflow step disclosures keyboard accessible and added Escape-to-close behavior to the editor dialog.
+- Preserved original workflow creation timestamps when editing an existing workflow.
+- Made condition polling observe the automation abort signal, avoiding hidden polling after cancellation.
+
+Verified:
+
+- `npm test` — 19 files, 48 tests passed
+- `npm run typecheck:all`
+- `npm run build:renderer`
+- `npm run build:main`
 - Local Vite smoke check in the in-app browser, including local-session transition and fresh-tab console error check
 
 Still needs manual verification:

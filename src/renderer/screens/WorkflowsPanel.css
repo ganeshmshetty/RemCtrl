@@ -214,7 +214,7 @@
 .workflow-run-terminal.completed { color: var(--success, #34d399); background: rgba(52, 211, 153, .08); }
 .workflow-run-terminal.failed { color: var(--danger); background: rgba(239, 68, 68, .08); }
 .workflow-run-terminal.cancelled { color: var(--warning, #fbbf24); background: rgba(251, 191, 36, .08); }
-.workflow-run-footer { display: flex; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.workflow-run-footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .workflow-run-primary, .workflow-run-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: var(--radius-sm); padding: 9px 12px; font-size: 12px; font-weight: 500; cursor: pointer; }
 .workflow-run-primary { flex: 1; border: 0; background: var(--accent); color: white; }
 .workflow-run-primary:hover:not(:disabled) { background: var(--accent-hover); }
