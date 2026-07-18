@@ -68,6 +68,7 @@ export async function runWorkflow(
   onRunStatus: WorkflowRunStatusCb,
   onStepStatus: WorkflowStepStatusCb,
   onLog: WorkflowLogCb,
+  resumeFromStep = 0,
 ): Promise<void> {
   const { workflowRunId, name, steps } = payload;
   const previousRun = getAutomationSession('workflow');
@@ -76,7 +77,7 @@ export async function runWorkflow(
     previousRun.cancel();
   }
 
-  const session = new TaskSession({ commandId: workflowRunId, kind: 'workflow', title: name });
+  const session = new TaskSession({ commandId: workflowRunId, kind: 'workflow', workflowId: payload.workflowId, title: name });
   beginAutomationRun('workflow', session);
   session.start();
   const stopWatchdog = session.startWatchdog({
@@ -116,10 +117,15 @@ export async function runWorkflow(
       resolveModel(provider, apiKey);
     }
 
-    onRunStatus({ workflowRunId, state: 'running', currentStepIndex: 0 });
+    const initialStepIndex = Math.max(0, Math.min(resumeFromStep, steps.length));
+    onRunStatus({ workflowRunId, state: 'running', currentStepIndex: initialStepIndex });
     emitLog(onLog, 'info', `Workflow "${name}" started — ${steps.length} step(s), provider="${provider}"`, '[Workflow]');
 
-    let currentStepId: string | null = steps[0]?.id ?? null;
+    if (initialStepIndex > 0) {
+      emitLog(onLog, 'info', `Resuming near step ${initialStepIndex + 1}; the current step will be rechecked before continuing.`, '[Workflow]');
+    }
+
+    let currentStepId: string | null = steps[initialStepIndex]?.id ?? null;
     let transitions = 0;
 
     while (currentStepId !== null) {
@@ -153,6 +159,7 @@ export async function runWorkflow(
 
       onRunStatus({ workflowRunId, state: 'running', currentStepIndex: index });
       onStepStatus({ workflowRunId, stepId: step.id, index, state: 'running' });
+      session.checkpoint({ currentStep: index, completedSteps: index, currentAction: stepLabel });
       emitLog(onLog, 'info', `▶ ${stepLabel}`, '[Workflow]');
 
       try {

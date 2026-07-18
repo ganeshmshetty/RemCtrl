@@ -82,7 +82,13 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 
 - Added atomic per-run checkpoint metadata alongside the existing action journal. A stale `running` checkpoint is surfaced as `interrupted` after restart with its last step and action.
 - Added main/preload APIs to list and dismiss recoverable runs.
-- Added an agent-panel recovery banner that offers a state-aware continuation prompt for interrupted agent tasks and a clear notice for workflow checkpoints that still need a workflow-specific resume path.
+- Added an agent-panel recovery banner that offers a state-aware continuation prompt for interrupted agent tasks and a workflow-specific resume action for saved workflows.
+
+## 2026-07-19 · Workflow recovery
+
+- Workflow checkpoints now retain the saved workflow identity and the last active step.
+- After a renderer or main-process interruption, the Agent panel can resume the saved workflow on its owning host and recheck the current step before continuing.
+- If the saved workflow was deleted or the browser belongs to another host, the recovery banner explains why it cannot proceed instead of silently discarding the checkpoint.
 
 ## 2026-07-19 · Activity language and typography
 

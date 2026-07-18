@@ -20,16 +20,18 @@ export class TaskSession {
   private _lastActivityAt = Date.now();
   private readonly checkpointId: string;
   private readonly checkpointKind: 'agent' | 'workflow';
+  private readonly checkpointWorkflowId?: string;
   private readonly checkpointTitle: string;
   private readonly startedAt = Date.now();
   public initialGoal?: string;
   public readonly commandId?: string;
   public readonly journal: SessionJournal;
   
-  constructor(options?: { initialGoal?: string; commandId?: string; kind?: 'agent' | 'workflow'; title?: string }) {
+  constructor(options?: { initialGoal?: string; commandId?: string; kind?: 'agent' | 'workflow'; workflowId?: string; title?: string }) {
     this.initialGoal = options?.initialGoal;
     this.commandId = options?.commandId;
     this.checkpointKind = options?.kind ?? 'agent';
+    this.checkpointWorkflowId = options?.workflowId;
     this.checkpointTitle = options?.title ?? options?.initialGoal?.slice(0, 120) ?? 'Automation run';
     this.journal = new DiskJournalAdapter(options?.commandId);
     this.checkpointId = options?.commandId ?? this.journal.id;
@@ -158,6 +160,7 @@ export class TaskSession {
       id: this.checkpointId,
       kind: this.checkpointKind,
       commandId: this.commandId,
+      workflowId: this.checkpointWorkflowId,
       title: this.checkpointTitle,
       startedAt: this.startedAt,
       updatedAt: Date.now(),

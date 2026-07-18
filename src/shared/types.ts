@@ -395,6 +395,7 @@ export interface AutomationRunCheckpoint {
   id: string;
   kind: 'agent' | 'workflow';
   commandId: string;
+  workflowId?: string;
   title: string;
   startedAt: number;
   updatedAt: number;
@@ -626,6 +627,7 @@ export interface RemoteCtrlAPI {
     clearHistory: () => Promise<{ ok: boolean }>;
     listRecoverableRuns: () => Promise<AutomationRunCheckpoint[]>;
     discardRecoverableRun: (id: string) => Promise<{ ok: boolean }>;
+    resumeRecoverableRun: (id: string) => Promise<{ ok: boolean; error?: string }>;
     listRunHistory: () => Promise<AutomationRunHistoryItem[]>;
     saveRunHistory: (item: AutomationRunHistoryItem) => Promise<{ ok: boolean; error?: string }>;
     deleteRunHistory: (id: string) => Promise<{ ok: boolean }>;

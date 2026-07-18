@@ -29,6 +29,7 @@ export function AgentPanel() {
   } = useAgentStore();
   
   const { role, controllerState, hostState, sendData } = useConnectionStore();
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const firstRecoverableRun = recoverableRuns[0];
   
@@ -114,9 +115,23 @@ export function AgentPanel() {
   }
 
   async function retryInterruptedRun(run: (typeof recoverableRuns)[number]) {
+    setRecoveryError(null);
+    if (run.kind === 'agent') {
+      await useAgentStore.getState().dismissRecoverableRun(run.id);
+      handleSendPrompt(`Continue the interrupted task: ${run.title}. The previous run stopped near step ${run.currentStep ?? 'an unknown step'} after "${run.currentAction ?? 'an unknown action'}". Re-check the current browser state before taking action.`);
+      return;
+    }
+    if (role !== 'local' && hostState === 'IDLE') {
+      setRecoveryError('Workflow recovery is available on the host that owns the browser session.');
+      return;
+    }
+    const result = await window.RemoteCtrlAPI?.agent.resumeRecoverableRun(run.id);
+    if (!result?.ok) {
+      setRecoveryError(result?.error ?? 'Unable to resume this workflow.');
+      return;
+    }
+    useAgentStore.getState().startNewExecution('workflow', run.commandId, run.title);
     await useAgentStore.getState().dismissRecoverableRun(run.id);
-    if (run.kind !== 'agent') return;
-    handleSendPrompt(`Continue the interrupted task: ${run.title}. The previous run stopped near step ${run.currentStep ?? 'an unknown step'} after "${run.currentAction ?? 'an unknown action'}". Re-check the current browser state before taking action.`);
   }
 
   const renderChatHistory = () => {
@@ -164,15 +179,16 @@ export function AgentPanel() {
             <span>{recoverableRuns[0]?.title} · stopped near step {recoverableRuns[0]?.currentStep ?? '—'}</span>
           </div>
           <div className="agent-recovery-actions">
-            {firstRecoverableRun?.kind === 'agent' && (
+            {firstRecoverableRun && (
               <button className="btn btn-primary btn-sm" onClick={() => void retryInterruptedRun(firstRecoverableRun)}>
-                Continue task
+                {firstRecoverableRun.kind === 'agent' ? 'Continue task' : 'Resume workflow'}
               </button>
             )}
             {firstRecoverableRun && <button className="btn btn-ghost btn-sm" onClick={() => void useAgentStore.getState().dismissRecoverableRun(firstRecoverableRun.id)}>
               {firstRecoverableRun.kind === 'agent' ? 'Dismiss' : 'Clear notice'}
             </button>}
           </div>
+          {recoveryError && <div className="agent-recovery-error" role="alert">{recoveryError}</div>}
         </section>
       )}
       {recordingState !== 'idle' && (

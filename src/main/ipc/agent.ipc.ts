@@ -10,7 +10,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { AgentPromptPayloadSchema, AgentWorkflowBatchSchema, CheckpointResponseSchema, AgentRewindPayloadSchema, RecordingSessionStartSchema } from '../../shared/schemas.js';
-import { getPreferredProvider, getApiKey, saveTaskScope, listAutomationHistory, saveAutomationHistory, deleteAutomationHistory, clearAutomationHistory } from '../storage.js';
+import { getPreferredProvider, getApiKey, saveTaskScope, listAutomationHistory, saveAutomationHistory, deleteAutomationHistory, clearAutomationHistory, listWorkflows } from '../storage.js';
 import {
   runAgent,
   cancelAgent,
@@ -189,6 +189,40 @@ export function registerAgentIpc() {
     const id = z.string().min(1).safeParse(rawId);
     if (!id.success) return { ok: false };
     await removeRunCheckpoint(id.data);
+    return { ok: true };
+  });
+
+  ipcMain.handle('agent:resumeRecoverableRun', async (_event, rawId: unknown) => {
+    const parsedId = z.string().min(1).safeParse(rawId);
+    if (!parsedId.success) return { ok: false, error: 'Invalid recovery id.' };
+    if (isAgentRunning() || isWorkflowRunning()) {
+      return { ok: false, error: 'Another automation run is already active.' };
+    }
+
+    const checkpoint = listRunCheckpoints().find((run) => run.id === parsedId.data);
+    if (!checkpoint) return { ok: false, error: 'That recovery point is no longer available.' };
+    if (checkpoint.kind !== 'workflow' || !checkpoint.workflowId) {
+      return { ok: false, error: 'Agent runs need a fresh browser-state check before continuing.' };
+    }
+
+    const workflow = listWorkflows().find((candidate) => candidate.id === checkpoint.workflowId);
+    if (!workflow) return { ok: false, error: 'The saved workflow for this recovery point no longer exists.' };
+
+    const payload: AgentWorkflowBatchPayload = {
+      workflowRunId: checkpoint.commandId,
+      workflowId: workflow.id,
+      name: workflow.name,
+      steps: workflow.steps,
+    };
+    runWorkflow(
+      payload,
+      (status) => broadcast('workflow:runStatus', status),
+      (stepStatus) => broadcast('workflow:stepStatus', stepStatus),
+      (log) => broadcast('agent:log', log),
+      checkpoint.currentStep ?? 0,
+    ).catch((err) => {
+      console.error('[workflow] Unexpected recovery error:', err);
+    });
     return { ok: true };
   });
 
