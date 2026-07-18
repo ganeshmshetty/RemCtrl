@@ -42,6 +42,8 @@
   --bg-surface: #1c1c1e;
   --bg-elevated: #242426;
   --bg-overlay: #3f3f46;
+  --bg-secondary: #18181a;
+  --bg-tertiary: #111113;
 
   --border: rgba(255, 255, 255, 0.08);
   --border-active: rgba(255, 255, 255, 0.16);
@@ -71,17 +73,38 @@
 }
 
 :root.light-theme {
-  --bg-base: #f9f9fb;
+  /* Keep the shared shadcn/Tailwind semantic tokens in sync with the
+     application's custom palette. Without these, Card (bg-card) surfaces
+     remain dark even when the surrounding workspace switches to light mode. */
+  --background: 210 20% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 222 47% 11%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 214 32% 95%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 214 32% 95%;
+  --muted-foreground: 215 16% 47%;
+  --ring: 226 70% 55%;
+
+  --bg-base: #f5f6f8;
   --bg-surface: #ffffff;
-  --bg-elevated: #f0f0f5;
-  --bg-overlay: #e5e5ec;
+  --bg-elevated: #fbfbfd;
+  --bg-overlay: #eef0f5;
+  --bg-secondary: #f0f2f6;
+  --bg-tertiary: #e6e9ef;
 
-  --border: rgba(0, 0, 0, 0.1);
-  --border-active: rgba(0, 0, 0, 0.2);
+  --border: rgba(15, 23, 42, 0.11);
+  --border-active: rgba(15, 23, 42, 0.2);
 
-  --text-primary: #111118;
-  --text-secondary: #4a4a65;
-  --text-muted: #8888a8;
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --accent-glow: rgba(99, 102, 241, 0.12);
+  --danger-glow: rgba(239, 68, 68, 0.12);
 }
 
 /* ─── Base Reset ─── */
@@ -423,3 +446,4 @@ button:active:not(:disabled),
   transition: background var(--transition), color var(--transition);
 }
 .icon-btn:hover { background: var(--bg-overlay); color: var(--text-primary); }
+:root.light-theme .btn-ghost:hover:not(:disabled) { background: rgba(15, 23, 42, 0.05); }

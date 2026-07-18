@@ -8,7 +8,7 @@
  * Key exports: TopNav (function component).
  */
 
-import { Command, PanelRight, Settings } from 'lucide-react';
+import { PanelRight, Settings } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 import * as Tooltip from '@radix-ui/react-tooltip';
@@ -57,7 +57,6 @@ export function TopNav() {
     <div className="top-nav">
       <div className="top-nav-left drag-region">
         <div className="top-nav-brand">
-          <span className="top-nav-brand-mark"><Command size={14} /></span>
           <span>RemoteCtrl</span>
         </div>
         <span className="top-nav-context">{workspaceLabel}</span>

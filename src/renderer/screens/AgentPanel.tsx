@@ -8,56 +8,23 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Zap, Hand, MousePointer, Save, Loader2, Globe, Eye, FileText, CheckCircle2, ChevronDown, Edit3, Keyboard, ArrowUpDown } from 'lucide-react';
+import { Bot, Zap, MousePointer, Globe, Eye, FileText, CheckCircle2, ChevronDown, Edit3, Keyboard, ArrowUpDown, Search, CircleDot, Copy, RotateCcw, Save, X } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
-import { useUIStore } from '../stores/useUIStore';
 import type { ChatMessage } from '../stores/useAgentStore';
-import type { AgentCheckpointPayload, WorkflowStep, RecordedAgentStep } from '../../shared/types';
+import type { AgentCheckpointPayload, PolicyApprovalRequest, TaskScope } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import './AgentPanel.css';
-
-function convertAgentRunToWorkflow(steps: RecordedAgentStep[]): { steps: WorkflowStep[] } {
-  const workflowSteps: WorkflowStep[] = [];
-
-  for (const step of steps) {
-    if (step.tool === 'goto') {
-      const url = String(step.input.url ?? '');
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'navigate', url, onFailure: 'stop' });
-    } else if (step.tool === 'act') {
-      const action = String(step.input.action ?? 'click');
-      const selector = String(step.input.selector ?? '').trim();
-      const value = step.input.value != null ? String(step.input.value) : undefined;
-      const description = step.summary;
-
-      // Skip steps with no usable selector — they cannot be replayed
-      if (!selector) continue;
-
-      if (action === 'fill' || action === 'select') {
-        workflowSteps.push({ id: crypto.randomUUID(), type: action, selector, value: value ?? '', description, onFailure: 'self_heal' });
-      } else if (action === 'check') {
-         workflowSteps.push({ id: crypto.randomUUID(), type: 'click', selector, description: `Check ${selector}`, onFailure: 'self_heal' });
-      } else {
-        workflowSteps.push({ id: crypto.randomUUID(), type: 'click', selector, description, onFailure: 'self_heal' });
-      }
-    } else if (step.tool === 'keys') {
-      const key = String(step.input.key ?? '');
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'keypress', key, onFailure: 'skip' });
-    } else if (step.tool === 'extract') {
-      const instruction = step.input.instruction ? String(step.input.instruction) : 'Extract content';
-      workflowSteps.push({ id: crypto.randomUUID(), type: 'extract', instruction, onFailure: 'skip' });
-    }
-  }
-
-  return { steps: workflowSteps };
-}
 
 export function AgentPanel() {
   const { 
-    chatHistory, setTakeoverActive,
-    workflowRunState, workflowRunId, workflowStepStatuses,
-    agentStatus, currentAction
+    chatHistory,
+    workflowRunState,
+    recordingState,
+    recordingSessionId,
+    recordingTask,
+    recordingStepCount,
+    recordingError,
   } = useAgentStore();
   
   const { role, controllerState, hostState, sendData } = useConnectionStore();
@@ -81,7 +48,13 @@ export function AgentPanel() {
       timestamp: Date.now(),
     });
 
-    const payload = { commandId, action: 'act' as const, instruction: text };
+    const payload = {
+      commandId,
+      action: 'act' as const,
+      instruction: text,
+      executionMode: role === 'local' ? 'local' as const : 'remote' as const,
+      recordingSessionId: recordingState === 'recording' ? recordingSessionId ?? undefined : undefined,
+    };
 
     if (controllerState !== 'IDLE' && sendData) {
       sendData({
@@ -111,38 +84,37 @@ export function AgentPanel() {
     }
   }
 
-  function handleTakeover() {
-    setTakeoverActive(true);
-    window.RemoteCtrlAPI?.browser.setTakeoverActive?.(true);
+  async function handleSaveRecording() {
+    if (recordingState !== 'recording') return;
+    useAgentStore.getState().setRecordingState({ recordingState: 'saving', recordingError: null });
+    const result = await window.RemoteCtrlAPI?.browser.saveWorkflowRecording();
+    if (result?.ok) {
+      useAgentStore.getState().clearRecordingState();
+      useAgentStore.getState().appendMessage({
+        id: `recording-saved-${Date.now()}`,
+        sender: 'agent',
+        type: 'workflow',
+        text: `Workflow saved: ${result.workflow?.name ?? 'Recorded workflow'}`,
+        timestamp: Date.now(),
+      });
+    } else {
+      useAgentStore.getState().setRecordingState({ recordingState: 'error', recordingError: result?.error ?? 'Unable to save workflow.' });
+    }
+  }
+
+  async function handleDiscardRecording() {
+    await window.RemoteCtrlAPI?.browser.discardWorkflowRecording();
+    useAgentStore.getState().clearRecordingState();
   }
 
   const renderChatHistory = () => {
-    const rendered: React.ReactNode[] = [];
-    let currentLogGroup: ChatMessage[] = [];
-
-    const flushLogs = (key: string, isLast = false) => {
-      if (currentLogGroup.length > 0 || (isLast && agentStatus === 'running')) {
-        const logs = [...currentLogGroup];
-        rendered.push(
-          <CollapsableLogs key={key} logs={logs} agentStatus={isLast ? agentStatus : 'idle'} currentAction={isLast ? currentAction : undefined} />
-        );
-        currentLogGroup = [];
-      }
-    };
-
-    for (let i = 0; i < chatHistory.length; i++) {
-      const msg = chatHistory[i];
-      if (msg.type === 'log') {
-        currentLogGroup.push(msg);
-      } else {
-        flushLogs(`log-group-${i}`);
-        rendered.push(
-          <ChatBubble
-            key={msg.id}
-            msg={msg}
-            onCheckpointResponse={handleCheckpointResponse}
-            onTakeover={handleTakeover}
-            onEditMessage={(newInstruction) => {
+    const visibleMessages = chatHistory.filter((msg) => msg.type !== 'log');
+    return visibleMessages.map((msg, index) => (
+      <ChatBubble
+        key={msg.id}
+        msg={msg}
+        onCheckpointResponse={handleCheckpointResponse}
+        onEditMessage={(newInstruction) => {
               if (msg.sender === 'user') {
                 const snapshotId = msg.id.replace('user-', '');
                 const commandId = crypto.randomUUID();
@@ -159,38 +131,35 @@ export function AgentPanel() {
                   commandId,
                   action: 'act',
                   newInstruction,
+                  executionMode: role === 'local' ? 'local' : 'remote',
                 });
               }
             }}
-          />
-        );
-      }
-    }
-    flushLogs('log-group-end', true);
-    return rendered;
+        onRetry={msg.isFinal ? () => {
+          const priorPrompt = visibleMessages.slice(0, index).reverse().find((entry) => entry.sender === 'user' && entry.type === 'prompt');
+          if (priorPrompt) handleSendPrompt(priorPrompt.text);
+        } : undefined}
+      />
+    ));
   };
 
   return (
     <div className="agent-panel">
-      <div className="agent-chat-area">
-        {workflowRunState !== 'idle' && workflowRunId && (
-          <div className="agent-workflow-status">
-            <div className="agent-workflow-status-title">
-              <Zap size={14} style={{ marginRight: 6 }} /> Workflow Status: {workflowRunState}
-            </div>
-            <div>
-              {workflowStepStatuses.map((step, i) => (
-                <div key={i} className="agent-workflow-step">
-                  <span className={`agent-workflow-step-dot ${step.state}`}></span>
-                  <span style={{ color: step.state === 'skipped' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                    Step {step.index + 1}
-                  </span>
-                </div>
-              ))}
-            </div>
+      {recordingState !== 'idle' && (
+        <section className="agent-recording-banner" aria-live="polite">
+          <div className="agent-recording-copy">
+            <div className="agent-recording-title"><span className="agent-recording-dot" /> Recording workflow</div>
+            <div className="agent-recording-task">{recordingTask || 'Capturing agent actions'} · {recordingStepCount} captured step{recordingStepCount === 1 ? '' : 's'}</div>
+            {recordingError && <div className="agent-recording-error">{recordingError}</div>}
           </div>
-        )}
-
+          <div className="agent-recording-actions">
+            <button className="btn btn-primary btn-sm" disabled={recordingState !== 'recording' || recordingStepCount === 0} onClick={() => void handleSaveRecording()}><Save size={13} /> Save workflow</button>
+            <button className="btn btn-ghost btn-sm" disabled={recordingState === 'saving'} onClick={() => void handleDiscardRecording()}><X size={13} /> Discard</button>
+          </div>
+        </section>
+      )}
+      <ScopeGuard role={role} />
+      <div className="agent-chat-area">
         {chatHistory.length === 0 && workflowRunState === 'idle' && (
           <div className="agent-chat-empty">
             <div style={{ fontWeight: 500, fontSize: 16 }}>Agent is ready</div>
@@ -223,27 +192,7 @@ export function AgentPanel() {
         )}
 
         {renderChatHistory()}
-        
-        {chatHistory.length > 0 && chatHistory[chatHistory.length - 1].type === 'status' && (
-          <button 
-            className="btn btn-ghost agent-save-workflow-btn" 
-            onClick={() => {
-              const { lastRecordedSteps, lastCompletedPrompt } = useAgentStore.getState();
-              const { openWorkflowEditorWithData } = useUIStore.getState();
-              const { steps } = convertAgentRunToWorkflow(lastRecordedSteps);
-              const goal = lastCompletedPrompt ?? '';
-              openWorkflowEditorWithData({
-                name: goal.slice(0, 50) + (goal.length > 50 ? '...' : ''),
-                description: goal,
-                steps,
-                source: 'ai_recorded',
-              });
-            }}
-          >
-            <Save size={14} style={{ marginRight: 4 }} /> Save as Workflow
-          </button>
-        )}
-        
+
         <div ref={chatEndRef} />
       </div>
 
@@ -251,16 +200,151 @@ export function AgentPanel() {
   );
 }
 
+function PromptActivity({ activities }: { activities: NonNullable<ChatMessage['activity']> }) {
+  const [expanded, setExpanded] = useState(true);
+  const hasRunning = activities.some((activity) => activity.state === 'running');
+
+  if (!activities.length) return null;
+  return <section className="agent-activity prompt-activity" aria-live="polite">
+    <button className="agent-activity-summary" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+      <Bot size={15} />
+      <span>{hasRunning ? 'Working on this request…' : 'Activity'}</span>
+      <ChevronDown className={expanded ? 'expanded' : ''} size={15} />
+    </button>
+    {expanded && <div className="agent-activity-list">
+      {activities.map((activity) => <div className={`agent-activity-row ${activity.state}`} key={activity.id}>
+        <ActivityIcon text={activity.text} />
+        <span>{activity.text}</span>
+      </div>)}
+    </div>}
+  </section>;
+}
+
+function ActivityIcon({ text }: { text: string }) {
+  const value = text.toLowerCase();
+  if (/navig|open/.test(value)) return <Globe size={13} />;
+  if (/read|observ|analy/.test(value)) return <Eye size={13} />;
+  if (/find|look|search/.test(value)) return <Search size={13} />;
+  if (/enter|typ|fill|select/.test(value)) return <Edit3 size={13} />;
+  if (/check|verif/.test(value)) return <CheckCircle2 size={13} />;
+  if (/click|scroll|action/.test(value)) return <MousePointer size={13} />;
+  return <CircleDot size={13} />;
+}
+
+function ScopeGuard({ role }: { role: 'idle' | 'host' | 'controller' | 'local' }) {
+  const isLocal = role === 'local';
+  const isHost = role === 'host';
+  const [scope, setScope] = useState<TaskScope | null>(null);
+  const [goal, setGoal] = useState('');
+  const [domains, setDomains] = useState('');
+  const [pending, setPending] = useState<PolicyApprovalRequest[]>([]);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    const refreshScope = () => window.RemoteCtrlAPI?.policy.getScope().then((loaded) => {
+      if (!mounted) return;
+      setScope(loaded);
+      setGoal(loaded.goal);
+      setDomains(loaded.allowedDomains.join(', '));
+    }).catch(() => setMessage('Unable to load task scope.'));
+    refreshScope();
+    const unsubscribe = window.RemoteCtrlAPI?.on.policyApprovalRequested((approval) => {
+      setPending((current) => current.some((item) => item.approval.id === approval.approval.id) ? current : [...current, approval]);
+    });
+    const unsubscribeAudit = window.RemoteCtrlAPI?.on.policyAudit((event) => {
+      if (event.type === 'scope.changed') void refreshScope();
+    });
+    return () => { mounted = false; unsubscribe?.(); unsubscribeAudit?.(); };
+  }, []);
+
+  async function saveScope() {
+    if (!scope) return;
+    const allowedDomains = domains.split(',').map((domain) => domain.trim()).filter(Boolean);
+    const next = { ...scope, goal: goal.trim(), allowedDomains: allowedDomains.length ? allowedDomains : ['*'] };
+    const result = await window.RemoteCtrlAPI?.policy.setScope(next);
+    if (result?.ok) {
+      setScope(next);
+      setMessage('Scope saved. Protected actions now require host approval.');
+    } else {
+      setMessage(result?.error ?? 'Unable to save scope.');
+    }
+  }
+
+  async function resolve(approvalId: string, approved: boolean) {
+    await window.RemoteCtrlAPI?.policy.approve(approvalId, approved);
+    setPending((current) => current.filter((item) => item.approval.id !== approvalId));
+  }
+
+  if (isLocal) {
+    return <section style={{ margin: '10px 12px 0', border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)' }}>
+      <strong style={{ color: 'var(--accent)' }}>Local session</strong> · direct control is enabled; remote task scope is inactive.
+    </section>;
+  }
+  if (role === 'controller') {
+    return <section style={{ margin: '10px 12px 0', border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)' }}>
+      <strong style={{ color: 'var(--accent)' }}>Controller session</strong> · commands are evaluated by the host’s task scope. The host receives and resolves protected-action approvals.
+    </section>;
+  }
+
+  return (
+    <section style={{ margin: '10px 12px 0', border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--bg-elevated)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+        <strong style={{ fontSize: 13 }}>Task Scope · hard action gate</strong>
+        <span style={{ fontSize: 11, color: 'var(--accent)' }}>ENFORCED IN MAIN PROCESS</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input
+          aria-label="Task goal"
+          value={goal}
+          onChange={(event) => setGoal(event.target.value)}
+          disabled={!isHost}
+          placeholder="What should the operator accomplish?"
+          style={{ minWidth: 0, flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <input
+          aria-label="Allowed domains"
+          value={domains}
+          onChange={(event) => setDomains(event.target.value)}
+          disabled={!isHost}
+          placeholder="example.com, *.example.org"
+          style={{ minWidth: 0, flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+        />
+        {isHost && <button className="btn btn-sm" onClick={() => void saveScope()}>Save scope</button>}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
+        {isHost
+          ? 'Host-owned remote scope. In-scope navigation can continue automatically; typing, arbitrary clicks, keys, and tab changes pause for approval.'
+          : 'Scope becomes editable when this session is hosted.'}
+      </div>
+      {message && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 5 }}>{message}</div>}
+      {pending.map((approval) => (
+        <div key={approval.approval.id} style={{ marginTop: 10, padding: 9, borderRadius: 7, background: 'rgba(245, 158, 11, .13)', border: '1px solid rgba(245, 158, 11, .35)' }}>
+          <div style={{ fontWeight: 600, fontSize: 12 }}>Approval required · {approval.capability}</div>
+          <div style={{ fontSize: 12, marginTop: 3 }}>{approval.action}</div>
+          {approval.url && <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflowWrap: 'anywhere', marginTop: 3 }}>{approval.url}</div>}
+          {isHost ? <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <button className="btn btn-sm" onClick={() => void resolve(approval.approval.id, true)}>Approve once</button>
+            <button className="btn btn-sm btn-ghost" onClick={() => void resolve(approval.approval.id, false)}>Block</button>
+          </div> : <div style={{ fontSize: 11, marginTop: 7 }}>Waiting for the host to decide.</div>}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function ChatBubble({
   msg,
   onCheckpointResponse,
-  onTakeover,
   onEditMessage,
+  onRetry,
 }: {
   msg: ChatMessage;
   onCheckpointResponse?: (checkpointId: string, optionId: string) => void;
-  onTakeover?: () => void;
   onEditMessage?: (newInstruction: string) => void;
+  onRetry?: () => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(msg.text);
@@ -288,21 +372,6 @@ function ChatBubble({
               </button>
             ))}
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error message with Takeover button
-  if (msg.type === 'error') {
-    return (
-      <div className="agent-msg">
-        <div className="agent-msg-error-card">
-          <div className="agent-msg-error-title">Task Failed</div>
-          <div className="agent-msg-error-text">{msg.text}</div>
-          <button className="btn btn-sm" style={{ background: 'var(--danger)', color: '#fff', marginTop: 8 }} onClick={onTakeover}>
-            <Hand size={13} style={{ marginRight: 4 }} /> Takeover
-          </button>
         </div>
       </div>
     );
@@ -424,6 +493,12 @@ function ChatBubble({
         ) : (
           <>
             <MarkdownRenderer content={msg.text} />
+            {msg.isFinal && !isUser && (
+              <div className="agent-completion-actions">
+                <button onClick={() => void navigator.clipboard.writeText(msg.text)} title="Copy response"><Copy size={13} /> Copy</button>
+                {onRetry && <button onClick={onRetry} title="Retry this request"><RotateCcw size={13} /> Retry</button>}
+              </div>
+            )}
             {isUser && onEditMessage && (
               <button 
                 className="agent-msg-edit-btn"
@@ -454,60 +529,7 @@ function ChatBubble({
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-function CollapsableLogs({ logs, agentStatus, currentAction }: { logs: ChatMessage[]; agentStatus: string; currentAction?: string | null }) {
-  const [isOpen, setIsOpen] = useState(agentStatus === 'running');
-
-  useEffect(() => {
-    if (agentStatus === 'running') {
-      setIsOpen(true);
-    }
-  }, [agentStatus]);
-
-  const isRunning = agentStatus === 'running';
-
-  return (
-    <div className="agent-msg-logs-collapsable animate-fade-in" style={{ margin: '6px 0', width: '100%' }}>
-      <Accordion type="single" collapsible value={isOpen ? "logs" : ""} onValueChange={(v) => setIsOpen(v === "logs")}>
-        <AccordionItem value="logs" style={{ border: 'none' }}>
-            <AccordionTrigger
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                background: isRunning ? 'var(--accent-glow)' : 'none',
-                border: isRunning ? '1px solid var(--accent)' : 'none',
-                color: isRunning ? 'var(--text-primary)' : 'var(--text-muted)',
-                fontSize: 12,
-                fontWeight: isRunning ? 500 : 600,
-                cursor: 'pointer',
-                padding: isRunning ? '8px 14px' : '4px 0',
-                borderRadius: 'var(--radius)',
-                outline: 'none',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {isRunning && (
-                  <Loader2 className="animate-spin" size={14} style={{ color: 'var(--accent)' }} />
-                )}
-                <span>
-                  {isRunning ? (currentAction || 'Working...') : `Execution steps (${logs.length})`}
-                </span>
-              </div>
-            </AccordionTrigger>
-          <AccordionContent className="accordion-content">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 12, borderLeft: '1px dashed var(--border)' }}>
-              {logs.map((log) => (
-                <ChatBubble key={log.id} msg={log} />
-              ))}
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+      {isUser && msg.type === 'prompt' && <PromptActivity activities={msg.activity ?? []} />}
     </div>
   );
 }

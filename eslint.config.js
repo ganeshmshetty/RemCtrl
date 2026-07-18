@@ -6,7 +6,10 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // research/stagehand is a separately maintained research checkout with its
+  // own ESLint configuration and dependency graph; root linting must not load
+  // that configuration as though it were part of the Electron application.
+  globalIgnores(['dist', 'research/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

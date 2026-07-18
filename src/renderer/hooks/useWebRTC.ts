@@ -10,6 +10,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { DataChannelMessage } from '../../shared/types';
+import { useAgentStore } from '../stores/useAgentStore';
+import { useConnectionStore } from '../stores/useConnectionStore';
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -74,6 +76,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
   const [status, setStatus] = useState<WebRTCStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const reliableChannelRef = useRef<RTCDataChannel | null>(null);
 
   useEffect(() => {
     if (!isSessionActive) return;
@@ -108,6 +111,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
 
         // Data Channels
         const reliableChannel = pc.createDataChannel('RemoteCtrl-reliable', { ordered: true });
+        reliableChannelRef.current = reliableChannel;
         const inputChannel = pc.createDataChannel('RemoteCtrl-input', { ordered: false, maxRetransmits: 0 });
         videoChannel = pc.createDataChannel('RemoteCtrl-video', { ordered: false, maxRetransmits: 0 });
 
@@ -175,6 +179,27 @@ export function useHostWebRTC(isSessionActive: boolean) {
               }
             } else if (msg.type === 'WORKFLOW_CANCEL') {
               await window.RemoteCtrlAPI.browser.cancelWorkflow();
+            } else if (msg.type === 'TAKEOVER_REQUEST') {
+              const recordingState = useAgentStore.getState().recordingState;
+              if (recordingState === 'recording' || recordingState === 'saving') {
+                if (reliableChannel.readyState === 'open') {
+                  reliableChannel.send(JSON.stringify({
+                    type: 'TAKEOVER_DECISION',
+                    version: '1.0',
+                    timestamp: Date.now(),
+                    payload: { approved: false, active: false },
+                  } satisfies DataChannelMessage));
+                }
+              } else {
+                useConnectionStore.getState().setPendingTakeover(true);
+              }
+            } else if (msg.type === 'TAKEOVER_RELEASE') {
+              useConnectionStore.getState().setPendingTakeover(false);
+              useAgentStore.getState().setTakeoverActive(false);
+              await window.RemoteCtrlAPI.browser.setTakeoverActive(false);
+              if (reliableChannel.readyState === 'open') {
+                reliableChannel.send(JSON.stringify({ type: 'TAKEOVER_DECISION', version: '1.0', timestamp: Date.now(), payload: { approved: true, active: false } } satisfies DataChannelMessage));
+              }
             } else if (msg.type === 'AGENT_CHECKPOINT_RESPONSE') {
               const payload = msg.payload as any;
               await window.RemoteCtrlAPI.browser.submitCheckpoint(payload.checkpointId, payload.response);
@@ -203,6 +228,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
         };
 
         pc.oniceconnectionstatechange = () => {
+          if (cancelled || !pc) return;
           if (pc?.iceConnectionState === 'disconnected' || pc?.iceConnectionState === 'failed') {
             console.log('[host-webrtc] ICE disconnected/failed. Initiating ICE restart...');
             pc.restartIce();
@@ -302,6 +328,9 @@ export function useHostWebRTC(isSessionActive: boolean) {
             console.log('[host-webrtc] Controller disconnected. Cancelling active agents and workflows...');
             window.RemoteCtrlAPI.browser.cancelAgent().catch(() => {});
             window.RemoteCtrlAPI.browser.cancelWorkflow().catch(() => {});
+            useConnectionStore.getState().setPendingTakeover(false);
+            useAgentStore.getState().setTakeoverActive(false);
+            window.RemoteCtrlAPI.browser.setTakeoverActive(false).catch(() => {});
           }
         };
 
@@ -361,12 +390,19 @@ export function useHostWebRTC(isSessionActive: boolean) {
       cleanupAgentCheckpoint?.();
       pc?.close();
       pc = null;
+      reliableChannelRef.current = null;
+      window.RemoteCtrlAPI?.browser.setTakeoverActive(false).catch(() => {});
       setStatus('idle');
       setError(null);
     };
   }, [isSessionActive]);
 
-  return { status, error, videoRef };
+  const sendData = useCallback((msg: DataChannelMessage) => {
+    const channel = reliableChannelRef.current;
+    if (channel?.readyState === 'open') channel.send(JSON.stringify(msg));
+  }, []);
+
+  return { status, error, videoRef, sendData };
 }
 // ─── Controller-side WebRTC hook ───────────────────────────────────────────────
 // The PC and signal listener are created on mount (not gated by isSessionActive)

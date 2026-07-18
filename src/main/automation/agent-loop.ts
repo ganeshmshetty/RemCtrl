@@ -9,19 +9,32 @@
 import { generateText } from 'ai';
 import type { Page } from 'playwright';
 import { createBrowserTools } from './agent-tools.js';
+import { formatToolAction } from './agent-trace.js';
+import { mapAgentToolToWorkflowStep } from './workflow-step-mapper.js';
 import type { AgentLogCb, AgentStatusCb } from './execution-engine.js';
 import type { TaskSession } from './task-session.js';
-import type { RecordedAgentStep } from '../../shared/types.js';
+import type { ExecutionTraceEntry, RecordedAgentStep, WorkflowStep } from '../../shared/types.js';
 import { randomUUID } from 'crypto';
+import type { AutomationSecurityMode } from './security-mode.js';
+import { buildAgentTaskPrompt } from './agent-system-prompt.js';
+import { createDevelopmentLogger } from '../dev-logger.js';
+
+export type AgentTerminationReason = 'done_true' | 'done_false' | 'max_steps' | 'model_text' | 'stopped_without_done';
+
+const terminalLog = createDevelopmentLogger('AgentLoop');
 
 export interface AgentLoopResult {
   goalAchieved: boolean;
+  /** A plain-language response that intentionally did not need browser actions. */
+  isConversationalResponse: boolean;
   finishReason: string;
+  terminationReason: AgentTerminationReason;
   stepCount: number;
   actions: string[];
   finalMessage?: string;
   /** Legacy structured tool call data */
   recordedSteps: RecordedAgentStep[];
+  executionTrace: ExecutionTraceEntry[];
 }
 
 export interface AgentLoopOptions {
@@ -32,58 +45,13 @@ export interface AgentLoopOptions {
   session: TaskSession;
   model: any;
   maxSteps: number;
+  /** Explicit security mode for this run. */
+  securityMode?: AutomationSecurityMode;
+  /** Legacy compatibility for internal callers; prefer securityMode. */
+  enforceScope?: boolean;
   onStatus?: AgentStatusCb;
   onLog: AgentLogCb;
-  onRecordStep?: (step: any) => void;
-}
-
-function formatToolAction(toolName: string, input: any): string {
-  switch (toolName) {
-    case 'goto': {
-      const url = input?.url || '';
-      return `Navigating to ${url || 'page'}`;
-    }
-    case 'act': {
-      const action = input?.action || 'interact';
-      const target = input?.index !== undefined
-        ? `[${input.index}]${input?.selector ? ` (${input.selector})` : ''}`
-        : (input?.selector || 'element');
-      const value = input?.value ? ` "${input.value}"` : '';
-      return `Action: ${action}${value} on ${target}`;
-    }
-    case 'observe': {
-      const filter = input?.filter || '';
-      return filter ? `Observing: ${filter}` : 'Observing page elements';
-    }
-    case 'extract': {
-      const sel = input?.selector || '';
-      return sel ? `Extracting from ${sel}` : 'Extracting page content';
-    }
-    case 'type': {
-      return `Typing: "${input?.text || ''}"`;
-    }
-    case 'getPageUrl': {
-      return 'Getting current page URL';
-    }
-    case 'keys': {
-      return `Pressing key: ${input?.key || ''}`;
-    }
-    case 'scroll': {
-      return `Scrolling ${input?.direction || ''} ${input?.pixels || 500}px`;
-    }
-    case 'done': {
-      return 'Task completed';
-    }
-    case 'notifyUser': {
-      return `Update: ${input?.message || ''}`;
-    }
-    case 'runActionSequence': {
-      const count = Array.isArray(input?.actions) ? input.actions.length : 0;
-      return `Executing sequence of ${count} actions`;
-    }
-    default:
-      return `Running ${toolName}`;
-  }
+  onRecordStep?: (step: WorkflowStep) => void;
 }
 
 export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -95,13 +63,30 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     session,
     model,
     maxSteps,
+    securityMode: requestedSecurityMode,
+    enforceScope,
     onStatus,
     onLog,
     onRecordStep,
   } = opts;
 
+  const securityMode: AutomationSecurityMode = requestedSecurityMode
+    ?? (enforceScope === false ? 'local' : 'policy-enforced');
+
   const actions: string[] = [];
   const recordedSteps: RecordedAgentStep[] = [];
+  const executionTrace: ExecutionTraceEntry[] = [];
+  let lastKnownUrl = page.url();
+  let doneSignal: boolean | undefined;
+  const toolStartedAt = new Map<string, number>();
+
+  terminalLog.info('run.start', {
+    commandId,
+    securityMode,
+    maxSteps,
+    url: page.url(),
+    hasHistoryPrompt: instruction.startsWith('<historical_context'),
+  });
   
   if (actions.length === 0 && session.journal) {
     await session.journal.recordUserMessage(instruction);
@@ -112,17 +97,29 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     step: actions.length + 1,
     taskProgress: `Step ${actions.length + 1} of agent run`,
     abortSignal: session.abortSignal,
-  }));
+  }), securityMode, (toolName, input) => {
+    if (['think', 'notifyUser', 'done'].includes(toolName)) return;
+    toolStartedAt.set(toolName, Date.now());
+    terminalLog.info('tool.start', {
+      commandId,
+      tool: toolName,
+      action: formatToolAction(toolName, input),
+    });
+    onLog({ level: 'info', message: formatToolAction(toolName, input), phase: 'started' });
+  });
   let goalAchieved = false;
+  let taskTerminated = false;
   let finalMessage: string | undefined;
 
   const result = await generateText({
     model,
     system: systemPrompt,
-    prompt: instruction,
+    prompt: instruction.startsWith('<current_user_request') || instruction.startsWith('<historical_context')
+      ? instruction
+      : buildAgentTaskPrompt(instruction),
     tools,
     toolChoice: 'auto',
-    stopWhen: ({ steps }: any) => session.isCancelled || steps.length >= maxSteps,
+    stopWhen: ({ steps }: any) => session.isCancelled || taskTerminated || steps.length >= maxSteps,
     abortSignal: session.abortSignal,
 
     onStepFinish: async (event) => {
@@ -130,6 +127,14 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
       const stepNum = actions.length + 1;
       const hasDone = event.toolCalls?.some((tc: any) => tc.toolName === 'done');
       const hasToolCalls = (event.toolCalls?.length ?? 0) > 0;
+
+      terminalLog.info('model.step', {
+        commandId,
+        step: stepNum,
+        finishReason: String((event as any).finishReason ?? 'unknown'),
+        tools: (event.toolCalls ?? []).map((tc: any) => tc.toolName),
+        hasText: Boolean(event.text?.trim()),
+      });
 
       if (event.text && event.text.trim()) {
         const trimmed = event.text.trim();
@@ -166,19 +171,77 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
         }
 
         for (const actionInfo of actionsToProcess) {
+          const traceId = randomUUID();
+          const startedAt = toolStartedAt.get(actionInfo.toolName);
+          toolStartedAt.delete(actionInfo.toolName);
+          if (actionInfo.result?.blockedByPolicy) {
+            const blockedSummary = `Blocked by task scope: ${actionInfo.result.reason || actionInfo.toolName}`;
+            onLog({ level: 'warn', message: blockedSummary });
+            actions.push(blockedSummary);
+            executionTrace.push({
+              id: traceId, sequence: executionTrace.length + 1, timestamp: Date.now(), tool: actionInfo.toolName,
+              input: { ...actionInfo.input }, semanticDescription: blockedSummary, status: 'blocked',
+              urlBefore: lastKnownUrl, urlAfter: lastKnownUrl, error: actionInfo.result.reason,
+            });
+            terminalLog.warn('tool.result', {
+              commandId,
+              tool: actionInfo.toolName,
+              status: 'blocked',
+              step: stepNum,
+              durationMs: startedAt ? Date.now() - startedAt : undefined,
+            });
+            continue;
+          }
+
           const finalInput = { ...actionInfo.input };
           if (actionInfo.toolName === 'act' && actionInfo.input.index !== undefined) {
             if (actionInfo.result?.resolvedSelector) {
               finalInput.selector = actionInfo.result.resolvedSelector;
-              console.log(`[agent-loop] selector resolved for act[index=${actionInfo.input.index}]: ${finalInput.selector}`);
+              terminalLog.debug('selector.resolved', {
+                commandId,
+                index: actionInfo.input.index,
+                selector: finalInput.selector,
+              });
             } else {
-              console.warn(`[agent-loop] no selector resolved for act[index=${actionInfo.input.index}] — step will be skipped from workflow recording`);
+              terminalLog.warn('selector.unresolved', {
+                commandId,
+                index: actionInfo.input.index,
+                workflowRecording: 'skipped',
+              });
             }
           }
           
+          const urlAfter = actionInfo.result?.url || page.url();
           const cleanSummary = formatToolAction(actionInfo.toolName, finalInput);
-          onLog({ level: 'info', message: cleanSummary });
+          const toolStatus = actionInfo.result?.success === false ? 'failed' : 'succeeded';
+          terminalLog.info('tool.result', {
+            commandId,
+            tool: actionInfo.toolName,
+            status: toolStatus,
+            step: stepNum,
+            durationMs: startedAt ? Date.now() - startedAt : undefined,
+            action: cleanSummary,
+          });
+          onLog({ level: 'info', message: cleanSummary, phase: actionInfo.result?.success === false ? 'failed' : 'completed' });
           actions.push(cleanSummary);
+
+          if (!['think', 'notifyUser', 'done', 'askUser', 'wait'].includes(actionInfo.toolName)) {
+            executionTrace.push({
+              id: traceId,
+              sequence: executionTrace.length + 1,
+              timestamp: Date.now(),
+              tool: actionInfo.toolName,
+              input: finalInput,
+              semanticDescription: cleanSummary,
+              status: actionInfo.result?.success === false ? 'failed' : 'succeeded',
+              resolvedSelector: actionInfo.result?.resolvedSelector,
+              targetLabel: actionInfo.result?.targetLabel,
+              urlBefore: lastKnownUrl,
+              urlAfter,
+              error: actionInfo.result?.error,
+            });
+            lastKnownUrl = urlAfter;
+          }
           
           if (!['think', 'notifyUser', 'done', 'askUser', 'wait'].includes(actionInfo.toolName)) {
             recordedSteps.push({ tool: actionInfo.toolName, summary: cleanSummary, input: finalInput });
@@ -188,32 +251,12 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
               : randomUUID();
             
             if (onRecordStep) {
-              let workflowStep: any = null;
-              const id = snapshotId;
-              const description = finalInput.description || cleanSummary;
-              
-              if (actionInfo.toolName === 'goto' && finalInput.url) {
-                workflowStep = { id, type: 'navigate', url: finalInput.url, onFailure: 'stop' };
-              } else if (actionInfo.toolName === 'act' && finalInput.selector && finalInput.selector.trim() !== '') {
-                const action = finalInput.action;
-                if (action === 'click') {
-                  workflowStep = { id, type: 'click', selector: finalInput.selector, description, onFailure: 'self_heal' };
-                } else if (action === 'fill') {
-                  workflowStep = { id, type: 'fill', selector: finalInput.selector, value: finalInput.value || '', description, onFailure: 'self_heal' };
-                } else if (action === 'select') {
-                  workflowStep = { id, type: 'select', selector: finalInput.selector, value: finalInput.value || '', description, onFailure: 'self_heal' };
-                } else if (action === 'check') {
-                  workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `Check ${finalInput.selector}`, onFailure: 'self_heal' };
-                } else if (action === 'press') {
-                  workflowStep = { id, type: 'keypress', key: finalInput.value || 'Enter', onFailure: 'skip' };
-                } else if (action === 'uncheck' || action === 'focus' || action === 'hover') {
-                  workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `${action} on ${finalInput.selector}`, onFailure: 'self_heal' };
-                }
-              } else if (actionInfo.toolName === 'keys' && finalInput.key) {
-                workflowStep = { id, type: 'keypress', key: finalInput.key, onFailure: 'skip' };
-              } else if (actionInfo.toolName === 'extract' && finalInput.instruction) {
-                workflowStep = { id, type: 'extract', instruction: finalInput.instruction, onFailure: 'skip' };
-              }
+              const workflowStep = mapAgentToolToWorkflowStep({
+                id: snapshotId,
+                toolName: actionInfo.toolName,
+                input: finalInput,
+                summary: cleanSummary,
+              });
               
               if (workflowStep) {
                 onRecordStep(workflowStep);
@@ -223,8 +266,15 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
             }
           }
           if (actionInfo.toolName === 'done') {
-            goalAchieved = true;
-            finalMessage = finalInput.message;
+            goalAchieved = finalInput.taskComplete === true;
+            doneSignal = goalAchieved;
+            taskTerminated = true;
+            finalMessage = finalInput.message || (goalAchieved ? 'Task completed.' : 'Task could not be completed.');
+            terminalLog.info('completion.signal', {
+              commandId,
+              taskComplete: goalAchieved,
+              messageLength: typeof finalInput.message === 'string' ? finalInput.message.length : 0,
+            });
           }
         }
       }
@@ -237,12 +287,40 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     },
   });
 
+  const readOnlyTools = new Set(['observe', 'extract', 'getPageUrl']);
+  const isConversationalResponse = !goalAchieved
+    && Boolean(finalMessage?.trim())
+    && executionTrace.every((entry) => readOnlyTools.has(entry.tool));
+  const stepCount = result.steps?.length ?? actions.length;
+  const terminationReason: AgentTerminationReason = goalAchieved
+    ? 'done_true'
+    : doneSignal === false
+      ? 'done_false'
+      : isConversationalResponse
+        ? 'model_text'
+        : stepCount >= maxSteps
+          ? 'max_steps'
+          : 'stopped_without_done';
+
+  terminalLog[terminationReason === 'done_true' || terminationReason === 'model_text' ? 'info' : 'warn']('run.stop', {
+    commandId,
+    terminationReason,
+    finishReason: result.finishReason,
+    stepCount,
+    toolCount: actions.length,
+    doneSignal: doneSignal === undefined ? 'missing' : doneSignal,
+    finalMessageLength: finalMessage?.length ?? 0,
+  });
+
   return {
     goalAchieved,
+    isConversationalResponse,
     finishReason: result.finishReason,
-    stepCount: result.steps?.length ?? actions.length,
+    stepCount,
     actions,
     finalMessage,
+    terminationReason,
     recordedSteps,
+    executionTrace,
   };
 }

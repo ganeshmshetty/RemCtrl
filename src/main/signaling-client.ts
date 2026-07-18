@@ -28,10 +28,12 @@ function generatePin(): string {
 export class SignalingClient {
   private socket: Socket | null = null;
   private role: 'host' | 'controller' | null = null;
+  private trustedHost = false;
 
   constructor(private readonly win: BrowserWindow) {}
 
   getRole() { return this.role; }
+  isTrustedHost() { return this.role === 'host' && this.trustedHost; }
   isConnected() { return this.socket?.connected ?? false; }
 
   // ─── Push helpers ────────────────────────────────────────────────────────
@@ -48,8 +50,9 @@ export class SignalingClient {
 
   // ─── Host mode ───────────────────────────────────────────────────────────
 
-  async startHost(signalingUrl: string): Promise<void> {
+  async startHost(signalingUrl: string, trusted = false): Promise<void> {
     this.role = 'host';
+    this.trustedHost = trusted;
     this.pushHostState('REGISTERING_PIN');
 
     const socket = this.createSocket(signalingUrl);
@@ -123,9 +126,9 @@ export class SignalingClient {
       });
 
       // Controller joined → show approval modal
-      socket.on('controller:joined', ({ controllerId }: { controllerId: string }) => {
+      socket.on('controller:joined', ({ controllerId, intent }: { controllerId: string; intent: string }) => {
         this.pushHostState('AWAITING_HOST_APPROVAL');
-        this.send('controller:joinRequest', controllerId);
+        this.send('controller:joinRequest', { controllerId, intent });
       });
 
       // Controller left
@@ -155,7 +158,7 @@ export class SignalingClient {
 
   // ─── Controller mode ─────────────────────────────────────────────────────
 
-  async connectAsController(signalingUrl: string, pin: string): Promise<void> {
+  async connectAsController(signalingUrl: string, pin: string, intent: string): Promise<void> {
     this.role = 'controller';
     this.pushCtrlState('SIGNALING_CONNECTING');
 
@@ -166,7 +169,7 @@ export class SignalingClient {
       socket.once('connect', () => {
         socket.emit(
           'controller:join',
-          { pin },
+          { pin, intent },
           (ack: { success: boolean; error?: string }) => {
             if (!ack.success) {
               const msg = ack.error ?? 'Failed to join session';
@@ -237,6 +240,7 @@ export class SignalingClient {
     this.socket = null;
     const wasRole = this.role;
     this.role = null;
+    this.trustedHost = false;
     if (wasRole === 'host') this.pushHostState('IDLE');
     else if (wasRole === 'controller') this.pushCtrlState('IDLE');
   }

@@ -119,6 +119,9 @@
   background: var(--bg-overlay);
   color: var(--text-primary);
 }
+.ctrl-nav-btn:disabled,
+.ctrl-tab-close:disabled,
+.ctrl-tab-new:disabled { opacity: .4; cursor: not-allowed; }
 
 .ctrl-address-bar {
   flex: 1;
@@ -152,6 +155,7 @@
   display: none;
 }
 
+
 .ctrl-tab {
   display: flex;
   align-items: center;
@@ -169,6 +173,7 @@
   background: var(--bg-surface);
   border-color: var(--border-active);
 }
+.recording-locked .ctrl-tab { cursor: not-allowed; opacity: .72; }
 
 .ctrl-tab-title {
   flex: 1;
@@ -191,6 +196,7 @@
   color: var(--danger);
   background: rgba(255,255,255,0.1);
 }
+:root.light-theme .ctrl-tab-close:hover { background: rgba(15, 23, 42, 0.06); }
 
 .ctrl-tab-new {
   width: 28px;

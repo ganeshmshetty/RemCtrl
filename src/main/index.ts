@@ -28,6 +28,7 @@ import { closeBrowser, launchBrowser, isBrowserRunning } from './browser-manager
 import { automationOrchestrator } from './automation/index.js';
 import { getGlobalShortcut, isProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
 import { startExtensionBridgeServer, stopExtensionBridgeServer } from './ext-server.js';
+import { webRTCManager } from './webrtc-manager.js';
 
 // __dirname is available natively in CJS (esbuild target: cjs)
 
@@ -122,8 +123,8 @@ function getOrCreateMiniWindow() {
   if (miniWindow && !miniWindow.isDestroyed()) return miniWindow;
 
   miniWindow = new BrowserWindow({
-    width: 600,
-    height: 400,
+    width: 860,
+    height: 190,
     frame: false,
     resizable: false,
     alwaysOnTop: true,
@@ -492,6 +493,7 @@ function cleanupAndQuit(): Promise<void> {
   cleanupPromise = (async () => {
     try {
       stopExtensionBridgeServer();
+      webRTCManager.destroyClient();
       globalShortcut.unregisterAll();
       automationOrchestrator.cancelActiveTask();
       await automationOrchestrator.closePool().catch(() => { });

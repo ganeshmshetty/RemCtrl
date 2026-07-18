@@ -14,10 +14,12 @@ export class TaskSession {
   private _status: TaskStatus = 'idle';
   private _abortController = new AbortController();
   public initialGoal?: string;
+  public readonly commandId?: string;
   public readonly journal: SessionJournal;
   
   constructor(options?: { initialGoal?: string; commandId?: string }) {
     this.initialGoal = options?.initialGoal;
+    this.commandId = options?.commandId;
     this.journal = new DiskJournalAdapter(options?.commandId);
   }
 

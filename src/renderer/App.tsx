@@ -77,12 +77,35 @@ export default function App() {
     const unsubs = [
       window.RemoteCtrlAPI.on.hostStateChange((state) => setHostState(state)),
       window.RemoteCtrlAPI.on.controllerStateChange((state) => setControllerState(state)),
-      window.RemoteCtrlAPI.on.controllerJoinRequest((id) => setPendingControllerId(id)),
+      window.RemoteCtrlAPI.on.controllerJoinRequest(({ controllerId, intent }) => {
+        setPendingControllerId(controllerId);
+        useConnectionStore.getState().setPendingControllerIntent(intent);
+      }),
       window.RemoteCtrlAPI.on.pin((pin) => setPin(pin)),
       window.RemoteCtrlAPI.on.agentStatus((payload) => handleAgentStatus(payload)),
       window.RemoteCtrlAPI.on.agentLog((payload) => handleAgentLog(payload)),
       window.RemoteCtrlAPI.on.workflowRunStatus((status) => handleWorkflowRunStatus(status)),
       window.RemoteCtrlAPI.on.workflowStepStatus((status) => handleWorkflowStepStatus(status)),
+      window.RemoteCtrlAPI.on.workflowRecordingState((state) => {
+        const store = useAgentStore.getState();
+        if (!state) {
+          store.setRecordingState({
+            recordingState: 'idle',
+            recordingSessionId: null,
+            recordingTask: null,
+            recordingStepCount: 0,
+            recordingError: null,
+          });
+          return;
+        }
+        store.setRecordingState({
+          recordingState: state.status,
+          recordingSessionId: state.id,
+          recordingTask: state.initialInstruction,
+          recordingStepCount: state.capturedStepCount,
+          recordingError: state.error ?? null,
+        });
+      }),
       window.RemoteCtrlAPI.on.agentCheckpoint((payload) => handleAgentCheckpoint(payload)),
       window.RemoteCtrlAPI.on.error((msg) => setError(msg)),
       window.RemoteCtrlAPI.on.openSettings(() => openSettings()),
@@ -121,6 +144,17 @@ export default function App() {
         }
       }),
     ];
+
+    void window.RemoteCtrlAPI.browser.getWorkflowRecording().then((state) => {
+      if (!state) return;
+      useAgentStore.getState().setRecordingState({
+        recordingState: state.status,
+        recordingSessionId: state.id,
+        recordingTask: state.initialInstruction,
+        recordingStepCount: state.capturedStepCount,
+        recordingError: state.error ?? null,
+      });
+    }).catch(() => {});
 
     return () => unsubs.forEach((u) => u());
   }, []);

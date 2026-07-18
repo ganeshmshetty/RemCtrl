@@ -18,15 +18,13 @@ import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
 import { startScreencast, stopScreencast } from './screencast.js';
-import { getBrowserMode, getHeadlessMode, getUseVisionCUA, BROWSER_PROFILE_DIR, getBrowserProfileDir, isProfileInitialized, markProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
+import { getBrowserMode, getHeadlessMode, getUseVisionCUA, getBrowserProfileDir, isProfileInitialized, markProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
+import { discoverChromeCdpUrl, findSystemChrome, getAvailablePort, isEmptyProfile, resolveCdpWsUrl } from './browser-discovery.js';
 import { closeBrowser as closeAutomationPool } from './automation/browser-pool.js';
 import { moveCursorTo, triggerRipple } from './automation/cursor-overlay.js';
 import { BrowserWindow } from 'electron';
-import { execFileSync, spawn } from 'child_process';
-import fs from 'fs';
-import net from 'net';
-import os from 'os';
-import path from 'path';
+import { spawn } from 'child_process';
+import { createDevelopmentLogger } from './dev-logger.js';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
 const NEW_TAB_URL = 'https://duckduckgo.com/';
@@ -40,23 +38,7 @@ interface PageEntry {
 // CDP port used in internal mode so Stagehand can connect via raw CDP.
 // A port distinct from local Chrome (9222) to avoid conflicts.
 const INTERNAL_CDP_PORT = 9223;
-
-async function getAvailablePort(defaultPort: number): Promise<number> {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', () => {
-      const fallbackServer = net.createServer();
-      fallbackServer.listen(0, '127.0.0.1', () => {
-        const addr = fallbackServer.address();
-        const freePort = typeof addr === 'object' && addr ? addr.port : 0;
-        fallbackServer.close(() => resolve(freePort));
-      });
-    });
-    server.listen(defaultPort, '127.0.0.1', () => {
-      server.close(() => resolve(defaultPort));
-    });
-  });
-}
+const terminalLog = createDevelopmentLogger('Dev');
 
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;
@@ -183,11 +165,20 @@ export async function newTab(): Promise<void> {
       return;
     }
     await page.goto(NEW_TAB_URL, { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
+    // The context page listener deliberately avoids foregrounding an
+    // app-created tab. Finalize its selected state here so the renderer gets
+    // an immediate, reliable tab update and the new page is screencast.
+    const entry = pages.find((candidate) => candidate.page === page);
+    if (entry) {
+      activePageEntry = entry;
+      await startScreencast(page);
+      emitTabsChange();
+    }
     restoreAppFocus();
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!isClosingBrowser && !msg.includes('Browser has been closed') && !msg.includes('Target page, context or browser has been closed')) {
-      console.error('[browser] failed to open new tab:', err);
+      terminalLog.error('[browser] failed to open new tab:', err);
     }
   } finally {
     suppressNewTabFocus = Math.max(0, suppressNewTabFocus - 1);
@@ -200,7 +191,7 @@ function registerPage(p: Page) {
 
   p.on('close', () => {
     void handlePageClosed(entry).catch((err) => {
-      if (!isClosingBrowser) console.warn('[browser] page-close cleanup failed:', err);
+      if (!isClosingBrowser) terminalLog.warn('[browser] page-close cleanup failed:', err);
     });
   });
 
@@ -241,199 +232,9 @@ function registerPage(p: Page) {
   return entry;
 }
 
-/**
- * Polls the Chrome DevTools HTTP endpoint until the browser exposes its
- * WebSocket debugger URL, then returns that ws:// URL.
- * Chrome's root path returns 404; /json/version has what we need.
- */
-async function resolveCdpWsUrl(httpBase: string, maxWaitMs = 8000): Promise<string> {
-  const versionUrl = `${httpBase}/json/version`;
-  const deadline = Date.now() + maxWaitMs;
-  let lastErr = '';
-  while (Date.now() < deadline) {
-    try {
-      const resp = await fetch(versionUrl);
-      if (resp.ok) {
-        const data = await resp.json() as { webSocketDebuggerUrl?: string };
-        if (data.webSocketDebuggerUrl) {
-          console.log(`[browser] CDP WS endpoint resolved: ${data.webSocketDebuggerUrl}`);
-          return data.webSocketDebuggerUrl;
-        }
-      }
-    } catch (e) {
-      lastErr = String(e);
-    }
-    await new Promise(r => setTimeout(r, 250));
-  }
-  throw new Error(`CDP endpoint ${versionUrl} not ready after ${maxWaitMs}ms. Last error: ${lastErr}`);
-}
-
-/**
- * Attempt to find the user's installed Chrome/Chromium binary.
- * Returns a path string, or null if none found.
- */
-function findSystemChrome(): string | null {
-  const candidates: string[] = [];
-
-  if (process.platform === 'darwin') {
-    candidates.push(
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',
-      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    );
-  } else if (process.platform === 'win32') {
-    const programFiles = process.env['PROGRAMFILES'] || 'C:\\Program Files';
-    const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
-    candidates.push(
-      `${programFiles}\\Google\\Chrome\\Application\\chrome.exe`,
-      `${programFilesX86}\\Google\\Chrome\\Application\\chrome.exe`,
-      `${programFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
-    );
-  } else {
-    // Linux
-    try {
-      const which = execFileSync('which', ['google-chrome', 'chromium-browser', 'chromium', 'microsoft-edge'], { encoding: 'utf-8' });
-      const found = which.split('\n').find(p => p.trim().length > 0);
-      if (found) return found.trim();
-    } catch { /* no which */ }
-    candidates.push(
-      '/usr/bin/google-chrome',
-      '/usr/bin/chromium-browser',
-      '/usr/bin/chromium',
-    );
-  }
-
-  for (const c of candidates) {
-    if (fs.existsSync(c)) {
-      console.log(`[browser] Found system Chrome at: ${c}`);
-      return c;
-    }
-  }
-  return null;
-}
-
-/**
- * Returns true if this is a brand-new, empty browser profile dir.
- * We detect by checking if the profile dir doesn't exist or has no Preferences file.
- */
-function isEmptyProfile(profileDir = BROWSER_PROFILE_DIR): boolean {
-  if (!fs.existsSync(profileDir)) return true;
-  const prefsPath = `${profileDir}/Default/Preferences`;
-  return !fs.existsSync(prefsPath);
-}
-
-function getChromeUserDataDirs(): string[] {
-  const home = os.homedir();
-  const candidates: string[] = [];
-
-  if (process.platform === 'darwin') {
-    const base = path.join(home, 'Library', 'Application Support');
-    candidates.push(
-      path.join(base, 'Google/Chrome'),
-      path.join(base, 'Google/Chrome Canary'),
-      path.join(base, 'Chromium'),
-      path.join(base, 'BraveSoftware/Brave-Browser')
-    );
-  } else if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-    candidates.push(
-      path.join(localAppData, 'Google/Chrome/User Data'),
-      path.join(localAppData, 'Google/Chrome SxS/User Data'),
-      path.join(localAppData, 'Chromium/User Data'),
-      path.join(localAppData, 'BraveSoftware/Brave-Browser/User Data')
-    );
-  } else {
-    // Linux
-    const base = path.join(home, '.config');
-    candidates.push(
-      path.join(base, 'google-chrome'),
-      path.join(base, 'google-chrome-unstable'),
-      path.join(base, 'chromium'),
-      path.join(base, 'BraveSoftware/Brave-Browser')
-    );
-  }
-
-  return candidates.filter(dir => fs.existsSync(dir));
-}
-
-async function isPortOpen(port: number, timeout = 1000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(timeout);
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.once('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.connect(port, '127.0.0.1');
-  });
-}
-
-async function discoverChromeCdpUrl(): Promise<string> {
-  const dataDirs = getChromeUserDataDirs();
-  for (const dataDir of dataDirs) {
-    const portFilePath = path.join(dataDir, 'DevToolsActivePort');
-    if (!fs.existsSync(portFilePath)) continue;
-
-    try {
-      const content = fs.readFileSync(portFilePath, 'utf-8').trim();
-      const lines = content.split('\n');
-      if (lines.length === 0) continue;
-
-      const port = parseInt(lines[0].trim(), 10);
-      const wsPath = lines[1] ? lines[1].trim() : '/devtools/browser';
-
-      if (await isPortOpen(port)) {
-        console.log(`[browser] Discovered active Chrome debugging port ${port} from ${portFilePath}`);
-        return `ws://127.0.0.1:${port}${wsPath}`;
-      }
-    } catch (e) {
-      console.warn(`[browser] Failed to read/verify port file ${portFilePath}:`, e);
-      continue;
-    }
-  }
-
-  // Fallback to standard 9222 port check
-  if (await isPortOpen(9222)) {
-    try {
-      const wsUrl = await resolveCdpWsUrl('http://127.0.0.1:9222', 2000);
-      return wsUrl;
-    } catch {
-      return 'ws://127.0.0.1:9222/devtools/browser';
-    }
-  }
-
-  // Attempt to open the remote debugging settings page in the running Chrome browser
-  const executablePath = findSystemChrome();
-  if (executablePath) {
-    try {
-      spawn(executablePath, ['chrome://inspect/#remote-debugging'], {
-        detached: true,
-        stdio: 'ignore'
-      }).unref();
-    } catch (e) {
-      console.warn('[browser] Failed to open chrome://inspect settings page:', e);
-    }
-  }
-
-  throw new Error(
-    'Could not discover a running Chrome instance with remote debugging enabled.\n\n' +
-    'We have opened "chrome://inspect/#remote-debugging" in your Chrome browser.\n' +
-    'Please tick the checkbox "Allow remote debugging for this browser instance" to enable it, and then try connecting again.'
-  );
-}
-
-export async function launchBrowser(startUrl = 'https://www.google.com'): Promise<string> {
+export async function launchBrowser(startUrl = 'https://www.google.com', headlessOverride?: boolean): Promise<string> {
   if (browser) {
-    console.log('[browser] Playwright already running, reusing');
+    terminalLog.info('[browser] Playwright already running, reusing');
     return BROWSER_TITLE;
   }
 
@@ -443,9 +244,9 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 
   if (mode === 'local_chrome') {
     try {
-      console.log('[browser] Auto-discovering running debug Chrome...');
+      terminalLog.info('[browser] Auto-discovering running debug Chrome...');
       cdpWsUrl = await discoverChromeCdpUrl();
-      console.log(`[browser] Connecting to discovered CDP endpoint: ${cdpWsUrl}`);
+      terminalLog.info(`[browser] Connecting to discovered CDP endpoint: ${cdpWsUrl}`);
 
       browser = await chromium.connectOverCDP(cdpWsUrl);
       // Use existing default context
@@ -454,12 +255,12 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
          context = await browser.newContext();
       }
     } catch (err: any) {
-      console.error('[browser] Failed to connect to local Chrome:', err.message);
+      terminalLog.error('[browser] Failed to connect to local Chrome:', err.message);
       throw new Error(err.message);
     }
   } else {
     // ── Internal mode: persistent profile ───────────────────────────────────
-    const headless = getHeadlessMode();
+    const headless = headlessOverride ?? getHeadlessMode();
     const useCua = getUseVisionCUA();
     const width = useCua ? 1288 : 1280;
     const height = useCua ? 711 : 800;
@@ -467,7 +268,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 
     // Detect first-launch for onboarding (before creating profile dir)
     const firstLaunch = isEmptyProfile(profileDir) && !isProfileInitialized();
-    const launchHeadless = firstLaunch ? false : headless;
+    const launchHeadless = headlessOverride === true ? true : firstLaunch ? false : headless;
 
     const keepOpen = getKeepBrowserOpenOnQuit();
     const cdpPort = INTERNAL_CDP_PORT;
@@ -484,7 +285,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 
     if (alreadyRunning) {
       if (keepOpen) {
-        console.log(`[browser] Detached Chrome already running on port ${cdpPort}, connecting...`);
+        terminalLog.info(`[browser] Detached Chrome already running on port ${cdpPort}, connecting...`);
         browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
         context = browser.contexts()[0];
         if (!context) {
@@ -492,14 +293,14 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
         }
         cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${cdpPort}`);
       } else {
-        console.log(`[browser] Leftover Chrome detected on port ${cdpPort}. Closing it before launching a new context...`);
+        terminalLog.info(`[browser] Leftover Chrome detected on port ${cdpPort}. Closing it before launching a new context...`);
         try {
           const tempBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
           await tempBrowser.close();
           // Give it a moment to release file locks
           await new Promise(r => setTimeout(r, 1200));
         } catch (err) {
-          console.warn('[browser] Failed to close leftover Chrome cleanly:', err);
+          terminalLog.warn('[browser] Failed to close leftover Chrome cleanly:', err);
         }
       }
     }
@@ -511,7 +312,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
         if (!executablePath) {
           throw new Error('Chrome browser not found on this system. Please install Google Chrome or Edge.');
         }
-        console.log(`[browser] Spawning detached Chrome process: ${executablePath}`);
+        terminalLog.info(`[browser] Spawning detached Chrome process: ${executablePath}`);
         const args = [
           `--remote-debugging-port=${cdpPort}`,
           `--user-data-dir=${profileDir}`,
@@ -544,12 +345,12 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
       const systemChrome = findSystemChrome();
       const executablePath = systemChrome || undefined;
       if (systemChrome) {
-        console.log(`[browser] Using system Chrome: ${systemChrome}`);
+        terminalLog.info(`[browser] Using system Chrome: ${systemChrome}`);
       } else {
-        console.log('[browser] No system Chrome found, using bundled Playwright Chromium');
+        terminalLog.info('[browser] No system Chrome found, using bundled Playwright Chromium');
       }
 
-      console.log(`[browser] Launching persistent context (headless: ${headless}) → ${profileDir}`);
+      terminalLog.info(`[browser] Launching persistent context (headless: ${headless}) → ${profileDir}`);
 
       const dynamicPort = await getAvailablePort(INTERNAL_CDP_PORT);
 
@@ -576,7 +377,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     }
 
     if (firstLaunch) {
-      console.log('[browser] First launch — onboarding mode (visible browser for login)');
+      terminalLog.info('[browser] First launch — onboarding mode (visible browser for login)');
       markProfileInitialized();
       if (notifyWindow && !notifyWindow.isDestroyed()) {
         notifyWindow.webContents.send('browser:firstLaunch');
@@ -612,7 +413,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
 
   context.on('close', () => {
     isClosingBrowser = true;
-    console.log('[browser] Chrome context closed unexpectedly or by user');
+    terminalLog.warn('[browser] Chrome context closed unexpectedly or by user');
     browser = null;
     context = null;
     cdpWsUrl = null;
@@ -647,7 +448,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com'): Promis
     await activePageEntry.page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => { });
   }
 
-  console.log(`[browser] Playwright connected in ${mode} mode`);
+  terminalLog.info(`[browser] Playwright connected in ${mode} mode`);
   return BROWSER_TITLE;
 }
 
@@ -670,7 +471,7 @@ export async function closeBrowser(): Promise<void> {
   cdpWsUrl = null;
   pages = [];
   activePageEntry = null;
-  console.log('[browser] Playwright browser closed');
+  terminalLog.info('[browser] Playwright browser closed');
 }
 
 export function getPage(): Page | null { return activePageEntry?.page || null; }

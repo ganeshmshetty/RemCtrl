@@ -19,7 +19,28 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-function getDefaultGcpProject(): string | undefined {
+const AI_SDK_V2_COMPATIBLE_GEMINI_FALLBACK = 'gemini-2.5-flash';
+
+/**
+ * @ai-sdk/google currently exposes AI SDK specification v2 models only. Google
+ * Gemini 3.x responses advertise v3, which produces a late opaque failure in
+ * the Gemini provider's agent loop. Vertex uses the separate
+ * @ai-sdk/google-vertex adapter and must not inherit this downgrade.
+ */
+export function resolveCompatibleModelId(provider: ApiProvider, requestedModel: string): string {
+  if (provider === 'gemini' && /^gemini-3(?:\.|-)/i.test(requestedModel)) {
+    console.warn(`[model] ${requestedModel} requires AI SDK specification v3; using ${AI_SDK_V2_COMPATIBLE_GEMINI_FALLBACK} until the provider adapter supports it.`);
+    return AI_SDK_V2_COMPATIBLE_GEMINI_FALLBACK;
+  }
+  return requestedModel;
+}
+
+/**
+ * Resolves the Vertex resource project without confusing ADC's quota project
+ * with the project that owns the Vertex endpoint. GoogleAuth handles tokens;
+ * this only supplies the project ID required by @ai-sdk/google-vertex.
+ */
+function getVertexProject(): string | undefined {
   const envProject =
     process.env.GOOGLE_VERTEX_PROJECT ||
     process.env.GOOGLE_CLOUD_PROJECT ||
@@ -27,14 +48,18 @@ function getDefaultGcpProject(): string | undefined {
     process.env.GCLOUD_PROJECT;
   if (envProject) return envProject;
 
-  try {
-    const adcPath = path.join(os.homedir(), '.config/gcloud/application_default_credentials.json');
-    if (fs.existsSync(adcPath)) {
-      const adc = JSON.parse(fs.readFileSync(adcPath, 'utf-8'));
-      if (adc.quota_project_id) return adc.quota_project_id;
+  // A service-account ADC path carries the resource project explicitly.
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (credentialsPath) {
+    try {
+      const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf-8')) as { project_id?: unknown };
+      if (typeof credentials.project_id === 'string' && credentials.project_id.trim()) return credentials.project_id.trim();
+    } catch {
+      // GoogleAuth will report invalid credentials with its own actionable error.
     }
-  } catch {}
+  }
 
+  // gcloud's active project is the normal local-development resource project.
   try {
     const configPath = path.join(os.homedir(), '.config/gcloud/configurations/config_default');
     if (fs.existsSync(configPath)) {
@@ -42,36 +67,37 @@ function getDefaultGcpProject(): string | undefined {
       const match = content.match(/^project\s*=\s*(.+)$/m);
       if (match?.[1]) return match[1].trim();
     }
-  } catch {}
+  } catch {
+    // Fall through to the ADC quota project only when no resource project is configured.
+  }
+
+  // This is only a last resort. quota_project_id controls billing/quota for
+  // user ADC; it is not necessarily the project containing Vertex resources.
+  try {
+    const adcPath = path.join(os.homedir(), '.config/gcloud/application_default_credentials.json');
+    if (fs.existsSync(adcPath)) {
+      const adc = JSON.parse(fs.readFileSync(adcPath, 'utf-8'));
+      if (adc.quota_project_id) return adc.quota_project_id;
+    }
+  } catch {
+    // No local user-ADC quota project; the caller will receive the project setup error below.
+  }
 
   return undefined;
-}
-
-async function adcAuthFetch(input: any, init?: any): Promise<Response> {
-  try {
-    const { GoogleAuth } = await import('google-auth-library');
-    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-    const client = await auth.getClient();
-    const token = await client.getAccessToken();
-
-    const headers = new Headers(init?.headers);
-    if (token?.token) {
-      headers.set('Authorization', `Bearer ${token.token}`);
-    }
-    return fetch(input, { ...init, headers });
-  } catch {
-    return fetch(input, init);
-  }
 }
 
 export function resolveModel(
   provider: string,
   apiKey: string | null,
   modelIdOverride?: string
+// Provider packages publish their own versioned model interfaces. The AI SDK
+// performs the definitive runtime compatibility check when a request starts.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   const typedProvider = (provider as ApiProvider) in PROVIDER_PROFILES ? (provider as ApiProvider) : 'openai';
   const profile = PROVIDER_PROFILES[typedProvider];
-  const targetModel = modelIdOverride || getPreferredModel() || profile.defaultModel;
+  const configuredModel = modelIdOverride || getPreferredModel() || profile.defaultModel;
+  const targetModel = resolveCompatibleModelId(typedProvider, configuredModel);
   const baseURL = getCustomBaseUrl(typedProvider) || profile.baseURL;
 
   const headers: Record<string, string> = {};
@@ -86,19 +112,28 @@ export function resolveModel(
     case 'gemini':
       return createGoogleGenerativeAI({ apiKey: apiKey || '', baseURL, headers })(targetModel);
     case 'vertex': {
-      const project = getDefaultGcpProject();
-      const defaultLocation = targetModel.startsWith('gemini-3') ? 'global' : 'us-central1';
+      const project = getVertexProject();
+      if (!project) {
+        throw new Error('Vertex ADC needs a Google Cloud project. Set GOOGLE_VERTEX_PROJECT or run `gcloud config set project PROJECT_ID`, then run `gcloud auth application-default login`.');
+      }
+      // Use Vertex's global endpoint by default so globally available models
+      // such as Gemini 3.5 do not depend on a regional model deployment.
+      // Deployments that require a regional endpoint can override this below.
+      const defaultLocation = 'global';
       const location =
         process.env.GOOGLE_VERTEX_LOCATION ||
         process.env.GOOGLE_CLOUD_LOCATION ||
         process.env.VERTEX_LOCATION ||
         defaultLocation;
 
+      console.info(`[vertex] Using ADC for project="${project}" location="${location}" model="${targetModel}".`);
+
+      // Let the provider own ADC token acquisition. This is the same call
+      // shape proven to work in the remcon checkout and supports token refresh.
       return createVertex({
         baseURL: baseURL || undefined,
         location,
         project,
-        fetch: !apiKey ? adcAuthFetch : undefined,
       })(targetModel);
     }
     default:

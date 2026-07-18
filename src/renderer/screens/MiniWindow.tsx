@@ -8,8 +8,8 @@
  * Key exports: MiniWindow (function component).
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Sparkles, X, Activity } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Square, Sparkles, X } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload } from '../../shared/types';
 import './MiniWindow.css';
@@ -18,7 +18,20 @@ export function MiniWindow() {
   const [instruction, setInstruction] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeCheckpoint, setActiveCheckpoint] = useState<AgentCheckpointPayload | null>(null);
+  const [activityIndex, setActivityIndex] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleCheckpointSelect = useCallback(async (optionId: string) => {
+    if (!activeCheckpoint) return;
+    try {
+      await window.RemoteCtrlAPI?.browser.submitCheckpoint(activeCheckpoint.checkpointId, {
+        selectedOptionId: optionId,
+      });
+      setActiveCheckpoint(null);
+    } catch (err) {
+      setErrorMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [activeCheckpoint]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -32,8 +45,6 @@ export function MiniWindow() {
     agentStatus,
     workflowRunState,
     currentAction,
-    executionLogs,
-    currentStepIndex,
     setActiveCommandId,
     setAgentStatus,
   } = useAgentStore();
@@ -109,15 +120,19 @@ export function MiniWindow() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeCheckpoint]);
+  }, [activeCheckpoint, handleCheckpointSelect]);
 
   const isRunning =
     agentStatus === 'running' ||
     workflowRunState === 'running';
 
-  const latestLog = executionLogs.length > 0
-    ? executionLogs[executionLogs.length - 1].message
-    : null;
+  const activityCopy = miniActivityCopy(currentAction, workflowRunState === 'running');
+
+  useEffect(() => {
+    if (!isRunning || activityCopy.length < 2) return;
+    const interval = window.setInterval(() => setActivityIndex((index) => (index + 1) % activityCopy.length), 2200);
+    return () => window.clearInterval(interval);
+  }, [isRunning, currentAction, workflowRunState, activityCopy.length]);
 
   const handleRunAgent = async () => {
     if (!instruction.trim() || isRunning) return;
@@ -129,11 +144,13 @@ export function MiniWindow() {
     useAgentStore.getState().startNewExecution('agent', commandId, text);
     try {
       await window.RemoteCtrlAPI?.browser.launch();
-      await window.RemoteCtrlAPI?.browser.startAgent({
+      const result = await window.RemoteCtrlAPI?.browser.startAgent({
         commandId,
         action: 'act',
         instruction: text,
+        executionMode: 'local',
       });
+      if (!result?.ok) throw new Error(result?.error ?? 'Unable to start the agent.');
       setActiveCommandId(commandId);
       setAgentStatus('running');
     } catch (err) {
@@ -153,18 +170,6 @@ export function MiniWindow() {
 
   const handleHideMini = () => {
     window.RemoteCtrlAPI?.app.hideMiniWindow();
-  };
-
-  const handleCheckpointSelect = async (optionId: string) => {
-    if (!activeCheckpoint) return;
-    try {
-      await window.RemoteCtrlAPI?.browser.submitCheckpoint(activeCheckpoint.checkpointId, {
-        selectedOptionId: optionId,
-      });
-      setActiveCheckpoint(null);
-    } catch (err) {
-      setErrorMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
   };
 
   return (
@@ -199,18 +204,12 @@ export function MiniWindow() {
           <div className="mini-status-hud animate-fade-in drag-region">
             <div className="mini-status-info no-drag">
               <span className="mini-status-text">
-                {agentStatus === 'running'
-                  ? 'AI Agent Running'
-                  : `Workflow Running ${currentStepIndex !== null ? `(Step ${currentStepIndex + 1})` : ''}`}
+                {activityCopy[activityIndex % activityCopy.length]}
               </span>
             </div>
-
-            <div className="mini-log-card no-drag">
-              <Activity size={12} className="animate-pulse" style={{ flexShrink: 0 }} color="var(--accent)" />
-              <span className="truncate">
-                {latestLog || currentAction || 'Executing automation commands...'}
-              </span>
-            </div>
+            {currentAction && currentAction !== 'Initializing agent...' && (
+              <div className="mini-current-activity no-drag">{currentAction}</div>
+            )}
           </div>
         )}
 
@@ -264,4 +263,14 @@ export function MiniWindow() {
       </div>
     </div>
   );
+}
+
+function miniActivityCopy(action: string | null, workflow: boolean): string[] {
+  const value = action?.toLowerCase() ?? '';
+  if (workflow) return ['Running the workflow…', 'Working through the next step…', 'Checking the workflow result…'];
+  if (/read|observ|analy|extract/.test(value)) return ['Reading the page…', 'Thinking through the information…', 'Working out the next step…'];
+  if (/find|look|search|navig|open/.test(value)) return ['Finding the right place…', 'Looking for the next control…', 'Working through the page…'];
+  if (/enter|typ|fill|select/.test(value)) return ['Working on the requested details…', 'Entering the information…', 'Checking the next step…'];
+  if (/check|verif|confirm/.test(value)) return ['Checking the result…', 'Verifying the page state…', 'Thinking through the outcome…'];
+  return ['Thinking…', 'Working…', 'Preparing the next step…'];
 }

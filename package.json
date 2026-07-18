@@ -14,7 +14,10 @@
     "build:main": "node build-electron.mjs",
     "build": "npm run build:renderer && npm run build:main",
     "pack": "npm run build && electron-builder --mac --win --linux",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "typecheck:main": "tsc -p tsconfig.main.json --noEmit",
+    "typecheck:all": "npm run typecheck && npm run typecheck:main",
     "start": "cross-env NODE_ENV=production electron dist/main/index.cjs",
     "lint": "eslint ."
   },
@@ -50,7 +53,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.83",
     "@ai-sdk/deepseek": "^2.0.39",
-    "@ai-sdk/google": "^3.0.83",
+    "@ai-sdk/google": "^2.0.78",
     "@ai-sdk/google-vertex": "^3.0.140",
     "@ai-sdk/groq": "^3.0.42",
     "@ai-sdk/openai": "^3.0.71",

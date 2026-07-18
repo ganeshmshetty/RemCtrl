@@ -20,7 +20,7 @@ import { useUIStore } from '../stores/useUIStore';
 import type { ApiProvider, BrowserMode } from '../../shared/types';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import './Settings.css';
 
@@ -45,6 +45,7 @@ const PROVIDER_LABELS: Record<ApiProvider, string> = {
 };
 
 export function Settings() {
+  const { isSettingsOpen, closeSettings } = useUIStore();
   const {
     preferredProvider,
     preferredModel,
@@ -198,10 +199,10 @@ export function Settings() {
   const models = cachedModels[preferredProvider] ?? [];
   const hasCurrentKey = hasKeyForProvider(preferredProvider);
   const tab = TAB_DETAILS[activeTab];
-  const close = () => useUIStore.getState().closeSettings();
+  const close = () => closeSettings();
 
   return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) close(); }}>
+    <Dialog open={isSettingsOpen} onOpenChange={(open) => { if (!open) close(); }}>
       <DialogContent className="preferences-window p-0 gap-0 max-w-[920px] border-0 shadow-none bg-[var(--bg-base)] [&>button]:hidden" aria-describedby={undefined}>
         <DialogTitle className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)' }}>
           Preferences
@@ -237,9 +238,11 @@ export function Settings() {
               </div>
               <div className="preferences-header-actions no-drag">
                 {savedMsg && <span className="preferences-toast"><Check size={13} /> {savedMsg}</span>}
-                <button type="button" className="preferences-close" onClick={close} aria-label="Close settings">
-                  <X size={17} />
-                </button>
+                <DialogClose asChild>
+                  <button type="button" className="preferences-close" onClick={close} aria-label="Close settings">
+                    <X size={17} />
+                  </button>
+                </DialogClose>
               </div>
             </header>
 

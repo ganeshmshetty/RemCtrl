@@ -1,20 +1,31 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, StopCircle, Plus, Hand, MousePointer } from 'lucide-react';
+import { Send, StopCircle, Plus, Hand } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 
 export function ChatInputBar() {
-  const { isTakeoverActive, setTakeoverActive, agentStatus } = useAgentStore();
+  const { agentStatus, isTakeoverActive, recordingState, recordingSessionId } = useAgentStore();
   const { role, controllerState, hostState, sendData } = useConnectionStore();
   const [prompt, setPrompt] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
-      inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+      const maxHeight = 180;
+      const nextHeight = Math.min(inputRef.current.scrollHeight, maxHeight);
+      inputRef.current.style.height = `${nextHeight}px`;
+      inputRef.current.style.overflowY = inputRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
+      setIsExpanded(inputRef.current.scrollHeight > 42);
     }
   }, [prompt]);
+
+  useEffect(() => {
+    const focusInput = () => inputRef.current?.focus();
+    window.addEventListener('remotectrl:focus-agent-input', focusInput);
+    return () => window.removeEventListener('remotectrl:focus-agent-input', focusInput);
+  }, []);
 
   const isConnected = 
     role === 'local' ||
@@ -39,7 +50,13 @@ export function ChatInputBar() {
       timestamp: Date.now(),
     });
 
-    const payload = { commandId, action: 'act' as const, instruction: text };
+    const payload = {
+      commandId,
+      action: 'act' as const,
+      instruction: text,
+      executionMode: role === 'local' ? 'local' as const : 'remote' as const,
+      recordingSessionId: recordingState === 'recording' ? recordingSessionId ?? undefined : undefined,
+    };
 
     if (controllerState !== 'IDLE' && sendData) {
       sendData({
@@ -50,7 +67,29 @@ export function ChatInputBar() {
         payload,
       }, true);
     } else if (hostState !== 'IDLE' || role === 'local') {
-      window.RemoteCtrlAPI?.browser.startAgent(payload);
+      void window.RemoteCtrlAPI?.browser.startAgent(payload).then((result) => {
+        if (result?.ok) return;
+        const error = result?.error ?? 'Unable to start the agent.';
+        useAgentStore.getState().setAgentStatus('error');
+        useAgentStore.getState().appendMessage({
+          id: `error-${commandId}`,
+          sender: 'agent',
+          type: 'error',
+          text: error,
+          timestamp: Date.now(),
+        });
+        useAgentStore.getState().archiveCurrentRun('error', error);
+      }).catch((error: unknown) => {
+        useAgentStore.getState().setAgentStatus('error');
+        useAgentStore.getState().appendMessage({
+          id: `error-${commandId}`,
+          sender: 'agent',
+          type: 'error',
+          text: error instanceof Error ? error.message : 'Unable to start the agent.',
+          timestamp: Date.now(),
+        });
+        useAgentStore.getState().archiveCurrentRun('error', error instanceof Error ? error.message : undefined);
+      });
     }
 
     setPrompt('');
@@ -64,32 +103,16 @@ export function ChatInputBar() {
     }
   }
 
-  return (
-    <div className="chat-input-bar">
-      <form onSubmit={handleSendPrompt} className="chat-prompt-form">
-        <div className="chat-input-controls">
-          <button 
-            type="button"
-            className="chat-control-icon-btn"
-            title="Add attachment"
-          >
-            <Plus size={16} />
-          </button>
-          <button 
-            type="button"
-            className={`chat-control-icon-btn ${isTakeoverActive ? 'active' : ''}`}
-            onClick={() => {
-              const newActive = !isTakeoverActive;
-              setTakeoverActive(newActive);
-              window.RemoteCtrlAPI?.browser.setTakeoverActive?.(newActive);
-            }}
-            disabled={!isConnected}
-            title={isTakeoverActive ? 'Release Control' : 'Takeover Browser'}
-          >
-            {isTakeoverActive ? <Hand size={16} /> : <MousePointer size={16} />}
-          </button>
-        </div>
+  async function toggleTakeControl() {
+    if (recordingState === 'recording' || recordingState === 'saving') return;
+    const next = !isTakeoverActive;
+    useAgentStore.getState().setTakeoverActive(next);
+    await window.RemoteCtrlAPI?.browser.setTakeoverActive(next);
+  }
 
+  return (
+    <div className={`chat-input-bar ${isExpanded ? 'is-expanded' : ''}`}>
+      <form onSubmit={handleSendPrompt} className="chat-prompt-form">
         <textarea
           ref={inputRef}
           className="chat-prompt-input"
@@ -105,25 +128,32 @@ export function ChatInputBar() {
           disabled={!isConnected}
           rows={1}
         />
-        {agentStatus === 'running' ? (
-          <button
-            type="button"
-            className="chat-prompt-send danger"
-            onClick={handleCancelAgent}
-            title="Stop execution"
-          >
-            <StopCircle size={18} />
-          </button>
-        ) : (
-          <button
-            type="submit"
-            className="chat-prompt-send"
-            disabled={!prompt.trim() || !isConnected}
-            title="Send prompt"
-          >
-            <Send size={18} />
-          </button>
-        )}
+        <div className="chat-prompt-footer">
+          <div className="chat-input-controls">
+            <button type="button" className="chat-control-icon-btn" title="Add attachment">
+              <Plus size={16} />
+            </button>
+            {role === 'local' && !['recording', 'saving'].includes(recordingState) && (
+              <button
+                type="button"
+                className={`chat-control-icon-btn ${isTakeoverActive ? 'active' : ''}`}
+                onClick={() => void toggleTakeControl()}
+                title={isTakeoverActive ? 'Resume agent' : 'Take control'}
+              >
+                <Hand size={16} />
+              </button>
+            )}
+          </div>
+          {agentStatus === 'running' ? (
+            <button type="button" className="chat-prompt-send danger" onClick={handleCancelAgent} title="Stop execution">
+              <StopCircle size={18} />
+            </button>
+          ) : (
+            <button type="submit" className="chat-prompt-send" disabled={!prompt.trim() || !isConnected} title="Send prompt">
+              <Send size={18} />
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );

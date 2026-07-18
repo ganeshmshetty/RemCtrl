@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type { LocalWorkflow, WorkflowStep } from '../../shared/types.js';
+import { mapAgentToolToWorkflowStep } from './workflow-step-mapper.js';
 
 // ─── Interfaces (The Seam) ─────────────────────────────────────────────
 
@@ -147,38 +148,15 @@ export class DiskJournalAdapter implements SessionJournal {
     const workflowSteps: WorkflowStep[] = [];
     
     for (const actionInfo of stepsToProcess) {
-      const finalInput = { ...actionInfo.input };
-      // Similar to agent-loop's translation logic
-      let workflowStep: any = null;
-      const id = actionInfo.id; // Use snapshot ID as step ID
-      const description = finalInput.description || actionInfo.summary;
-
-      if (actionInfo.toolName === 'goto' && finalInput.url) {
-        workflowStep = { id, type: 'navigate', url: finalInput.url, onFailure: 'stop' };
-      } else if (actionInfo.toolName === 'act' && finalInput.selector && finalInput.selector.trim() !== '') {
-        const action = finalInput.action;
-        if (action === 'click') {
-          workflowStep = { id, type: 'click', selector: finalInput.selector, description, onFailure: 'self_heal' };
-        } else if (action === 'fill') {
-          workflowStep = { id, type: 'fill', selector: finalInput.selector, value: finalInput.value || '', description, onFailure: 'self_heal' };
-        } else if (action === 'select') {
-          workflowStep = { id, type: 'select', selector: finalInput.selector, value: finalInput.value || '', description, onFailure: 'self_heal' };
-        } else if (action === 'check') {
-          workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `Check ${finalInput.selector}`, onFailure: 'self_heal' };
-        } else if (action === 'press') {
-          workflowStep = { id, type: 'keypress', key: finalInput.value || 'Enter', onFailure: 'skip' };
-        } else if (action === 'uncheck' || action === 'focus' || action === 'hover') {
-          workflowStep = { id, type: 'click', selector: finalInput.selector, description: description || `${action} on ${finalInput.selector}`, onFailure: 'self_heal' };
-        }
-      } else if (actionInfo.toolName === 'keys' && finalInput.key) {
-        workflowStep = { id, type: 'keypress', key: finalInput.key, onFailure: 'skip' };
-      } else if (actionInfo.toolName === 'extract') {
-        const instruction = finalInput.instruction || `Extract text from ${finalInput.selector || 'page'} (limit: ${finalInput.limit || 8000})`;
-        workflowStep = { id, type: 'extract', instruction, onFailure: 'skip' };
-      }
+      const workflowStep = mapAgentToolToWorkflowStep({
+        id: actionInfo.id,
+        toolName: actionInfo.toolName,
+        input: actionInfo.input as Record<string, unknown>,
+        summary: actionInfo.summary,
+      }, { allowExtractFallback: true, allowIndexSelector: true });
 
       if (workflowStep) {
-        workflowSteps.push(workflowStep as WorkflowStep);
+        workflowSteps.push(workflowStep);
       }
     }
 

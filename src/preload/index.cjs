@@ -16,23 +16,28 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
   // ── Host Controls ──────────────────────────────────────────────────────────
   host: {
-    start: () => ipcRenderer.invoke('host:start'),
+    start: (options) => ipcRenderer.invoke('host:start', options),
     stop: () => ipcRenderer.invoke('host:stop'),
-    approveController: (controllerId) =>
-      ipcRenderer.invoke('host:approveController', controllerId),
+    approveController: (controllerId, intent) =>
+      ipcRenderer.invoke('host:approveController', controllerId, intent),
     rejectController: (controllerId) =>
       ipcRenderer.invoke('host:rejectController', controllerId),
   },
 
   // ── Controller Controls ───────────────────────────────────────────────────
   controller: {
-    connect: (pin) => ipcRenderer.invoke('controller:connect', pin),
+    connect: (pin, intent) => ipcRenderer.invoke('controller:connect', { pin, intent }),
     disconnect: () => ipcRenderer.invoke('controller:disconnect'),
   },
 
   // ── Browser Controls ──────────────────────────────────────────────────────
   browser: {
     launch: (startUrl) => ipcRenderer.invoke('browser:launch', startUrl),
+    launchRecording: () => ipcRenderer.invoke('browser:launchRecording'),
+    startWorkflowRecording: (payload) => ipcRenderer.invoke('browser:startWorkflowRecording', payload),
+    getWorkflowRecording: () => ipcRenderer.invoke('browser:getWorkflowRecording'),
+    saveWorkflowRecording: () => ipcRenderer.invoke('browser:saveWorkflowRecording'),
+    discardWorkflowRecording: () => ipcRenderer.invoke('browser:discardWorkflowRecording'),
     close: () => ipcRenderer.invoke('browser:close'),
     getSources: () => ipcRenderer.invoke('browser:getSources'),
     resetProfile: () => ipcRenderer.invoke('browser:resetProfile'),
@@ -63,6 +68,10 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
   // ── Agent Session Management ──────────────────────────────────────────────
   agent: {
     clearHistory: () => ipcRenderer.invoke('agent:clearHistory'),
+    listRunHistory: () => ipcRenderer.invoke('agent:listRunHistory'),
+    saveRunHistory: (item) => ipcRenderer.invoke('agent:saveRunHistory', item),
+    deleteRunHistory: (id) => ipcRenderer.invoke('agent:deleteRunHistory', id),
+    clearRunHistory: () => ipcRenderer.invoke('agent:clearRunHistory'),
   },
 
   // ── App / Diagnostics ─────────────────────────────────────────────────────
@@ -117,6 +126,14 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     delete: (workflowId) => ipcRenderer.invoke('workflows:delete', workflowId),
   },
 
+  // ── Scoped task policy ───────────────────────────────────────────────────
+  policy: {
+    getScope: () => ipcRenderer.invoke('policy:getScope'),
+    setScope: (scope) => ipcRenderer.invoke('policy:setScope', scope),
+    approve: (approvalId, approved) => ipcRenderer.invoke('policy:resolveApproval', { approvalId, approved }),
+    getAudit: () => ipcRenderer.invoke('policy:getAudit'),
+  },
+
   // ── Event Listeners (Main -> Renderer push) ───────────────────────────────
   // Returns an unsubscribe function so components can clean up on unmount.
   on: {
@@ -131,7 +148,7 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       return () => ipcRenderer.removeListener('controller:stateChange', listener);
     },
     controllerJoinRequest: (cb) => {
-      const listener = (_event, controllerId) => cb(controllerId);
+      const listener = (_event, request) => cb(request);
       ipcRenderer.on('controller:joinRequest', listener);
       return () => ipcRenderer.removeListener('controller:joinRequest', listener);
     },
@@ -154,6 +171,16 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       const listener = (_event, payload) => cb(payload);
       ipcRenderer.on('workflow:recordedStep', listener);
       return () => ipcRenderer.removeListener('workflow:recordedStep', listener);
+    },
+    workflowCreated: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on('workflow:created', listener);
+      return () => ipcRenderer.removeListener('workflow:created', listener);
+    },
+    workflowRecordingState: (cb) => {
+      const listener = (_event, state) => cb(state);
+      ipcRenderer.on('workflow:recordingState', listener);
+      return () => ipcRenderer.removeListener('workflow:recordingState', listener);
     },
     error: (cb) => {
       const listener = (_event, message) => cb(message);
@@ -231,6 +258,16 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       const listener = (_event, payload) => cb(payload);
       ipcRenderer.on('agent:started', listener);
       return () => ipcRenderer.removeListener('agent:started', listener);
+    },
+    policyApprovalRequested: (cb) => {
+      const listener = (_event, approval) => cb(approval);
+      ipcRenderer.on('policy:approvalRequested', listener);
+      return () => ipcRenderer.removeListener('policy:approvalRequested', listener);
+    },
+    policyAudit: (cb) => {
+      const listener = (_event, event) => cb(event);
+      ipcRenderer.on('policy:audit', listener);
+      return () => ipcRenderer.removeListener('policy:audit', listener);
     },
   },
 });

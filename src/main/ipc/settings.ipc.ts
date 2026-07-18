@@ -7,7 +7,7 @@
  * Relations: Validates payloads via shared Zod schemas (e.g. `SetApiKeySchema`, `BrowserModeSchema`) and integrates with storage handlers.
  */
 
-import { ipcMain, app, BrowserWindow } from 'electron';
+import { ipcMain, app } from 'electron';
 import {
   SetApiKeySchema,
   SetSignalingUrlSchema,
@@ -49,6 +49,7 @@ import {
   getGlobalShortcut,
   setGlobalShortcut,
 } from '../storage.js';
+import { broadcastToRenderers } from './renderer-events.js';
 
 export function registerSettingsIpc() {
   ipcMain.handle('settings:hasApiKey', async (_e, provider: unknown) => {
@@ -115,7 +116,9 @@ export function registerSettingsIpc() {
         headers['X-Title'] = 'RemoteCtrl';
         break;
       case 'vertex':
-        // Vertex AI uses ADC — no fetchable list endpoint. Return well-known models.
+        // Vertex AI uses ADC — no fetchable list endpoint in this settings path.
+        // Vertex has its own @ai-sdk/google-vertex adapter, so Gemini 3.x models
+        // remain valid here. The Gemini provider has a separate compatibility guard.
         return [
           'gemini-3.5-flash',
           'gemini-2.5-pro',
@@ -222,9 +225,7 @@ export function registerSettingsIpc() {
   ipcMain.handle('settings:setTheme', async (_e, theme: unknown) => {
     const parsed = SetThemeSchema.parse({ theme });
     setTheme(parsed.theme);
-    BrowserWindow.getAllWindows().forEach((w) => {
-      if (!w.isDestroyed()) w.webContents.send('settings:themeChanged', parsed.theme);
-    });
+    broadcastToRenderers('settings:themeChanged', parsed.theme);
   });
 
   ipcMain.handle('settings:getGlobalShortcut', async () => getGlobalShortcut());

@@ -10,11 +10,13 @@ import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { AgentPanel } from './AgentPanel';
 import { WorkflowsPanel } from './WorkflowsPanel';
-import { Bot, Zap, MoreHorizontal, Plus } from 'lucide-react';
+import { Bot, Zap, MoreHorizontal, Plus, History, Trash2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 export function RightPanelLayout() {
   const { rightPanelTab, setRightPanelTab } = useUIStore();
+  const { recordingState } = useAgentStore();
+  const isRecordingLocked = recordingState === 'recording' || recordingState === 'saving';
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -27,6 +29,12 @@ export function RightPanelLayout() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    void useAgentStore.getState().loadRunHistory();
+  }, []);
+
+  const { runHistory, resumeRunHistory, deleteRunHistory, clearRunHistory } = useAgentStore();
 
   return (
     <div className="right-panel">
@@ -41,6 +49,8 @@ export function RightPanelLayout() {
           <button 
             className={`right-panel-tab ${rightPanelTab === 'workflows' ? 'active' : ''}`}
             onClick={() => setRightPanelTab('workflows')}
+            disabled={isRecordingLocked}
+            title={isRecordingLocked ? 'Workflows are unavailable while recording' : 'Workflows'}
           >
             <Zap size={14} /> Workflows
           </button>
@@ -56,12 +66,38 @@ export function RightPanelLayout() {
           
           {showMenu && (
             <div className="right-panel-dropdown">
-              <button onClick={() => {
+              <button disabled={isRecordingLocked} onClick={() => {
                 useAgentStore.getState().startNewChat();
                 setShowMenu(false);
               }}>
                 <Plus size={14} /> New Session
               </button>
+              {runHistory.length > 0 && <>
+                <div className="right-panel-dropdown-label"><History size={13} /> Recent sessions</div>
+                <div className="right-panel-history-list">
+                  {runHistory.map((item) => (
+                    <div className="right-panel-history-item" key={item.id}>
+                      <button className="right-panel-history-open" onClick={() => {
+                        resumeRunHistory(item);
+                        setRightPanelTab('agent');
+                        setShowMenu(false);
+                      }} title={`Resume ${item.title}`}>
+                        <span className={`right-panel-history-status ${item.status}`} />
+                        <span className="right-panel-history-copy">
+                          <span>{item.title}</span>
+                          <small>{new Date(item.endTime ?? item.startTime).toLocaleDateString()}</small>
+                        </span>
+                      </button>
+                      <button className="right-panel-history-delete" onClick={() => void deleteRunHistory(item.id)} title="Remove saved session">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button className="right-panel-history-clear" onClick={() => void clearRunHistory()}>
+                  Clear saved sessions
+                </button>
+              </>}
             </div>
           )}
         </div>

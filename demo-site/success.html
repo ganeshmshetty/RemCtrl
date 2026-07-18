@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Domain connected · Northstar</title><link rel="stylesheet" href="./styles.css" /></head>
+  <body>
+    <header class="topbar"><a class="brand" href="./index.html" aria-label="Northstar home"><span class="brand-mark">N</span><span>Northstar</span></a><div class="account-chip"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme">☼</button><span class="avatar">MC</span><span>Maya Chen</span><span class="status-dot"></span></div></header>
+    <main class="shell success-shell"><section class="card success-card"><div class="success-icon">✓</div><div class="eyebrow">Domain setup complete</div><h1>Your domain is ready</h1><p>The domain is connected to the Acme Studio website. DNS changes may take a few minutes to appear everywhere.</p><div class="success-summary"><div><span>Website</span><strong>Acme Studio</strong></div><div><span>Domain</span><strong id="domain-value">—</strong></div><div><span>Status</span><strong class="success-text">Connected</strong></div></div><a class="button primary" href="./index.html">Return to workspace <span>→</span></a></section></main>
+    <script src="./theme.js"></script><script>const params = new URLSearchParams(window.location.search); const domain = params.get('domain'); if (domain) document.getElementById('domain-value').textContent = domain;</script>
+  </body>
+</html>

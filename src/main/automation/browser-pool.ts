@@ -9,7 +9,6 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { BrowserConnectionError } from '../errors.js';
 import type { AgentLogPayload } from '../../shared/types.js';
-import { sessionHistory } from './agent-history.js';
 
 let activeBrowser: Browser | null = null;
 let activeCdpUrl: string | null = null;
@@ -72,7 +71,6 @@ export async function getBrowserPage(
 }
 
 export async function closeBrowser(): Promise<void> {
-  sessionHistory.clear();
   if (activeBrowser) {
     try {
       await activeBrowser.close();

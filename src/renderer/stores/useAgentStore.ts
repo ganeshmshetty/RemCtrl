@@ -14,6 +14,8 @@ import type {
   WorkflowStepStatus,
   AgentCheckpointPayload,
   AutomationRunHistoryItem,
+  AutomationRunChatMessage,
+  AgentActivityEntry,
   RecordedAgentStep,
 } from '../../shared/types';
 
@@ -24,10 +26,13 @@ export interface ChatMessage {
   text: string;
   timestamp: number;
   checkpointPayload?: AgentCheckpointPayload;
+  activity?: AgentActivityEntry[];
+  isFinal?: boolean;
 }
 
 type AgentStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error';
 type WorkflowState = 'idle' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type WorkflowRecordingState = 'idle' | 'recording' | 'saving' | 'saved' | 'error';
 
 interface AgentState {
   isTakeoverActive: boolean;
@@ -43,10 +48,18 @@ interface AgentState {
   workflowStepStatuses: WorkflowStepStatus[];
   currentStepIndex: number | null;
 
+  // Explicit multi-prompt workflow recording lifecycle
+  recordingState: WorkflowRecordingState;
+  recordingSessionId: string | null;
+  recordingTask: string | null;
+  recordingStepCount: number;
+  recordingError: string | null;
+
   // Run History & Lifecycle
   runHistory: AutomationRunHistoryItem[];
   currentRunTitle: string | null;
   currentRunStartTime: number | null;
+  activeSessionId: string | null;
   lastOutcome: 'completed' | 'error' | 'cancelled' | null;
 
   /** Structured steps recorded from the last successful agent run (for Save as Workflow) */
@@ -55,9 +68,15 @@ interface AgentState {
   lastCompletedPrompt: string | null;
   /** Set recorded steps from agent-loop (called by execution-engine after run completes) */
   setLastRecordedSteps: (steps: RecordedAgentStep[], prompt: string) => void;
+  setRecordingState: (state: Partial<Pick<AgentState, 'recordingState' | 'recordingSessionId' | 'recordingTask' | 'recordingStepCount' | 'recordingError'>>) => void;
+  clearRecordingState: () => void;
 
   archiveCurrentRun: (finalStatus?: 'completed' | 'error' | 'cancelled', error?: string) => void;
   startNewExecution: (type: 'agent' | 'workflow', id: string, title: string) => void;
+  loadRunHistory: () => Promise<void>;
+  resumeRunHistory: (item: AutomationRunHistoryItem) => void;
+  deleteRunHistory: (id: string) => Promise<void>;
+  clearRunHistory: () => Promise<void>;
 
   // Actions
   setTakeoverActive: (active: boolean) => void;
@@ -87,24 +106,32 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   workflowStepStatuses: [],
   currentStepIndex: null,
 
+  recordingState: 'idle',
+  recordingSessionId: null,
+  recordingTask: null,
+  recordingStepCount: 0,
+  recordingError: null,
+
   runHistory: [],
   currentRunTitle: null,
   currentRunStartTime: null,
+  activeSessionId: null,
   lastOutcome: null,
 
   lastRecordedSteps: [],
   lastCompletedPrompt: null,
 
   setLastRecordedSteps: (steps, prompt) => set({ lastRecordedSteps: steps, lastCompletedPrompt: prompt }),
+  setRecordingState: (updates) => set(updates),
+  clearRecordingState: () => set({ recordingState: 'idle', recordingSessionId: null, recordingTask: null, recordingStepCount: 0, recordingError: null }),
 
   setTakeoverActive: (active) => set({ isTakeoverActive: active }),
   setAgentStatus: (agentStatus) => set({ agentStatus }),
   setActiveCommandId: (id) => set({ activeCommandId: id }),
 
-  appendMessage: (msg) =>
-    set((state) => ({
-      chatHistory: [...state.chatHistory, msg],
-    })),
+  appendMessage: (msg) => {
+    set((state) => ({ chatHistory: [...state.chatHistory, msg] }));
+  },
 
   handleAgentStatus: (payload) => {
     const statusMap: Record<string, AgentStatus> = {
@@ -129,13 +156,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
 
     if (payload.state === 'running') {
-      updates.currentAction = 'Initializing agent...';
+      const current = get();
+      updates.currentAction = current.activeCommandId === payload.commandId && current.currentAction
+        ? current.currentAction
+        : 'Initializing agent...';
       updates.lastOutcome = null;
     } else if (['completed', 'failed', 'cancelled'].includes(payload.state)) {
       updates.currentAction = null;
     }
 
     set(updates);
+
+    if (['completed', 'failed', 'cancelled'].includes(payload.state)) {
+      const terminalState = payload.state === 'failed' ? 'failed' as const : 'completed' as const;
+      set((state) => ({
+        chatHistory: state.chatHistory.map((message) => message.id === `user-${payload.commandId}` && message.activity
+          ? { ...message, activity: message.activity.map((activity) => activity.state === 'running' ? { ...activity, state: terminalState } : activity) }
+          : message),
+      }));
+    }
     
     if (payload.state === 'completed') {
       const result = payload.result as any;
@@ -150,15 +189,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         type: 'status',
         text: formattedResult,
         timestamp: Date.now(),
+        isFinal: true,
       });
+      get().archiveCurrentRun('completed');
     } else if (payload.state === 'failed') {
       get().appendMessage({
         id: `error-${payload.commandId}-${Date.now()}`,
         sender: 'agent',
-        type: 'error',
+        type: 'status',
         text: `I encountered an issue and couldn't complete the task: ${payload.error || 'Unknown error'}`,
         timestamp: Date.now(),
       });
+      get().archiveCurrentRun('error', payload.error);
+    } else if (payload.state === 'cancelled') {
+      get().archiveCurrentRun('cancelled');
     }
   },
 
@@ -167,18 +211,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((state) => {
       const msgTrim = payload.message?.trim() || '';
       const isJsonOutput = msgTrim.startsWith('{') || msgTrim.startsWith('["') || msgTrim.startsWith('```json');
-      const isEngineNoise =
-        msgTrim.includes('[StagehandPool]') ||
-        msgTrim.includes('Stagehand') ||
-        msgTrim.includes('Connecting to local browser') ||
-        msgTrim.includes('Starting — model=') ||
-        msgTrim.includes('Pipeline complete') ||
-        msgTrim.includes('CDP:') ||
-        payload.message.includes('browser-use') ||
-        payload.message.includes('playwright');
+      const isEngineNoise = isInternalDiagnostic(msgTrim);
 
       const isNotify = payload.message.startsWith('Update: ');
-      const isActionable = payload.level === 'info' && !isJsonOutput && !isEngineNoise;
+      const isWorkflowLog = state.workflowRunState === 'running' || state.workflowRunState === 'completed' || state.workflowRunState === 'failed' || state.workflowRunState === 'cancelled';
+      // Workflow logs are rendered in the Workflows tab. Keep preparation,
+      // waits, retries, warnings, and failures even when they are not phrased
+      // as an agent-facing semantic activity.
+      const isActionable = !isJsonOutput && (
+        (payload.level === 'info' && !isEngineNoise && isSemanticActivity(msgTrim))
+        || (isWorkflowLog && !isEngineNoise)
+      );
 
       let newHistory = state.chatHistory;
       if (isNotify) {
@@ -192,27 +235,38 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             timestamp: Date.now(),
           },
         ];
-      } else if (isActionable) {
-        const lastMsg = state.chatHistory.at(-1);
-        const isDuplicateOfLast = lastMsg?.type === 'log' && lastMsg?.text === payload.message;
-        if (!isDuplicateOfLast) {
-          newHistory = [
-            ...newHistory,
-            {
-              id: `log-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-              sender: 'agent' as const,
-              type: 'log' as const,
-              text: payload.message,
-              timestamp: Date.now(),
-            },
-          ];
-        }
       }
 
+      const commandId = payload.commandId ?? state.activeCommandId;
+      const updatedHistory = isActionable && payload.level === 'info' && commandId
+        ? state.chatHistory.map((message) => {
+            if (message.id !== `user-${commandId}`) return message;
+            const current = message.activity ?? [];
+            const indexedActivities = [...current].map((entry, index) => ({ entry, index })).reverse();
+            const runningIndex = (indexedActivities.find(({ entry }) => entry.state === 'running' && entry.text === payload.message)
+              ?? indexedActivities.find(({ entry }) => entry.state === 'running'))?.index;
+            if (payload.phase === 'started' || runningIndex === undefined) {
+              return {
+                ...message,
+                activity: [...current, {
+                  id: `activity-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  text: payload.message,
+                  state: 'running',
+                  timestamp: Date.now(),
+                }],
+              };
+            }
+            const activity = current.map((entry, index) => index === runningIndex
+              ? { ...entry, text: payload.message, state: payload.level === 'error' || payload.phase === 'failed' ? 'failed' as const : 'completed' as const }
+              : entry);
+            return { ...message, activity };
+          })
+        : newHistory;
+
       return {
-        executionLogs: [...(state.executionLogs || []), payload],
+        executionLogs: isActionable ? [...(state.executionLogs || []), { ...payload, timestamp: Date.now() }] : state.executionLogs,
         currentAction: isActionable ? payload.message : state.currentAction,
-        chatHistory: newHistory,
+        chatHistory: updatedHistory,
       };
     });
   },
@@ -264,6 +318,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         lastOutcome,
       };
     });
+    if (status.state === 'completed') get().archiveCurrentRun('completed');
+    else if (status.state === 'failed') get().archiveCurrentRun('error', status.error);
+    else if (status.state === 'cancelled') get().archiveCurrentRun('cancelled');
   },
 
   handleWorkflowStepStatus: (status) => {
@@ -306,7 +363,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   archiveCurrentRun: (finalStatus = 'completed', error) => {
     const state = get();
     if (state.chatHistory.length === 0 && state.executionLogs.length === 0) return;
-    const id = state.activeCommandId || state.workflowRunId || `run-${Date.now()}`;
+    const id = state.activeSessionId || `session-${Date.now()}`;
     const type = state.workflowRunId ? 'workflow' : 'agent';
     const title = state.currentRunTitle || (type === 'workflow' ? 'Workflow Execution' : 'Agent Execution');
     const newItem: AutomationRunHistoryItem = {
@@ -317,12 +374,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       endTime: Date.now(),
       status: finalStatus,
       logs: [...state.executionLogs],
-      chatHistory: [...state.chatHistory],
+      chatHistory: state.chatHistory.filter((message): message is ChatMessage & AutomationRunChatMessage => message.type !== 'log'),
       error,
     };
-    set({
-      runHistory: [newItem, ...state.runHistory].slice(0, 30),
-    });
+    set({ runHistory: [newItem, ...state.runHistory.filter((item) => item.id !== id)].slice(0, 30) });
+    void window.RemoteCtrlAPI?.agent.saveRunHistory(newItem);
   },
 
   startNewExecution: (type, id, title) => {
@@ -340,12 +396,46 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       currentStepIndex: null,
       currentRunTitle: state.currentRunTitle || title,
       currentRunStartTime: state.currentRunStartTime || Date.now(),
+      activeSessionId: state.activeSessionId || `session-${id}`,
     });
   },
 
   clearHistory: () => {
     (window as any).RemoteCtrlAPI?.agent?.clearHistory?.();
     set({ chatHistory: [], executionLogs: [], currentAction: null });
+  },
+
+  loadRunHistory: async () => {
+    const runHistory = await window.RemoteCtrlAPI?.agent.listRunHistory() ?? [];
+    set({ runHistory });
+  },
+
+  resumeRunHistory: (item) => {
+    set({
+      chatHistory: item.chatHistory as ChatMessage[],
+      executionLogs: item.logs,
+      currentAction: null,
+      lastOutcome: item.status,
+      agentStatus: 'idle',
+      activeCommandId: null,
+      workflowRunState: 'idle',
+      workflowRunId: null,
+      workflowStepStatuses: [],
+      currentStepIndex: null,
+      currentRunTitle: item.title,
+      currentRunStartTime: item.startTime,
+      activeSessionId: item.id,
+    });
+  },
+
+  deleteRunHistory: async (id) => {
+    await window.RemoteCtrlAPI?.agent.deleteRunHistory(id);
+    set((state) => ({ runHistory: state.runHistory.filter((item) => item.id !== id) }));
+  },
+
+  clearRunHistory: async () => {
+    await window.RemoteCtrlAPI?.agent.clearRunHistory();
+    set({ runHistory: [] });
   },
 
   clearWorkflow: () =>
@@ -378,9 +468,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       currentStepIndex: null,
       currentRunTitle: null,
       currentRunStartTime: null,
+      activeSessionId: null,
     });
   },
 }));
+
+function isInternalDiagnostic(message: string): boolean {
+  return /\[(?:ExecutionEngine|Browser|StagehandPool|Stagehand|MAIN)\]|\b(?:CDP|Playwright|browser-use|pipeline|provider=|model=|Vertex AI|Google Generative AI)\b/i.test(message)
+    || message.includes('Connecting to local browser');
+}
+
+function isSemanticActivity(message: string): boolean {
+  return /^(?:Navigating|Opening|Reading|Observing|Analyzing|Finding|Looking|Getting|Click(?:ing)?|Selecting|Entering|Typing|Filling|Pressing|Scrolling|Extracting|Checking|Verifying|Waiting|Executing|Action:|Completing)/i.test(message);
+}
 
 function formatAgentResult(result: any): string {
   if (!result) return 'I successfully completed the task!';

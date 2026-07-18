@@ -6,8 +6,8 @@
  * Relations: Invoked from within the automation loop when human verification is required, and resolved by the IPC handler `browser:submitCheckpoint` in `agent.ipc.ts`.
  */
 
-import { BrowserWindow } from 'electron';
 import type { AgentCheckpointPayload, CheckpointResponse } from '../../shared/types.js';
+import { broadcastToRenderers } from '../ipc/renderer-events.js';
 
 // ─── Pending callbacks ────────────────────────────────────────────────────────
 
@@ -60,9 +60,7 @@ export async function ask(
     context,
   };
 
-  BrowserWindow.getAllWindows().forEach((win) => {
-    win.webContents.send('browser:agentCheckpoint', payload);
-  });
+  broadcastToRenderers('browser:agentCheckpoint', payload);
 
   return new Promise((resolve, reject) => {
     const cleanup = () => {
