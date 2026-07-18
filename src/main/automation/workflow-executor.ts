@@ -31,6 +31,7 @@ import {
   isAutomationRunActive,
 } from './run-lifecycle.js';
 import { createDevelopmentLogger } from '../dev-logger.js';
+import { waitFor } from './abortable.js';
 
 export type WorkflowRunStatusCb = (s: WorkflowRunStatus) => void;
 export type WorkflowStepStatusCb = (s: WorkflowStepStatus) => void;
@@ -78,6 +79,13 @@ export async function runWorkflow(
   const session = new TaskSession({ commandId: workflowRunId });
   beginAutomationRun('workflow', session);
   session.start();
+  const stopWatchdog = session.startWatchdog({
+    maxDurationMs: 4 * 60 * 60 * 1000,
+    inactivityMs: 15 * 60 * 1000,
+    onTimeout: (error) => {
+      if (session.isActive) session.fail(error);
+    },
+  });
 
   try {
     emitLog(onLog, 'info', 'Preparing browser session...', '[Workflow]');
@@ -89,6 +97,7 @@ export async function runWorkflow(
       waitForNetworkIdle: false,
       navigationTimeoutMs: 20_000,
       networkIdleTimeoutMs: 10_000,
+      abortSignal: session.abortSignal,
     });
     const conditions = new WorkflowConditionEngine(localPage);
 
@@ -128,6 +137,7 @@ export async function runWorkflow(
         onRunStatus({ workflowRunId, state: 'cancelled' });
         return;
       }
+      if (session.isFailed) throw session.failure ?? new Error('Workflow watchdog stopped the run.');
 
       const index = steps.findIndex((s) => s.id === currentStepId);
       if (index === -1) {
@@ -135,6 +145,7 @@ export async function runWorkflow(
       }
 
       const step = steps[index];
+      session.touch();
 
       const resolvedStep = { ...step } as WorkflowStep;
 
@@ -186,7 +197,7 @@ export async function runWorkflow(
         emitLog(onLog, 'error', `✗ ${stepLabel} failed: ${errorInfo.message}`, '[Workflow]');
         onStepStatus({ workflowRunId, stepId: step.id, index, state: 'failed', error: errorInfo.message });
 
-        if (session.isCancelled) {
+        if (session.isCancelled || session.isFailed) {
           throw stepErr; // Bubble up immediately to the outer catch
         }
 
@@ -212,6 +223,7 @@ export async function runWorkflow(
       onRunStatus({ workflowRunId, state: 'failed', error: errorInfo.message });
     }
   } finally {
+    stopWatchdog();
     finishAutomationRun(session);
   }
 }
@@ -236,6 +248,7 @@ async function executeStepWithRetry(
 
   while (attempt < maxAttempts) {
     attempt++;
+    session.touch();
     try {
       if (attempt > 1) {
         emitLog(onLog, 'info', `Attempt ${attempt}/${maxAttempts}`, '[Workflow]');
@@ -254,7 +267,7 @@ async function executeStepWithRetry(
         RETRY_MAX_DELAY_MS,
       );
       emitLog(onLog, 'info', `Retrying in ${delay}ms…`, '[Workflow]');
-      await sleep(delay);
+      await waitFor(delay, session.abortSignal);
     }
   }
 
@@ -517,8 +530,4 @@ function emitLog(
   else if (level === 'warn') terminalLog.warn(line);
   else terminalLog.info(line);
   onLog({ level, message });
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

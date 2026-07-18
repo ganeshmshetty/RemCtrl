@@ -64,7 +64,10 @@ export function createBrowserTools(
     return undefined;
   };
 
-  const actions = new SemanticActionEngine(page, { guard: authorize });
+  const actions = new SemanticActionEngine(page, {
+    guard: authorize,
+    abortSignal: contextGetter?.().abortSignal,
+  });
 
   // Keep batched calls as typed as individual tools. A discriminated union
   // prevents malformed `args` from reaching the browser and gives providers a

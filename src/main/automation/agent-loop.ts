@@ -99,6 +99,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     abortSignal: session.abortSignal,
   }), securityMode, (toolName, input) => {
     if (['think', 'notifyUser', 'done'].includes(toolName)) return;
+    session.touch();
     toolStartedAt.set(toolName, Date.now());
     terminalLog.info('tool.start', {
       commandId,
@@ -119,11 +120,12 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
       : buildAgentTaskPrompt(instruction),
     tools,
     toolChoice: 'auto',
-    stopWhen: ({ steps }: any) => session.isCancelled || taskTerminated || steps.length >= maxSteps,
+    stopWhen: ({ steps }: any) => session.isCancelled || session.isFailed || taskTerminated || steps.length >= maxSteps,
     abortSignal: session.abortSignal,
 
     onStepFinish: async (event) => {
-      if (session.isCancelled) return;
+      if (session.isCancelled || session.isFailed) return;
+      session.touch();
       const stepNum = actions.length + 1;
       const hasDone = event.toolCalls?.some((tc: any) => tc.toolName === 'done');
       const hasToolCalls = (event.toolCalls?.length ?? 0) > 0;

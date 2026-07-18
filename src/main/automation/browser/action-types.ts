@@ -46,6 +46,7 @@ export interface BrowserActionExecutionOptions {
   waitForNetworkIdle?: boolean;
   navigationTimeoutMs?: number;
   networkIdleTimeoutMs?: number;
+  abortSignal?: AbortSignal;
 }
 
 /** Optional action guard. Local companion callers simply omit it. */

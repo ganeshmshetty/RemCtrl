@@ -45,7 +45,11 @@ export interface AgentRunResult {
   error?: string;
 }
 
-const COMMAND_TIMEOUT_MS = 180_000;
+// Browser tasks can legitimately take hours when they include approvals,
+// slow sites, or a manual takeover. The watchdog protects genuinely stalled
+// runs without turning ordinary model latency into a hard three-minute kill.
+const COMMAND_MAX_DURATION_MS = 2 * 60 * 60 * 1000;
+const COMMAND_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_STEPS = 40;
 const terminalLog = createDevelopmentLogger('Dev');
 
@@ -86,6 +90,13 @@ export async function runAgent(
   const session = new TaskSession({ initialGoal: instruction, commandId });
   beginAutomationRun('agent', session);
   session.start();
+  const stopWatchdog = session.startWatchdog({
+    maxDurationMs: COMMAND_MAX_DURATION_MS,
+    inactivityMs: COMMAND_INACTIVITY_TIMEOUT_MS,
+    onTimeout: (error) => {
+      if (session.isActive) session.fail(new AgentTimeoutError(COMMAND_INACTIVITY_TIMEOUT_MS, error.message));
+    },
+  });
 
   let initialPage: Page;
   try {
@@ -102,31 +113,25 @@ export async function runAgent(
   }
 
   log(onLog, 'info', `Starting execution pipeline via provider="${provider}" security=${securityMode}`);
-  terminalLog.info('run.start', { commandId, provider, securityMode, timeoutMs: COMMAND_TIMEOUT_MS, maxSteps: MAX_STEPS });
+  terminalLog.info('run.start', {
+    commandId,
+    provider,
+    securityMode,
+    maxDurationMs: COMMAND_MAX_DURATION_MS,
+    inactivityTimeoutMs: COMMAND_INACTIVITY_TIMEOUT_MS,
+    maxSteps: MAX_STEPS,
+  });
   onStatus({ commandId, state: 'running' });
 
   const executionLogger = new ExecutionLogger(commandId, instruction);
 
   let localPage: Page | null = null;
-  let timeoutId: NodeJS.Timeout | undefined;
-
   try {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(
-        () => reject(new AgentTimeoutError(COMMAND_TIMEOUT_MS)),
-        COMMAND_TIMEOUT_MS,
-      );
-    });
-
     localPage = initialPage;
-
-    const cancelPromise = new Promise<never>((_, reject) => {
-      if (session.abortSignal.aborted) reject(session.abortSignal.reason);
-      session.abortSignal.addEventListener('abort', () => reject(session.abortSignal.reason));
-    });
 
     const guardedStatus = (payload: AgentStatusPayload) => {
       if (session.isCancelled && payload.state === 'running') return;
+      session.touch();
       onStatus(payload);
     };
 
@@ -142,12 +147,15 @@ export async function runAgent(
         maxSteps: MAX_STEPS,
         securityMode,
         onStatus: guardedStatus,
-        onLog,
+        onLog: (payload) => {
+          session.touch();
+          onLog(payload);
+        },
         onRecordStep,
       });
     };
 
-    const loopResult = await Promise.race([runLoop(), timeoutPromise, cancelPromise]);
+    const loopResult = await runLoop();
 
     log(
       onLog,
@@ -232,7 +240,7 @@ export async function runAgent(
     }
   } finally {
     policyGate.cancelSession(commandId);
-    if (timeoutId) clearTimeout(timeoutId);
+    stopWatchdog();
     // A newer run may have replaced this session while this one was winding
     // down. Never clear the newer run's lifecycle reference.
     finishAutomationRun(session);

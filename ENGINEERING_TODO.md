@@ -13,7 +13,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - [ ] Agent runs have a hard three-minute timeout, which is too short for real browser work and can leave an in-flight model call detached.
 - [ ] Agent and workflow lifecycle state is process-memory-only; a renderer restart cannot recover or explain an active run.
 - [ ] Agent history is a singleton and is not keyed by session, so separate sessions can contaminate one another.
-- [ ] Cancellation and pause handling are not uniformly interruptible: waits, retry backoff, and some browser operations do not observe the abort signal.
+- [x] Cancellation and pause handling are not uniformly interruptible: waits, retry backoff, and some browser operations do not observe the abort signal.
 - [ ] Workflow retry exists but is not journaled as a resumable checkpoint and does not surface a durable recovery action to the user.
 - [ ] The renderer has a working command palette and state cards, but activity, errors, and run history are still visually fragmented and partly inline-styled.
 - [ ] Remote connection lifecycle has no single user-facing recovery model for reconnecting, stale signaling, or browser-stream interruption.
@@ -25,10 +25,10 @@ This is the active memory for the ongoing product pass. Items are checked off on
 
 - [ ] Introduce a durable automation-run journal/checkpoint seam with bounded event retention and atomic writes.
 - [ ] Make task cancellation, retry backoff, waits, and browser readiness abort-aware.
-- [ ] Replace the fixed agent timeout with inactivity/step watchdogs and explicit long-run limits.
+- [x] Replace the fixed agent timeout with inactivity/step watchdogs and explicit long-run limits.
 - [ ] Add safe retry classification for transient provider/browser failures and preserve partial results.
 - [ ] Add resume/recover APIs and UI actions for interrupted agent/workflow runs.
-- [ ] Add focused tests for cancellation, timeout, journal recovery, and retry behavior.
+- [x] Add focused tests for cancellation, timeout, journal recovery, and retry behavior.
 
 ### Design language and UX
 

@@ -41,3 +41,17 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 - Added a keyboard-first command palette with grouped actions for new sessions, agent/workflow navigation, sidebar visibility, settings, and local-session start.
 - Added title-bar access plus `⌘K`/`Ctrl+K`, arrow-key navigation, Enter-to-run, Escape-to-close, search filtering, empty results, and visible shortcut hints.
 - Kept the implementation native to the existing React/Electron renderer and did not add external runtime dependencies or copy whole application surfaces.
+
+## 2026-07-19 · Long-run automation guardrails
+
+- Replaced the fixed three-minute agent timeout with a two-hour ceiling plus a fifteen-minute inactivity watchdog.
+- Made task cancellation interrupt pause waits, workflow retry backoff, and semantic browser waits through a shared abortable primitive.
+- Kept manual takeover pauses open-ended so a user is not disconnected while completing a slow approval or human step.
+- Added focused coverage for abort behavior, pause/resume, and failure-vs-cancellation state.
+
+Verified:
+
+- `npm test` — 18 files, 47 tests passed
+- `npm run typecheck:all`
+- `npm run build:renderer`
+- `npm run build:main`

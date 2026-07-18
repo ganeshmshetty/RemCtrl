@@ -10,6 +10,7 @@ import type {
   ElementTarget,
   SemanticBrowserAction,
 } from './action-types.js';
+import { throwIfAborted, waitFor } from '../abortable.js';
 
 export interface SemanticActionOptions {
   guard?: BrowserActionGuard;
@@ -19,6 +20,7 @@ export interface SemanticActionOptions {
   navigationTimeoutMs?: number;
   /** Bounded stabilization wait after navigation or an element action. */
   networkIdleTimeoutMs?: number;
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -29,6 +31,8 @@ export class SemanticActionEngine {
   constructor(private readonly page: Page, private readonly options: SemanticActionOptions = {}) {}
 
   async execute(action: SemanticBrowserAction, executionOptions: BrowserActionExecutionOptions = {}): Promise<BrowserActionResult> {
+    const signal = executionOptions.abortSignal ?? this.options.abortSignal;
+    throwIfAborted(signal);
     switch (action.kind) {
       case 'navigate': return this.navigate(action.url, executionOptions);
       case 'element': return this.element(action, executionOptions);
@@ -38,7 +42,7 @@ export class SemanticActionEngine {
       case 'keys': return this.keys(action.key);
       case 'type': return this.type(action.text);
       case 'scroll': return this.scroll(action.direction, action.pixels);
-      case 'wait': await sleep(action.ms); return { success: true };
+      case 'wait': await waitFor(action.ms, signal); return { success: true };
     }
   }
 
@@ -47,6 +51,7 @@ export class SemanticActionEngine {
   }
 
   private async navigate(url: string, executionOptions: BrowserActionExecutionOptions): Promise<BrowserActionResult> {
+    throwIfAborted(executionOptions.abortSignal ?? this.options.abortSignal);
     const blocked = await this.authorize('browser.navigate', `Navigate to ${url}`, { url }, url);
     if (blocked) return blocked;
     await this.page.goto(url, {
@@ -57,10 +62,12 @@ export class SemanticActionEngine {
     await this.page.waitForLoadState('networkidle', {
       timeout: executionOptions.networkIdleTimeoutMs ?? this.options.networkIdleTimeoutMs,
     }).catch(() => {});
+    throwIfAborted(executionOptions.abortSignal ?? this.options.abortSignal);
     return { success: true, url: this.page.url() };
   }
 
   private async element(action: Extract<SemanticBrowserAction, { kind: 'element' }>, executionOptions: BrowserActionExecutionOptions): Promise<BrowserActionResult> {
+    throwIfAborted(executionOptions.abortSignal ?? this.options.abortSignal);
     const target = await this.resolveTarget(action.index, action.selector);
     const capability = action.action === 'fill' || action.action === 'select'
       ? 'browser.type'
@@ -82,10 +89,12 @@ export class SemanticActionEngine {
       const el = element as unknown as { getAttribute(name: string): string | null; textContent?: string | null };
       return el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent?.trim().slice(0, 120) || el.getAttribute('name') || undefined;
     }).catch(() => undefined);
+    throwIfAborted(executionOptions.abortSignal ?? this.options.abortSignal);
     return { success: true, url: this.page.url(), resolvedSelector: target.resolvedSelector, targetLabel };
   }
 
   private async observe(filter?: string): Promise<BrowserActionResult> {
+    throwIfAborted(this.options.abortSignal);
     const blocked = await this.authorize('browser.read', 'Observe page elements', { filter });
     if (blocked) return blocked;
     const snapshot = await extractNumberedDOMSnapshot(this.page, filter);
@@ -93,6 +102,7 @@ export class SemanticActionEngine {
   }
 
   private async extract(action: Extract<SemanticBrowserAction, { kind: 'extract' }>): Promise<BrowserActionResult> {
+    throwIfAborted(this.options.abortSignal);
     const { selector, includeIndices = false, limit = 8000 } = action;
     const blocked = await this.authorize('browser.read', 'Extract page content', { selector, includeIndices, limit });
     if (blocked) return blocked;
@@ -101,12 +111,14 @@ export class SemanticActionEngine {
   }
 
   private async pageUrl(): Promise<BrowserActionResult> {
+    throwIfAborted(this.options.abortSignal);
     const blocked = await this.authorize('browser.read', 'Read current page URL');
     if (blocked) return blocked;
     return { success: true, url: this.page.url(), title: await this.page.title() };
   }
 
   private async keys(key: string): Promise<BrowserActionResult> {
+    throwIfAborted(this.options.abortSignal);
     const blocked = await this.authorize('browser.keypress', `Press ${key}`, { key });
     if (blocked) return blocked;
     await this.page.keyboard.press(key);
@@ -114,6 +126,7 @@ export class SemanticActionEngine {
   }
 
   private async type(text: string): Promise<BrowserActionResult> {
+    throwIfAborted(this.options.abortSignal);
     const blocked = await this.authorize('browser.type', 'Type into focused element', { textLength: text.length });
     if (blocked) return blocked;
     await this.page.keyboard.type(text);
@@ -121,6 +134,7 @@ export class SemanticActionEngine {
   }
 
   private async scroll(direction: 'up' | 'down' | 'left' | 'right', pixels: number): Promise<BrowserActionResult> {
+    throwIfAborted(this.options.abortSignal);
     const blocked = await this.authorize('browser.scroll', `Scroll ${direction}`, { direction, pixels });
     if (blocked) return blocked;
     const dx = direction === 'right' ? pixels : direction === 'left' ? -pixels : 0;
@@ -152,5 +166,3 @@ export class SemanticActionEngine {
     }
   }
 }
-
-function sleep(ms: number) { return new Promise<void>(resolve => setTimeout(resolve, ms)); }
