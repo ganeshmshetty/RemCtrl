@@ -16,9 +16,20 @@
 
 export type StepType = 'navigate' | 'click' | 'fill' | 'select' | 'keypress' | 'wait' | 'extract' | 'check';
 
+export type StepPostcondition =
+  | { kind: 'url_includes'; value: string }
+  | { kind: 'selector_visible'; value: string }
+  | { kind: 'text_visible'; value: string }
+  | { kind: 'field_value'; selector: string; value: string }
+  | { kind: 'selected_value'; selector: string; value: string };
+
 export type BaseStep = {
   id: string;
   onFailure: 'stop' | 'skip' | 'retry' | 'self_heal';
+  /** Plain-language explanation used for logs, previews, and recovery. */
+  description?: string;
+  /** Deterministic check run after the step; never an additional AI call. */
+  postcondition?: StepPostcondition;
 };
 
 export type WorkflowStep =
@@ -41,11 +52,25 @@ export interface RecordedAgentStep {
   input: Record<string, unknown>;
 }
 
+export interface ExecutionTraceEntry {
+  id: string;
+  sequence: number;
+  timestamp: number;
+  tool: string;
+  input: Record<string, unknown>;
+  semanticDescription: string;
+  status: 'succeeded' | 'blocked' | 'failed' | 'skipped';
+  resolvedSelector?: string;
+  urlBefore?: string;
+  urlAfter?: string;
+  targetLabel?: string;
+  error?: string;
+}
+
 export interface LocalWorkflow {
   id: string;
   name: string;
   description?: string;
-  startUrl?: string;
   steps: WorkflowStep[];
   createdAt: number;
   updatedAt: number;
@@ -76,6 +101,160 @@ export interface AppSettings {
   browserMode: BrowserMode;
   theme: AppTheme;
   // API keys are NOT stored in renderer — Main process holds them
+}
+
+// ─── Scoped Action Policy Types ──────────────────────────────────────────────
+
+export interface PolicyRuleSet {
+  allow: string[];
+  deny: string[];
+}
+
+export interface PolicyLimits {
+  maxPendingApprovals: number;
+  approvalTtlMs: number;
+  maxAuditEvents: number;
+}
+
+/** The complete policy currently applied by the main-process policy gate. */
+export interface PolicyScope {
+  id: string;
+  sessionId?: string;
+  actorId?: string;
+  capabilities: PolicyRuleSet;
+  origins: PolicyRuleSet;
+  domains: PolicyRuleSet;
+  paths: PolicyRuleSet;
+  /** Capability patterns that are allowed only after an explicit approval. */
+  requireApproval: string[];
+  limits: PolicyLimits;
+}
+
+/** An action request is intentionally data-only so it can cross process seams safely. */
+export interface PolicyIntent {
+  sessionId: string;
+  actorId: string;
+  action: string;
+  capability: string;
+  url?: string;
+  origin?: string;
+  domain?: string;
+  path?: string;
+  approvalId?: string;
+  payload?: unknown;
+}
+
+/** The command used to resolve a pending approval. */
+export type PolicyApprovalDecision = 'approve' | 'deny' | 'cancel';
+
+export type PolicyApprovalStatus = 'pending' | 'approved' | 'denied' | 'cancelled' | 'expired' | 'used';
+
+export interface PolicyApproval {
+  id: string;
+  sessionId: string;
+  actorId: string;
+  actionDigest: string;
+  capability: string;
+  createdAt: number;
+  expiresAt: number;
+  status: PolicyApprovalStatus;
+  decision?: PolicyApprovalDecision;
+  resolvedAt?: number;
+  usedAt?: number;
+}
+
+/** UI-safe view of an action paused at the main-process policy seam. */
+export interface PolicyApprovalRequest {
+  approval: PolicyApproval;
+  action: string;
+  capability: string;
+  url?: string;
+}
+
+export interface PolicyAuditResource {
+  origin?: string;
+  domain?: string;
+  path?: string;
+}
+
+export type PolicyAuditKind =
+  | 'scope_set'
+  | 'authorization'
+  | 'approval_resolved'
+  | 'approval_expired'
+  | 'session_cancelled';
+
+export type PolicyAuditOutcome = 'allowed' | 'denied' | 'pending' | 'approved' | 'cancelled' | 'expired';
+
+/** Audit records never contain the raw intent or payload; only normalized/redacted fields. */
+export interface ScopedPolicyAuditEvent {
+  id: string;
+  timestamp: number;
+  kind: PolicyAuditKind;
+  outcome: PolicyAuditOutcome;
+  scopeId?: string;
+  sessionId?: string;
+  actorId?: string;
+  capability?: string;
+  actionDigest?: string;
+  approvalId?: string;
+  decision?: PolicyApprovalDecision;
+  reasonCodes: string[];
+  resource?: PolicyAuditResource;
+}
+
+export type PolicyAuthorizationStatus = 'allowed' | 'denied' | 'pending';
+
+export interface PolicyAuthorization {
+  status: PolicyAuthorizationStatus;
+  actionDigest: string;
+  approval?: PolicyApproval;
+  reasonCodes: string[];
+  auditEvent: ScopedPolicyAuditEvent;
+}
+
+// Compatibility contracts for the existing automation and IPC seams.
+export type ActionCapability =
+  | 'browser.read' | 'browser.navigate' | 'browser.click' | 'browser.type'
+  | 'browser.keypress' | 'browser.scroll' | 'browser.tab';
+export type ActionSource = 'agent' | 'workflow' | 'remote-human' | 'local-ui' | 'extension';
+
+export interface TaskScope {
+  id: string;
+  name: string;
+  /** The user-declared outcome. The gate refuses actions until this is set. */
+  goal: string;
+  allowedDomains: string[];
+  requireApprovalFor: ActionCapability[];
+  maxActions: number;
+  expiresAt?: number;
+}
+
+export interface ActionIntent {
+  sessionId: string;
+  source: ActionSource;
+  actorId: string;
+  capability: ActionCapability;
+  url?: string;
+  target?: string;
+  summary: string;
+  details?: Record<string, unknown>;
+}
+
+export interface PolicyDecision {
+  decision: 'allowed' | 'blocked' | 'approved';
+  reason: string;
+  approvalId?: string;
+}
+
+export interface PolicyAuditEvent {
+  id: string;
+  timestamp: number;
+  type: 'scope.changed' | 'action.requested' | 'action.allowed' | 'action.blocked' | 'approval.requested' | 'approval.resolved';
+  sessionId: string;
+  capability?: ActionCapability;
+  target?: string;
+  reason?: string;
 }
 
 // ─── Session / Connection Types ────────────────────────────────────────────────
@@ -128,6 +307,23 @@ export interface AgentPromptPayload {
   commandId: string;
   action: AgentAction;
   instruction: string;
+  /** Local sessions are owned by the current user and do not use remote scope enforcement. */
+  executionMode?: 'local' | 'remote';
+  /** Active explicit recording session to which successful traces are appended. */
+  recordingSessionId?: string;
+  /** @deprecated Use an explicit recording session and save action instead. */
+  recordWorkflow?: { name: string; description: string };
+}
+
+export interface RecordingSessionState {
+  id: string;
+  status: 'recording' | 'saving';
+  initialInstruction: string;
+  capturedStepCount: number;
+  promptCount: number;
+  createdAt: number;
+  updatedAt: number;
+  error?: string;
 }
 
 export interface AgentRewindPayload {
@@ -135,6 +331,7 @@ export interface AgentRewindPayload {
   commandId: string;
   action: 'act' | 'observe' | 'extract' | 'clipboard_read' | 'clipboard_write' | 'invoke_mcp' | 'playwright_action';
   newInstruction: string;
+  executionMode?: 'local' | 'remote';
 }
 
 export interface AgentStatusPayload {
@@ -148,6 +345,15 @@ export interface AgentLogPayload {
   level: 'info' | 'warn' | 'error';
   message: string;
   step?: string;
+  commandId?: string;
+  phase?: 'started' | 'completed' | 'failed';
+}
+
+export interface AgentActivityEntry {
+  id: string;
+  text: string;
+  state: 'running' | 'completed' | 'failed';
+  timestamp: number;
 }
 
 export interface AgentCheckpointPayload {
@@ -176,8 +382,20 @@ export interface AutomationRunHistoryItem {
   endTime?: number;
   status: 'completed' | 'error' | 'cancelled';
   logs: { level: 'info' | 'warn' | 'error'; message: string; step?: string; timestamp?: number }[];
-  chatHistory: any[];
+  chatHistory: AutomationRunChatMessage[];
   error?: string;
+}
+
+/** A serialisable chat entry stored with a local automation session. */
+export interface AutomationRunChatMessage {
+  id: string;
+  sender: 'user' | 'agent';
+  type: 'prompt' | 'status' | 'warn' | 'error' | 'workflow' | 'checkpoint';
+  text: string;
+  timestamp: number;
+  checkpointPayload?: AgentCheckpointPayload;
+  activity?: AgentActivityEntry[];
+  isFinal?: boolean;
 }
 
 // ─── Workflow Run Types ────────────────────────────────────────────────────────
@@ -186,7 +404,6 @@ export interface AgentWorkflowBatchPayload {
   workflowRunId: string;
   workflowId: string;
   name: string;
-  startUrl?: string;
   steps: WorkflowStep[]; // WorkflowStep uses new StepType model
 }
 
@@ -247,6 +464,7 @@ export type MessageType =
   | 'WORKFLOW_STEP_STATUS'
   | 'WORKFLOW_CANCEL'
   | 'TAKEOVER_REQUEST'
+  | 'TAKEOVER_DECISION'
   | 'TAKEOVER_RELEASE'
   | 'REMOTE_INPUT_MOUSE'
   | 'REMOTE_INPUT_KEYBOARD'
@@ -304,19 +522,26 @@ export interface RemoteCtrlAPI {
     showMainWindow: () => Promise<void>;
     hideMiniWindow: () => Promise<void>;
     showMiniWindow: (hideMain?: boolean) => Promise<void>;
+    setIgnoreMouseEvents: (ignore: boolean) => Promise<void>;
+    resizeToContent: (contentHeight: number) => Promise<void>;
   };
   host: {
-    start: () => Promise<void>;
+    start: (options?: { trusted?: boolean }) => Promise<void>;
     stop: () => Promise<void>;
-    approveController: (controllerId: string) => Promise<void>;
+    approveController: (controllerId: string, intent: string) => Promise<void>;
     rejectController: (controllerId: string) => Promise<void>;
   };
   controller: {
-    connect: (pin: string) => Promise<void>;
+    connect: (pin: string, intent: string) => Promise<void>;
     disconnect: () => Promise<void>;
   };
   browser: {
     launch: (startUrl?: string) => Promise<string>;  // returns window title
+    launchRecording: () => Promise<string>;
+    startWorkflowRecording: (payload?: { initialInstruction?: string }) => Promise<{ ok: boolean; state?: RecordingSessionState; error?: string }>;
+    getWorkflowRecording: () => Promise<RecordingSessionState | null>;
+    saveWorkflowRecording: () => Promise<{ ok: boolean; workflow?: LocalWorkflow; error?: string }>;
+    discardWorkflowRecording: () => Promise<{ ok: boolean; error?: string }>;
     close: () => Promise<void>;
     getSources: () => Promise<DesktopSource[]>;
     resetProfile: () => Promise<void>;
@@ -377,15 +602,31 @@ export interface RemoteCtrlAPI {
     save: (workflow: LocalWorkflow) => Promise<void>;
     delete: (workflowId: string) => Promise<void>;
   };
+  agent: {
+    /** Clears transient model context only; saved session history is separate. */
+    clearHistory: () => Promise<{ ok: boolean }>;
+    listRunHistory: () => Promise<AutomationRunHistoryItem[]>;
+    saveRunHistory: (item: AutomationRunHistoryItem) => Promise<{ ok: boolean; error?: string }>;
+    deleteRunHistory: (id: string) => Promise<{ ok: boolean }>;
+    clearRunHistory: () => Promise<{ ok: boolean }>;
+  };
+  policy: {
+    getScope: () => Promise<TaskScope>;
+    setScope: (scope: TaskScope) => Promise<{ ok: boolean; error?: string }>;
+    approve: (approvalId: string, approved: boolean) => Promise<{ ok: boolean; error?: string }>;
+    getAudit: () => Promise<PolicyAuditEvent[]>;
+  };
   // Event listeners (Main -> Renderer push events)
   on: {
     hostStateChange: (cb: (state: HostSessionState) => void) => () => void;
     controllerStateChange: (cb: (state: ControllerSessionState) => void) => () => void;
-    controllerJoinRequest: (cb: (controllerId: string) => void) => () => void;
+    controllerJoinRequest: (cb: (request: { controllerId: string; intent: string }) => void) => () => void;
     agentStatus: (cb: (payload: AgentStatusPayload) => void) => () => void;
     agentLog: (cb: (payload: AgentLogPayload) => void) => () => void;
     pin: (cb: (pin: string) => void) => () => void;
-    workflowRecordedStep: (cb: (step: RecordedAgentStep) => void) => () => void;
+    workflowRecordedStep: (cb: (step: WorkflowStep) => void) => () => void;
+    workflowCreated: (cb: () => void) => () => void;
+    workflowRecordingState: (cb: (state: RecordingSessionState | null) => void) => () => void;
     error: (cb: (message: string) => void) => () => void;
     webrtcSignal: (cb: (signal: unknown) => void) => () => void;
     captureMetadata: (cb: (meta: CaptureMetadata) => void) => () => void;
@@ -399,6 +640,10 @@ export interface RemoteCtrlAPI {
     firstLaunch: (cb: () => void) => () => void;
     startLocalSession: (cb: () => void) => () => void;
     globalShortcut: (cb: () => void) => () => void;
+    themeChanged: (cb: (theme: string) => void) => () => void;
+    agentStarted: (cb: (payload: { commandId: string; instruction: string }) => void) => () => void;
+    policyApprovalRequested: (cb: (approval: PolicyApprovalRequest) => void) => () => void;
+    policyAudit: (cb: (event: PolicyAuditEvent) => void) => () => void;
   };
 }
 

@@ -41,22 +41,12 @@ async function dbListWorkflows() {
   });
 }
 
-async function dbDeleteWorkflow(id) {
-  const db = await getDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('workflows', 'readwrite');
-    tx.objectStore('workflows').delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
 // ── Session Storage (Recording State) ────────────────────────────────────────
 // Using chrome.storage.session so state survives service-worker restarts within a session
 
 async function getRecState() {
   const data = await chrome.storage.session.get('recState');
-  return data.recState || { isRecording: false, workflowName: '', startUrl: '', events: [] };
+  return data.recState || { isRecording: false, workflowName: '', startUrl: '', tabId: null, events: [] };
 }
 
 async function setRecState(state) {
@@ -85,11 +75,17 @@ function connectDesktop() {
     ws.onopen = () => {
       isConnected = true;
       broadcastConnectionState();
+      void syncPendingWorkflows();
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        if (msg.type === 'SYNC_SUCCESS' && msg.workflowId) {
+          void updateSyncState(msg.workflowId, 'synced');
+        } else if (msg.type === 'SYNC_ERROR' && msg.requestId) {
+          void updateSyncState(msg.requestId, 'pending', msg.error || 'Desktop could not import this workflow.');
+        }
         // Relay desktop messages to popup if open
         chrome.runtime.sendMessage({ type: 'DESKTOP_MSG', payload: msg }).catch(() => {});
       } catch (_) {}
@@ -124,12 +120,48 @@ function sendToDesktop(msg) {
   return false;
 }
 
+async function updateSyncState(id, syncState, lastSyncError = undefined) {
+  const workflows = await dbListWorkflows();
+  const workflow = workflows.find((item) => item.id === id);
+  if (!workflow) return;
+  await dbSaveWorkflow({ ...workflow, syncState, lastSyncError, updatedAt: Date.now() });
+}
+
+function sendWorkflowImport(workflow) {
+  return sendToDesktop({
+    type: 'EXT_SAVE_RECORDED_WORKFLOW',
+    payload: {
+      id: workflow.id,
+      requestId: workflow.id,
+      name: workflow.name,
+      steps: workflow.steps,
+      description: workflow.description,
+    },
+  });
+}
+
+async function syncPendingWorkflows() {
+  const workflows = await dbListWorkflows();
+  for (const workflow of workflows) {
+    if (workflow.syncState !== 'synced') sendWorkflowImport(workflow);
+  }
+}
+
 connectDesktop();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function generateId() {
   return crypto.randomUUID();
+}
+
+function replayableSelector(event) {
+  const selector = event.automation?.selector;
+  // A tag name, generic placeholder, or XPath fallback is not a dependable
+  // Playwright target. Imports should omit uncertain actions rather than replay
+  // them against the wrong element.
+  if (!selector || selector === 'element' || /^[a-z][a-z0-9-]*$/i.test(selector)) return null;
+  return selector;
 }
 
 /**
@@ -139,21 +171,44 @@ function compileSteps(events, startUrl) {
   const steps = [];
   let stepNum = 0;
 
+  if (startUrl) {
+    steps.push({
+      id: `step-${++stepNum}`,
+      type: 'navigate',
+      url: startUrl,
+      description: `Open ${startUrl}`,
+      onFailure: 'stop',
+    });
+  }
+
   for (const ev of events) {
-    stepNum++;
-    const id = `step-${stepNum}`;
+    const id = `step-${++stepNum}`;
 
     if (ev.event === 'page_visit' || ev.event === 'navigation') {
-      steps.push({ id, action: 'navigate', url: ev.url, description: `Navigate to ${ev.url}` });
+      if (ev.url && ev.url !== startUrl) {
+        steps.push({ id, type: 'navigate', url: ev.url, description: `Open ${ev.url}`, onFailure: 'stop' });
+      }
     } else if (ev.event === 'click') {
-      const sel = ev.automation?.selector || ev.automation?.xpath || ev.automation?.tag || 'element';
+      const sel = replayableSelector(ev);
+      if (!sel) continue;
       const text = ev.raw?.text ? ` "${ev.raw.text.slice(0, 40)}"` : '';
-      steps.push({ id, action: 'click', selector: sel, description: `Click${text}` });
+      steps.push({ id, type: 'click', selector: sel, description: `Click${text}`, onFailure: 'self_heal' });
     } else if (ev.event === 'input') {
-      const sel = ev.automation?.selector || ev.automation?.xpath || ev.automation?.tag || 'input';
+      const sel = replayableSelector(ev);
+      if (!sel) continue;
       const val = ev.raw?.value || '';
       const field = ev.raw?.fieldName || sel;
-      steps.push({ id, action: 'input', selector: sel, value: val, description: `Type "${val}" into ${field}` });
+      if (!ev.raw?.sensitive && val !== '[MASKED]' && val !== '[REQUIRES_USER_INPUT]') {
+        steps.push({
+          id,
+          type: 'fill',
+          selector: sel,
+          value: val,
+          description: `Fill ${field}`,
+          onFailure: 'self_heal',
+          postcondition: { kind: 'field_value', selector: sel, value: val },
+        });
+      }
     }
   }
 
@@ -168,7 +223,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     // ── Connection status query
     if (msg.action === 'GET_STATE') {
       const recState = await getRecState();
-      sendResponse({ isConnected, recState });
+      // Popups need the complete state; content scripts must only ever see the
+      // recording flag for the single tab the user explicitly selected.
+      const scopedState = _sender.tab
+        ? { ...recState, isRecording: recState.isRecording && recState.tabId === _sender.tab.id }
+        : recState;
+      sendResponse({ isConnected, recState: scopedState });
       return;
     }
 
@@ -178,14 +238,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         isRecording: true,
         workflowName: msg.workflowName || `Workflow ${new Date().toLocaleDateString()}`,
         startUrl: msg.startUrl || '',
+        tabId: msg.tabId ?? null,
         events: []
       };
       await setRecState(newState);
 
-      // Notify all content scripts
-      const tabs = await chrome.tabs.query({});
-      for (const t of tabs) {
-        if (t.id) chrome.tabs.sendMessage(t.id, { action: 'SET_RECORDING', isRecording: true }).catch(() => {});
+      if (newState.tabId) {
+        chrome.tabs.sendMessage(newState.tabId, { action: 'SET_RECORDING', isRecording: true }).catch(() => {});
       }
 
       sendResponse({ ok: true });
@@ -204,10 +263,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const stoppedState = { ...recState, isRecording: false };
       await setRecState(stoppedState);
 
-      // Notify content scripts
-      const tabs = await chrome.tabs.query({});
-      for (const t of tabs) {
-        if (t.id) chrome.tabs.sendMessage(t.id, { action: 'SET_RECORDING', isRecording: false }).catch(() => {});
+      if (recState.tabId) {
+        chrome.tabs.sendMessage(recState.tabId, { action: 'SET_RECORDING', isRecording: false }).catch(() => {});
       }
 
       // Compile steps
@@ -227,25 +284,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         eventCount: events.length,
         createdAt: now,
         updatedAt: now,
-        source: 'recorded'
+        source: 'chrome_ext',
+        syncState: 'pending',
       };
 
       // Save locally
       await dbSaveWorkflow(workflow);
 
-      // Sync to desktop if connected
-      const synced = sendToDesktop({
-        type: 'EXT_SAVE_RECORDED_WORKFLOW',
-        payload: {
-          id: workflow.id,
-          name: workflow.name,
-          startUrl: workflow.startUrl,
-          steps: workflow.steps,
-          description: `Recorded from browser — ${steps.length} steps`
-        }
-      });
+      // A socket write is not a sync. Desktop acknowledges the durable import.
+      const queuedForSync = steps.length > 0 && sendWorkflowImport(workflow);
 
-      sendResponse({ ok: true, workflow, synced });
+      sendResponse({ ok: steps.length > 0, workflow, queuedForSync, error: steps.length ? undefined : 'No replayable steps were recorded.' });
       return;
     }
 
@@ -253,7 +302,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.action === 'RECORD_EVENT') {
       recEventQueue = recEventQueue.then(async () => {
         const recState = await getRecState();
-        if (!recState.isRecording) {
+        if (!recState.isRecording || !recState.tabId || _sender.tab?.id !== recState.tabId) {
           sendResponse({ ok: false });
           return;
         }
@@ -271,41 +320,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const workflows = await dbListWorkflows();
       workflows.sort((a, b) => b.createdAt - a.createdAt);
       sendResponse({ ok: true, workflows });
-      return;
-    }
-
-    // ── Delete Workflow
-    if (msg.action === 'DELETE_WORKFLOW') {
-      await dbDeleteWorkflow(msg.id);
-      sendResponse({ ok: true });
-      return;
-    }
-
-    // ── Automate Page (send prompt to desktop)
-    if (msg.action === 'AUTOMATE_PAGE') {
-      const sent = sendToDesktop({
-        type: 'EXT_START_AUTOMATION',
-        payload: {
-          url: msg.url,
-          title: msg.title,
-          instruction: msg.instruction
-        }
-      });
-      if (sent) {
-        sendResponse({ ok: true });
-      } else {
-        sendResponse({ ok: false, error: 'RemoteCtrl Desktop is not connected. Launch the desktop app first.' });
-      }
-      return;
-    }
-
-    // ── Run Saved Workflow via Desktop
-    if (msg.action === 'RUN_WORKFLOW') {
-      const sent = sendToDesktop({
-        type: 'EXT_RUN_WORKFLOW',
-        payload: { workflowId: msg.workflowId, name: msg.name }
-      });
-      sendResponse({ ok: sent, error: sent ? undefined : 'Desktop not connected.' });
       return;
     }
 

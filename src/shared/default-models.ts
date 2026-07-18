@@ -29,17 +29,9 @@ export const DEFAULT_MODELS: Record<ApiProvider, string[]> = {
     "claude-3-opus-latest"
   ],
   "gemini": [
-    "gemini-3.5-flash",
-    "gemini-3.1-pro-preview",
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
-    "gemini-2.5-pro",
-    "gemini-2.5-computer-use-preview-10-2025",
-    "deep-research-preview-04-2026",
-    "deep-research-max-preview-04-2026",
-    "antigravity-preview-05-2026"
+    "gemini-2.5-pro"
   ],
   "groq": [
     "llama-3.3-70b-versatile",

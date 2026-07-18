@@ -1,5 +1,7 @@
 # RemoteCtrl
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ganeshmshetty/RemoteCtrl)
+
 **Your personal AI-powered browser assistant — as a desktop app.**
 
 RemoteCtrl is an easy-to-use desktop application that lets you remotely view, control, and automate a web browser. Whether you want to control a browser on another computer, or have a smart AI assistant perform online tasks for you, RemoteCtrl makes it simple and secure.

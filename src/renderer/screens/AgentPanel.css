@@ -1,0 +1,448 @@
+/* ─── Agent Panel ─── */
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.agent-chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.agent-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 40px;
+}
+
+.agent-ready-indicator {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.agent-ready-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+  animation: pulse-glow 2s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+
+@keyframes pulse-glow {
+  to {
+    box-shadow: 0 0 0 24px rgba(99, 102, 241, 0);
+  }
+}
+
+.agent-workflow-status {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.agent-workflow-status-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.agent-workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.agent-workflow-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.agent-workflow-step-dot.completed { background: var(--success); }
+.agent-workflow-step-dot.failed { background: var(--danger); }
+.agent-workflow-step-dot.running { background: var(--warning); }
+.agent-workflow-step-dot.skipped { background: var(--text-muted); }
+
+.agent-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.agent-msg.user {
+  align-items: flex-end;
+}
+
+.agent-msg-bubble {
+  max-width: 90%;
+  border-radius: var(--radius-lg);
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.agent-msg-bubble.user {
+  background: rgba(124, 106, 247, 0.2);
+  color: var(--text-primary);
+  border: 1px solid rgba(124, 106, 247, 0.3);
+  border-right: 3px solid #7c6af7;
+}
+
+.agent-msg-bubble.agent {
+  max-width: 100%;
+  padding: 0 4px;
+  border: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.agent-msg-log {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  max-width: 95%;
+  word-break: break-word;
+}
+
+.agent-msg-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: #fbbf24;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  max-width: 95%;
+  word-break: break-word;
+}
+
+.agent-msg-warn-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.agent-msg-workflow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  align-self: center;
+}
+
+.agent-activity {
+  margin: 0 0 4px;
+  color: var(--text-secondary);
+}
+
+.agent-activity-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 2px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-activity.running .agent-activity-summary > svg:first-child {
+  color: var(--accent);
+}
+
+.agent-activity-summary span {
+  flex: 1;
+}
+
+.agent-activity-summary > svg:last-child {
+  transition: transform var(--transition);
+  color: var(--text-muted);
+}
+
+.agent-activity-summary > svg:last-child.expanded {
+  transform: rotate(180deg);
+}
+
+.agent-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 2px 23px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.agent-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.agent-activity-row svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+  opacity: .8;
+}
+
+.agent-activity-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-activity {
+  align-self: stretch;
+  width: 100%;
+  margin-top: 6px;
+}
+.agent-activity-row.failed { color: var(--danger); }
+.agent-activity-row.running { color: var(--text-secondary); }
+
+.agent-completion-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.agent-completion-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.agent-completion-actions button:hover { color: var(--text-primary); }
+
+@keyframes pulseOpacity {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+.agent-msg-checkpoint {
+  max-width: 92%;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-active);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.agent-msg-checkpoint-title {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.agent-msg-checkpoint-question {
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+.agent-msg-checkpoint-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-checkpoint-option {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition);
+  color: var(--text-primary);
+}
+.agent-checkpoint-option:hover {
+  background: var(--bg-surface);
+  border-color: var(--accent);
+}
+.agent-checkpoint-option.recommended {
+  background: var(--accent-glow);
+  border-color: rgba(124, 106, 247, 0.5);
+}
+.agent-checkpoint-option-label {
+  font-weight: 600;
+  font-size: 13px;
+}
+.agent-checkpoint-option-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+
+.agent-save-workflow-btn {
+  align-self: center;
+  margin-top: 16px;
+}
+
+.agent-recording-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(99, 102, 241, .45);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, .16), var(--bg-elevated));
+}
+.agent-recording-copy { min-width: 0; }
+.agent-recording-title { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; }
+.agent-recording-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgba(239, 68, 68, .15); }
+.agent-recording-task { margin-top: 4px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-recording-error { margin-top: 4px; color: var(--danger); font-size: 11px; }
+.agent-recording-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.agent-input-area {
+  padding: 12px;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.agent-controls {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.agent-control-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.agent-control-btn:hover:not(:disabled) { background: var(--bg-surface); }
+.agent-control-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.agent-control-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.agent-control-btn.danger { color: var(--danger); }
+.agent-control-btn.danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.2); border-color: var(--danger); }
+
+.agent-prompt-form {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+
+.agent-prompt-input {
+  width: 100%;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 36px 8px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition);
+  resize: none;
+  line-height: 1.5;
+  max-height: 80px;
+  overflow-y: auto;
+}
+.agent-prompt-input:focus { border-color: var(--accent); }
+.agent-prompt-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.agent-prompt-send {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agent-prompt-send:hover:not(:disabled) { color: var(--accent-hover); }
+.agent-prompt-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.agent-prompt-send.danger { color: var(--danger); }
+.agent-prompt-send.danger:hover:not(:disabled) { color: #f87171; } /* Lighter red for hover */
+
+/* Radix Accordion */
+.accordion-chevron-wrapper {
+  display: flex;
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
+
+[data-state="open"] > .accordion-chevron-wrapper,
+[data-state="open"] .accordion-chevron-wrapper {
+  transform: rotate(0deg);
+}
+
+.accordion-content {
+  overflow: hidden;
+}
+.accordion-content[data-state="open"] {
+  animation: accordion-down 0.15s ease-out;
+}
+.accordion-content[data-state="closed"] {
+  animation: accordion-up 0.15s ease-out;
+}
+
+@keyframes accordion-down {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-accordion-content-height); opacity: 1; }
+}
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}

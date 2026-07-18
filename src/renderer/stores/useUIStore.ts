@@ -18,14 +18,20 @@ interface UIState {
   editingWorkflowId: string | null;
   /** Pre-filled workflow data when opening from AI-recorded run or Chrome extension */
   prefillWorkflow: Partial<LocalWorkflow> | null;
+  pendingWorkflowRun: { workflow: LocalWorkflow; workflowRunId: string } | null;
   isSettingsOpen: boolean;
+  isSidebarOpen: boolean;
   setRightPanelTab: (tab: RightPanelTab) => void;
   openWorkflowEditor: (workflowId?: string) => void;
   /** Open the editor pre-filled with a workflow object (unsaved, from AI run or ext recording) */
   openWorkflowEditorWithData: (data: Partial<LocalWorkflow>) => void;
   closeWorkflowEditor: () => void;
+  openWorkflowRun: (workflow: LocalWorkflow, workflowRunId: string) => void;
+  clearWorkflowRun: () => void;
   openSettings: () => void;
   closeSettings: () => void;
+  toggleSidebar: () => void;
+  setSidebarOpen: (isOpen: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -33,7 +39,9 @@ export const useUIStore = create<UIState>((set) => ({
   isWorkflowEditorOpen: false,
   editingWorkflowId: null,
   prefillWorkflow: null,
+  pendingWorkflowRun: null,
   isSettingsOpen: false,
+  isSidebarOpen: true,
 
   setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
   
@@ -55,6 +63,11 @@ export const useUIStore = create<UIState>((set) => ({
     prefillWorkflow: null,
   }),
 
+  openWorkflowRun: (workflow, workflowRunId) => set({ pendingWorkflowRun: { workflow, workflowRunId } }),
+  clearWorkflowRun: () => set({ pendingWorkflowRun: null }),
+
   openSettings: () => set({ isSettingsOpen: true }),
   closeSettings: () => set({ isSettingsOpen: false }),
+  toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
+  setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
 }));

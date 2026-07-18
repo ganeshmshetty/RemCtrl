@@ -3,20 +3,10 @@
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const connBadge       = document.getElementById('connBadge');
 const connText        = document.getElementById('connText');
-const pageTitle       = document.getElementById('pageTitle');
-const pageUrl         = document.getElementById('pageUrl');
-const faviconWrapper  = document.getElementById('faviconWrapper');
-
-const tabAutomate     = document.getElementById('tabAutomate');
 const tabRecord       = document.getElementById('tabRecord');
 const tabWorkflows    = document.getElementById('tabWorkflows');
-const paneAutomate    = document.getElementById('paneAutomate');
 const paneRecord      = document.getElementById('paneRecord');
 const paneWorkflows   = document.getElementById('paneWorkflows');
-
-const promptInput         = document.getElementById('promptInput');
-const automateBtn         = document.getElementById('automateBtn');
-const automateFeedback    = document.getElementById('automateFeedback');
 
 const idleView       = document.getElementById('idleView');
 const activeView     = document.getElementById('activeView');
@@ -33,21 +23,18 @@ const refreshWfBtn   = document.getElementById('refreshWfBtn');
 const toastEl        = document.getElementById('toast');
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let activeTab = null;
 let pollTimer = null;
 
 // ── Tab Nav ───────────────────────────────────────────────────────────────────
 function setTab(tab) {
-  [tabAutomate, tabRecord, tabWorkflows].forEach(t => t.classList.remove('active'));
-  [paneAutomate, paneRecord, paneWorkflows].forEach(p => p.classList.remove('active'));
+  [tabRecord, tabWorkflows].forEach(t => t.classList.remove('active'));
+  [paneRecord, paneWorkflows].forEach(p => p.classList.remove('active'));
   tab.classList.add('active');
   
-  if (tab.id === 'tabAutomate') paneAutomate.classList.add('active');
-  else if (tab.id === 'tabRecord') paneRecord.classList.add('active');
+  if (tab.id === 'tabRecord') paneRecord.classList.add('active');
   else paneWorkflows.classList.add('active');
 }
 
-tabAutomate.addEventListener('click',  () => setTab(tabAutomate));
 tabRecord.addEventListener('click',    () => setTab(tabRecord));
 tabWorkflows.addEventListener('click', () => { setTab(tabWorkflows); loadWorkflows(); });
 refreshWfBtn.addEventListener('click', () => loadWorkflows());
@@ -105,53 +92,17 @@ function updateConnBadge(connected, recording) {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'CONN_STATE') {
     updateConnBadge(msg.isConnected, false);
-  }
-});
-
-// ── Load current tab ──────────────────────────────────────────────────────────
-async function loadCurrentTab() {
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tabs && tabs[0]) {
-      activeTab = tabs[0];
-      pageTitle.textContent = tabs[0].title || 'Unknown page';
-      pageUrl.textContent   = tabs[0].url || '';
-      if (tabs[0].favIconUrl) {
-        faviconWrapper.innerHTML = `<img src="${tabs[0].favIconUrl}" alt="favicon" />`;
-        const img = faviconWrapper.querySelector('img');
-        img.onerror = () => {
-          // Fallback back to Globe SVG
-          faviconWrapper.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-svg"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>`;
-        };
-      }
-    }
-  } catch (_) {}
-}
-
-// ── Automate ──────────────────────────────────────────────────────────────────
-automateBtn.addEventListener('click', () => {
-  const instruction = promptInput.value.trim();
-  if (!instruction) {
-    showFeedback(automateFeedback, 'Please enter an instruction first.', 'err');
     return;
   }
-  if (!activeTab) { showFeedback(automateFeedback, 'No active tab found.', 'err'); return; }
-
-  automateBtn.disabled = true;
-  chrome.runtime.sendMessage({
-    action: 'AUTOMATE_PAGE',
-    url:   activeTab.url,
-    title: activeTab.title,
-    instruction
-  }, (res) => {
-    automateBtn.disabled = false;
-    if (res?.ok) {
-      promptInput.value = '';
-      showFeedback(automateFeedback, 'Task sent to RemoteCtrl Desktop.', 'ok');
-    } else {
-      showFeedback(automateFeedback, res?.error || 'Failed to send to Desktop.', 'err', 6000);
+  if (msg.type === 'DESKTOP_MSG') {
+    const desktop = msg.payload || {};
+    if (desktop.type === 'SYNC_SUCCESS') {
+      showFeedback(recFeedback, 'Imported into RemoteCtrl. Review it in the app before running.', 'ok', 7000);
+      loadWorkflows();
+    } else if (desktop.type === 'SYNC_ERROR') {
+      showFeedback(recFeedback, desktop.error || 'RemoteCtrl could not import this recording.', 'err', 7000);
     }
-  });
+  }
 });
 
 // ── Recording SVG Icons (Clean Developer Tooling) ────────────────────────────
@@ -175,6 +126,7 @@ function stepDesc(ev) {
     return `Click ${ev.raw?.text ? `"${ev.raw.text.slice(0, 40)}"` : (ev.automation?.selector || 'element')}`;
   }
   if (ev.event === 'input') {
+    if (ev.raw?.sensitive) return `Skipped a sensitive value in ${ev.raw?.fieldName || 'a field'}`;
     return `Type "${(ev.raw?.value || '').slice(0, 30)}" into ${ev.raw?.fieldName || ev.automation?.selector || 'field'}`;
   }
   if (ev.event === 'navigation' || ev.event === 'page_visit') {
@@ -249,7 +201,7 @@ startRecBtn.addEventListener('click', async () => {
   const startUrl = tabs?.[0]?.url || '';
 
   startRecBtn.disabled = true;
-  chrome.runtime.sendMessage({ action: 'START_RECORDING', workflowName: name, startUrl }, (res) => {
+  chrome.runtime.sendMessage({ action: 'START_RECORDING', workflowName: name, startUrl, tabId: tabs?.[0]?.id }, (res) => {
     startRecBtn.disabled = false;
     if (res?.ok) {
       wfNameInput.value = '';
@@ -267,13 +219,14 @@ stopRecBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ action: 'STOP_RECORDING' }, (res) => {
     stopRecBtn.disabled = false;
     showIdleRecording();
-    updateConnBadge(false, false);
+    syncState();
 
     if (res?.ok && res.workflow) {
       const wf = res.workflow;
-      const synced = res.synced;
-      const msg = `Saved "${wf.name}" (${wf.steps?.length || 0} steps)${synced ? ' · Synced' : ''}`;
-      showFeedback(recFeedback, msg, 'ok', 6000);
+      const msg = res.queuedForSync
+        ? `Saved "${wf.name}" (${wf.steps?.length || 0} steps). Importing into RemoteCtrl…`
+        : `Saved "${wf.name}" locally. RemoteCtrl will import it when connected.`;
+      showFeedback(recFeedback, msg, 'ok', 7000);
       loadWorkflows();
     } else {
       showFeedback(recFeedback, res?.error || 'Recording saved locally.', 'err');
@@ -311,61 +264,13 @@ function loadWorkflows() {
             <div class="wf-name" title="${esc(wf.name)}">${esc(wf.name)}</div>
             <div class="wf-meta">${stepCount} steps · ${date}</div>
           </div>
-          <div class="wf-actions">
-            <button class="wf-btn run-wf" data-id="${esc(wf.id)}" data-name="${esc(wf.name)}" title="Run in RemoteCtrl Desktop">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            </button>
-            <button class="wf-btn del del-wf" data-id="${esc(wf.id)}" title="Delete">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            </button>
-          </div>
+          <span class="wf-meta">Review in RemoteCtrl</span>
         </div>
       `;
     }).join('');
 
-    // Run workflow
-    wfList.querySelectorAll('.run-wf').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id   = btn.dataset.id;
-        const name = btn.dataset.name;
-        chrome.runtime.sendMessage({ action: 'RUN_WORKFLOW', workflowId: id, name }, (res) => {
-          if (res?.ok) {
-            toast(`Running "${name}" on Desktop`);
-          } else {
-            toast('Desktop app not connected.');
-          }
-        });
-      });
-    });
-
-    // Delete workflow
-    wfList.querySelectorAll('.del-wf').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.id;
-        const modal = document.getElementById('confirmModal');
-        const cancelBtn = document.getElementById('confirmCancelBtn');
-        const deleteBtn = document.getElementById('confirmDeleteBtn');
-        if (modal && cancelBtn && deleteBtn) {
-          modal.style.display = 'flex';
-          const cleanup = () => {
-            modal.style.display = 'none';
-          };
-          cancelBtn.onclick = cleanup;
-          deleteBtn.onclick = () => {
-            cleanup();
-            chrome.runtime.sendMessage({ action: 'DELETE_WORKFLOW', id }, () => {
-              loadWorkflows();
-              toast('Workflow deleted');
-            });
-          };
-        }
-      });
-    });
   });
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-loadCurrentTab();
 syncState();

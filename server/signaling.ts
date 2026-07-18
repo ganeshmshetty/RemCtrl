@@ -12,6 +12,7 @@ interface Room {
   pin: string;
   hostSocketId: string;
   controllerSocketId: string | null;
+  controllerIntent: string | null;
   createdAt: number;
   ttlTimer: ReturnType<typeof setTimeout>;
 }
@@ -53,6 +54,25 @@ function deleteRoom(pin: string, reason = 'Session expired') {
   console.log(`[server] Room ${pin} deleted — ${reason}`);
 }
 
+const rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const record = rateLimits.get(ip);
+  if (!record || record.resetAt < now) return false;
+  return record.count >= 5;
+}
+
+function recordFailure(ip: string) {
+  const now = Date.now();
+  let record = rateLimits.get(ip);
+  if (!record || record.resetAt < now) {
+    rateLimits.set(ip, { count: 1, resetAt: now + 5 * 60 * 1000 });
+  } else {
+    record.count++;
+  }
+}
+
 // ─── Socket Handlers ──────────────────────────────────────────────────────────
 
 io.on('connection', (socket: Socket) => {
@@ -73,6 +93,7 @@ io.on('connection', (socket: Socket) => {
       pin,
       hostSocketId: socket.id,
       controllerSocketId: null,
+      controllerIntent: null,
       createdAt: Date.now(),
       ttlTimer,
     });
@@ -84,19 +105,29 @@ io.on('connection', (socket: Socket) => {
   });
 
   // ── Controller: join PIN room ───────────────────────────────────────────
-  socket.on('controller:join', (payload: { pin: string }, ack: (r: object) => void) => {
-    const { pin } = payload ?? {};
+  socket.on('controller:join', (payload: { pin: string; intent: string }, ack: (r: object) => void) => {
+    const ip = socket.handshake.address;
+    if (isRateLimited(ip)) {
+      return ack({ success: false, error: 'Too many connection attempts. Try again in 5 minutes.' });
+    }
+
+    const { pin, intent } = payload ?? {};
     const room = rooms.get(pin);
 
-    if (!room) return ack({ success: false, error: 'Session not found or expired' });
+    if (!room) {
+      recordFailure(ip);
+      return ack({ success: false, error: 'Session not found or expired' });
+    }
+    if (typeof intent !== 'string' || intent.trim().length < 8 || intent.length > 1000) return ack({ success: false, error: 'Describe the requested task before joining' });
     if (room.controllerSocketId) return ack({ success: false, error: 'Session already has a controller' });
 
     room.controllerSocketId = socket.id;
+    room.controllerIntent = intent.trim();
     socketToPin.set(socket.id, pin);
     socket.join(pin);
 
     // Notify host
-    io.to(room.hostSocketId).emit('controller:joined', { controllerId: socket.id });
+    io.to(room.hostSocketId).emit('controller:joined', { controllerId: socket.id, intent: room.controllerIntent });
     console.log(`[server] Controller ${socket.id} joined room ${pin}`);
     ack({ success: true, controllerId: socket.id });
   });
@@ -119,6 +150,7 @@ io.on('connection', (socket: Socket) => {
       const room = rooms.get(pin);
       if (room && room.controllerSocketId === controllerId) {
         room.controllerSocketId = null;
+        room.controllerIntent = null;
         socketToPin.delete(controllerId);
       }
     }
@@ -162,6 +194,7 @@ io.on('connection', (socket: Socket) => {
     } else if (room.controllerSocketId === socket.id) {
       // Controller left — notify host, keep room alive
       room.controllerSocketId = null;
+      room.controllerIntent = null;
       socketToPin.delete(socket.id);
       io.to(room.hostSocketId).emit('peer:disconnected');
       console.log(`[server] Controller left room ${pin}`);

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Northstar Client Portal</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./index.html" aria-label="Northstar home"><span class="brand-mark">N</span><span>Northstar</span></a>
+      <div class="account-chip"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme">☼</button><span class="avatar">MC</span><span>Maya Chen</span><span class="status-dot"></span></div>
+    </header>
+    <main class="shell">
+      <div class="eyebrow">Client workspace / Acme Studio</div>
+      <section class="hero">
+        <div><h1>Good morning, Maya</h1><p>Manage your website, domain, and publishing settings from one place.</p></div>
+        <span class="secure-pill">● Secure workspace</span>
+      </section>
+      <section class="grid two-column" aria-label="Workspace overview">
+        <article class="card feature-card">
+          <div class="card-icon purple">⌁</div>
+          <div class="card-copy"><span class="eyebrow">Website</span><h2>Acme Studio</h2><p>Your site is ready to connect to a custom domain.</p><a class="button primary" href="./domain-setup.html">Set up domain <span>→</span></a></div>
+        </article>
+        <article class="card">
+          <div class="card-heading"><h2>Workspace status</h2><span class="live-label">Live</span></div>
+          <div class="status-list"><div><span>Website</span><strong>Published</strong></div><div><span>Custom domain</span><strong class="warning-text">Not connected</strong></div><div><span>SSL certificate</span><strong>Pending domain</strong></div></div>
+        </article>
+      </section>
+      <section class="card activity-card">
+        <div class="card-heading"><div><span class="eyebrow">Recent activity</span><h2>Everything is ready for launch</h2></div><span class="muted">Today, 9:42 AM</span></div>
+        <div class="activity-row"><span class="activity-check">✓</span><div><strong>Website published</strong><span>Acme Studio is visible on its preview URL.</span></div><span class="muted">Completed</span></div>
+        <div class="activity-row"><span class="activity-check pending">!</span><div><strong>Connect your domain</strong><span>One more step before your site goes live.</span></div><a href="./domain-setup.html">Continue →</a></div>
+      </section>
+    </main>
+    <script src="./theme.js"></script>
+  </body>
+</html>

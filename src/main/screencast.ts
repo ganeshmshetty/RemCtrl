@@ -24,6 +24,7 @@ export function setScreencastWindow(win: BrowserWindow) {
 }
 
 export async function startScreencast(page: Page) {
+  if (page.isClosed()) return;
   await stopScreencast();
   
   let session: CDPSession | null = null;

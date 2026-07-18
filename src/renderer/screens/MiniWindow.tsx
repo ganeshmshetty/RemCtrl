@@ -8,48 +8,131 @@
  * Key exports: MiniWindow (function component).
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { Play, Square, ExternalLink, Sparkles, X, Activity } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Square, Sparkles, X } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
+import type { AgentCheckpointPayload } from '../../shared/types';
+import './MiniWindow.css';
 
 export function MiniWindow() {
   const [instruction, setInstruction] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [activeCheckpoint, setActiveCheckpoint] = useState<AgentCheckpointPayload | null>(null);
+  const [activityIndex, setActivityIndex] = useState(0);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleCheckpointSelect = useCallback(async (optionId: string) => {
+    if (!activeCheckpoint) return;
+    try {
+      await window.RemoteCtrlAPI?.browser.submitCheckpoint(activeCheckpoint.checkpointId, {
+        selectedOptionId: optionId,
+      });
+      setActiveCheckpoint(null);
+    } catch (err) {
+      setErrorMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [activeCheckpoint]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+    }
+  }, [instruction]);
 
   const {
     agentStatus,
     workflowRunState,
     currentAction,
-    executionLogs,
-    currentStepIndex,
     setActiveCommandId,
     setAgentStatus,
   } = useAgentStore();
 
+  // Focus and Electron IPC listeners setup
   useEffect(() => {
     inputRef.current?.focus();
 
-    const store = useAgentStore.getState();
     const unsubs = [
       window.RemoteCtrlAPI?.on?.globalShortcut?.(() => inputRef.current?.focus()),
-      window.RemoteCtrlAPI?.on?.workflowRunStatus?.((status) => store.handleWorkflowRunStatus(status)),
-      window.RemoteCtrlAPI?.on?.workflowStepStatus?.((status) => store.handleWorkflowStepStatus(status)),
-      window.RemoteCtrlAPI?.on?.agentStatus?.((payload) => store.handleAgentStatus(payload)),
-      window.RemoteCtrlAPI?.on?.agentLog?.((payload) => store.handleAgentLog(payload)),
+      window.RemoteCtrlAPI?.on?.agentCheckpoint?.((payload) => {
+        setActiveCheckpoint(payload);
+      }),
+      window.RemoteCtrlAPI?.on?.agentStatus?.((payload) => {
+        if (payload.state === 'completed' || payload.state === 'failed' || payload.state === 'cancelled') {
+          setActiveCheckpoint(null);
+        }
+      }),
     ];
+
     return () => {
       unsubs.forEach((u) => u && u());
     };
   }, []);
 
+  // Make the html and body transparent for the mini window
+  useEffect(() => {
+    document.documentElement.style.background = 'transparent';
+    document.body.style.background = 'transparent';
+    return () => {
+      document.documentElement.style.background = '';
+      document.body.style.background = '';
+    };
+  }, []);
+
+  // Handle click-through on transparent areas
+  useEffect(() => {
+    let lastIgnore = false;
+    const handleMouseMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const shouldIgnore = el ? el.classList.contains('mini-window-root') : true;
+      
+      if (shouldIgnore !== lastIgnore) {
+        lastIgnore = shouldIgnore;
+        window.RemoteCtrlAPI?.app.setIgnoreMouseEvents(shouldIgnore);
+      }
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, []);
+
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        window.RemoteCtrlAPI?.app.hideMiniWindow();
+        return;
+      }
+      
+      // Support number keys selection for Checkpoint options
+      if (activeCheckpoint) {
+        const num = parseInt(e.key, 10);
+        if (!isNaN(num) && num >= 1 && num <= activeCheckpoint.options.length) {
+          handleCheckpointSelect(activeCheckpoint.options[num - 1].id);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeCheckpoint, handleCheckpointSelect]);
+
   const isRunning =
     agentStatus === 'running' ||
     workflowRunState === 'running';
 
-  const latestLog = executionLogs.length > 0
-    ? executionLogs[executionLogs.length - 1].message
-    : null;
+  const activityCopy = miniActivityCopy(currentAction, workflowRunState === 'running');
+
+  useEffect(() => {
+    if (!isRunning || activityCopy.length < 2) return;
+    const interval = window.setInterval(() => setActivityIndex((index) => (index + 1) % activityCopy.length), 2200);
+    return () => window.clearInterval(interval);
+  }, [isRunning, currentAction, workflowRunState, activityCopy.length]);
 
   const handleRunAgent = async () => {
     if (!instruction.trim() || isRunning) return;
@@ -61,11 +144,13 @@ export function MiniWindow() {
     useAgentStore.getState().startNewExecution('agent', commandId, text);
     try {
       await window.RemoteCtrlAPI?.browser.launch();
-      await window.RemoteCtrlAPI?.browser.startAgent({
+      const result = await window.RemoteCtrlAPI?.browser.startAgent({
         commandId,
         action: 'act',
         instruction: text,
+        executionMode: 'local',
       });
+      if (!result?.ok) throw new Error(result?.error ?? 'Unable to start the agent.');
       setActiveCommandId(commandId);
       setAgentStatus('running');
     } catch (err) {
@@ -83,106 +168,109 @@ export function MiniWindow() {
     }
   };
 
-  const handleOpenMain = () => {
-    window.RemoteCtrlAPI?.app.showMainWindow();
-  };
-
   const handleHideMini = () => {
     window.RemoteCtrlAPI?.app.hideMiniWindow();
   };
 
   return (
     <div className="mini-window-root">
-      {/* Drag Header */}
-      <div className="mini-window-header drag-region">
-        <div className="mini-window-title">
-          <span className="mini-logo-icon"><Sparkles size={13} /></span>
-          <span className="mini-title-text">RemoteCtrl</span>
-          <span className="badge badge-accent" style={{ fontSize: 9 }}>MINI</span>
-        </div>
-        <div className="mini-window-actions no-drag">
-          <button className="mini-header-btn" onClick={handleOpenMain} title="Open Full Window">
-            <ExternalLink size={13} />
-          </button>
-          <button className="mini-close-btn" onClick={handleHideMini} title="Hide">
-            <X size={14} />
-          </button>
-        </div>
-      </div>
-
-      {errorMsg && (
-        <div style={{ color: 'var(--status-error)', fontSize: 11, padding: '4px 12px' }}>
-          {errorMsg}
-        </div>
-      )}
-
-      {/* Main Spotlight Input */}
-      <div className="mini-input-bar">
-        <input
-          ref={inputRef}
-          type="text"
-          className="mini-prompt-input"
-          placeholder="What would you like to automate? Press Enter to run..."
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleRunAgent();
-          }}
-          disabled={isRunning}
-        />
-        {isRunning ? (
-          <button className="mini-run-btn stop" onClick={handleStop} title="Stop">
-            <Square size={14} />
-          </button>
-        ) : (
-          <button
-            className="mini-run-btn"
-            onClick={handleRunAgent}
-            disabled={!instruction.trim()}
-            title="Run Agent"
-          >
-            <Play size={14} />
-          </button>
+      <div className="mini-window-content">
+        {/* Checkpoint HUD (Interactive user input prompt) */}
+        {isRunning && activeCheckpoint && (
+          <div className="mini-checkpoint-hud animate-fade-in drag-region">
+            <div className="mini-checkpoint-title no-drag">Agent Needs Input</div>
+            <div className="mini-checkpoint-question no-drag">{activeCheckpoint.question}</div>
+            <div className="mini-checkpoint-options no-drag">
+              {activeCheckpoint.options.map((opt, idx) => (
+                <button
+                  key={opt.id}
+                  className={`mini-checkpoint-option no-drag ${opt.recommended ? 'recommended' : ''}`}
+                  onClick={() => handleCheckpointSelect(opt.id)}
+                >
+                  <div className="mini-checkpoint-option-label no-drag">
+                    <span className="mini-checkpoint-key-hint no-drag">{idx + 1}</span> {opt.label}
+                  </div>
+                  {opt.description && (
+                    <div className="mini-checkpoint-option-desc no-drag">{opt.description}</div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
-      </div>
 
-      {/* Enhanced Live Status Card when active */}
-      {isRunning && (
-        <div className="mini-status-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div className="mini-status-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-              <span className="mini-status-dot animate-pulse" />
-              <span className="mini-status-label truncate" style={{ fontWeight: 600 }}>
-                {agentStatus === 'running'
-                  ? 'AI Agent Running'
-                  : `Workflow Running ${currentStepIndex !== null ? `(Step ${currentStepIndex + 1})` : ''}`}
+        {/* Progress / Status HUD when running */}
+        {isRunning && !activeCheckpoint && (
+          <div className="mini-status-hud animate-fade-in drag-region">
+            <div className="mini-status-info no-drag">
+              <span className="mini-status-text">
+                {activityCopy[activityIndex % activityCopy.length]}
               </span>
             </div>
-            <button className="mini-watch-btn" onClick={handleOpenMain} style={{ flexShrink: 0 }}>
-              Watch in Browser →
+            {currentAction && currentAction !== 'Initializing agent...' && (
+              <div className="mini-current-activity no-drag">{currentAction}</div>
+            )}
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="mini-error-banner drag-region">
+            <span className="no-drag">{errorMsg}</span>
+          </div>
+        )}
+
+        {/* Search Input Bar (acts as window drag region except for controls) */}
+        <div className="mini-input-bar drag-region">
+          <span className="mini-logo-icon"><Sparkles size={15} /></span>
+          <textarea
+            ref={inputRef}
+            className="mini-prompt-input no-drag"
+            placeholder="What would you like to automate?..."
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // Prevent newline
+                handleRunAgent();
+              }
+            }}
+            disabled={isRunning}
+            rows={1}
+          />
+          
+          {/* Compact action buttons embedded in the input bar */}
+          <div className="mini-input-actions no-drag">
+            {isRunning ? (
+              <button className="mini-action-btn stop no-drag" onClick={handleStop} title="Stop Agent">
+                <Square size={14} className="no-drag" />
+              </button>
+            ) : (
+              <button
+                className="mini-action-btn run no-drag"
+                onClick={handleRunAgent}
+                disabled={!instruction.trim()}
+                title="Run Agent (Enter)"
+              >
+                <Play size={14} className="no-drag" />
+              </button>
+            )}
+            
+            <button className="mini-action-btn close no-drag" onClick={handleHideMini} title="Close (Esc)">
+              <X size={15} className="no-drag" />
             </button>
           </div>
-
-          <div
-            style={{
-              background: 'var(--bg-overlay)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '6px 8px',
-              fontSize: '11px',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <Activity size={12} className="animate-pulse" color="var(--accent)" style={{ flexShrink: 0 }} />
-            <span className="truncate">
-              {latestLog || currentAction || 'Executing automation commands...'}
-            </span>
-          </div>
         </div>
-      )}
+      </div>
     </div>
   );
+}
+
+function miniActivityCopy(action: string | null, workflow: boolean): string[] {
+  const value = action?.toLowerCase() ?? '';
+  if (workflow) return ['Running the workflow…', 'Working through the next step…', 'Checking the workflow result…'];
+  if (/read|observ|analy|extract/.test(value)) return ['Reading the page…', 'Thinking through the information…', 'Working out the next step…'];
+  if (/find|look|search|navig|open/.test(value)) return ['Finding the right place…', 'Looking for the next control…', 'Working through the page…'];
+  if (/enter|typ|fill|select/.test(value)) return ['Working on the requested details…', 'Entering the information…', 'Checking the next step…'];
+  if (/check|verif|confirm/.test(value)) return ['Checking the result…', 'Verifying the page state…', 'Thinking through the outcome…'];
+  return ['Thinking…', 'Working…', 'Preparing the next step…'];
 }

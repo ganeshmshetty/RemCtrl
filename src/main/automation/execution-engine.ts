@@ -2,20 +2,26 @@
  * @file execution-engine.ts
  * @description Orchestrates the main execution pipeline for autonomous agent runs, managing timeouts, loops, logs, and sessions.
  * Key Exported APIs: `runAgent`, `cancelAgent`, `isAgentRunning`, `setAgentPaused`, `AgentStatusCb`, and `AgentLogCb`.
- * Internal Mechanics: Connects to the Playwright browser using `getBrowserPage`, instantiates `TaskSession` and `ExecutionLogger`, builds multi-turn conversation contexts via `sessionHistory`, resolves LLM models dynamically, and runs the tool loop within timeout and cancellation limits.
+ * Internal Mechanics: Acquires a ready Playwright page through the browser runtime, instantiates `TaskSession` and `ExecutionLogger`, builds multi-turn conversation contexts via `sessionHistory`, resolves LLM models dynamically, and runs the tool loop within timeout and cancellation limits.
  * Relations: Connects directly with the renderer-facing `agent.ipc.ts` for task control, triggers cursor overlay setups, and logs events through the browser status callback API.
  */
 
 import type { Page } from 'playwright';
-import { getBrowserPage, closeBrowser } from './browser-pool.js';
-import { getPage, getCdpUrl } from '../browser-manager.js';
-import { ensureCursorOverlay } from './cursor-overlay.js';
+import { closeBrowser } from './browser-pool.js';
 import { resolveModel } from './model-resolver.js';
 import { ExecutionLogger } from './execution-logger.js';
 import { TaskSession } from './task-session.js';
-import { runToolLoop } from './agent-loop.js';
+import { runToolLoop, type AgentLoopResult } from './agent-loop.js';
 import { buildAgentSystemPrompt } from './agent-system-prompt.js';
 import { sessionHistory } from './agent-history.js';
+import { policyGate } from '../policy/policy-gate.js';
+import {
+  beginAutomationRun,
+  finishAutomationRun,
+  getAutomationSession,
+  isAutomationRunActive,
+  ownsAutomationRun,
+} from './run-lifecycle.js';
 import {
   AgentTimeoutError,
   BrowserNotReadyError,
@@ -25,27 +31,38 @@ import type {
   AgentStatusPayload,
   AgentLogPayload,
   ApiProvider,
+  WorkflowStep,
 } from '../../shared/types.js';
+import { acquireReadyPage } from './browser/runtime.js';
+import { createDevelopmentLogger } from '../dev-logger.js';
+import type { AutomationSecurityMode } from './security-mode.js';
 
 export type AgentStatusCb = (payload: AgentStatusPayload) => void;
 export type AgentLogCb = (payload: AgentLogPayload) => void;
+export interface AgentRunResult {
+  state: 'completed' | 'failed' | 'cancelled';
+  goalAchieved: boolean;
+  error?: string;
+}
 
 const COMMAND_TIMEOUT_MS = 180_000;
 const MAX_STEPS = 40;
-
-let activeSession: TaskSession | null = null;
+const terminalLog = createDevelopmentLogger('Dev');
 
 export function isAgentRunning(): boolean {
-  return activeSession?.isActive ?? false;
+  return isAutomationRunActive('agent');
 }
 
 export function cancelAgent(): void {
-  activeSession?.cancel();
+  const session = getAutomationSession('agent');
+  if (session?.commandId) policyGate.cancelSession(session.commandId);
+  session?.cancel();
 }
 
 export function setAgentPaused(paused: boolean): void {
-  if (paused) activeSession?.pause();
-  else activeSession?.resume();
+  const session = getAutomationSession('agent');
+  if (paused) session?.pause();
+  else session?.resume();
 }
 
 export async function runAgent(
@@ -56,30 +73,36 @@ export async function runAgent(
   provider: ApiProvider,
   onStatus: AgentStatusCb,
   onLog: AgentLogCb,
-  onRecordStep?: (step: any) => void
-): Promise<void> {
-  if (activeSession?.isActive) {
+  onRecordStep?: (step: WorkflowStep) => void,
+  securityMode: AutomationSecurityMode = 'policy-enforced',
+  onCompleted?: (result: AgentLoopResult) => Promise<void>,
+): Promise<AgentRunResult> {
+  const previousRun = getAutomationSession('agent');
+  if (previousRun?.isActive) {
     log(onLog, 'info', 'Terminating previous agent run before starting new task...');
-    activeSession.cancel();
-  }
-
-  const page = getPage();
-  const cdpUrl = getCdpUrl();
-
-  if (!page || !cdpUrl) {
-    const err = new BrowserNotReadyError(
-      'Launch a browser from the Host session first.',
-    );
-    log(onLog, 'error', err.message);
-    onStatus({ commandId, state: 'failed', error: err.message });
-    return;
+    previousRun.cancel();
   }
 
   const session = new TaskSession({ initialGoal: instruction, commandId });
-  activeSession = session;
+  beginAutomationRun('agent', session);
   session.start();
 
-  log(onLog, 'info', `Starting execution pipeline via provider="${provider}"`);
+  let initialPage: Page;
+  try {
+    initialPage = await acquireReadyPage({ launchIfMissing: false });
+  } catch (err) {
+    const browserError = err instanceof BrowserNotReadyError
+      ? err
+      : new BrowserNotReadyError('Launch a browser from the Host session first.');
+    finishAutomationRun(session);
+    session.cancel();
+    log(onLog, 'error', browserError.message);
+    onStatus({ commandId, state: 'failed', error: browserError.message });
+    return { state: 'failed', goalAchieved: false, error: browserError.message };
+  }
+
+  log(onLog, 'info', `Starting execution pipeline via provider="${provider}" security=${securityMode}`);
+  terminalLog.info('run.start', { commandId, provider, securityMode, timeoutMs: COMMAND_TIMEOUT_MS, maxSteps: MAX_STEPS });
   onStatus({ commandId, state: 'running' });
 
   const executionLogger = new ExecutionLogger(commandId, instruction);
@@ -95,17 +118,7 @@ export async function runAgent(
       );
     });
 
-    localPage = getPage();
-    if (!localPage) {
-      log(onLog, 'info', 'Connecting to local browser via CDP...');
-      const connectionPromise = getBrowserPage(cdpUrl, (level, msg) => {
-        log(onLog, level, msg, '[Browser]');
-      });
-      localPage = await Promise.race([connectionPromise, timeoutPromise]);
-    }
-    if (localPage) {
-      await ensureCursorOverlay(localPage);
-    }
+    localPage = initialPage;
 
     const cancelPromise = new Promise<never>((_, reject) => {
       if (session.abortSignal.aborted) reject(session.abortSignal.reason);
@@ -122,11 +135,12 @@ export async function runAgent(
       return await runToolLoop({
         commandId,
         instruction: fullInstruction,
-        systemPrompt: buildAgentSystemPrompt(instruction),
+        systemPrompt: buildAgentSystemPrompt(instruction, securityMode),
         page: localPage!,
         session,
         model: resolveModel(provider, apiKey),
         maxSteps: MAX_STEPS,
+        securityMode,
         onStatus: guardedStatus,
         onLog,
         onRecordStep,
@@ -135,14 +149,40 @@ export async function runAgent(
 
     const loopResult = await Promise.race([runLoop(), timeoutPromise, cancelPromise]);
 
+    log(
+      onLog,
+      'info',
+      `Agent loop stopped — reason=${loopResult.terminationReason}, finish=${loopResult.finishReason}, ` +
+        `steps=${loopResult.stepCount}, actions=${loopResult.actions.length}, ` +
+        `done=${loopResult.goalAchieved}, finalMessage=${loopResult.finalMessage ? 'present' : 'missing'}`,
+    );
+
     if (session.isCancelled) {
+      terminalLog.warn('run.cancelled', { commandId, phase: 'after_loop' });
       executionLogger.cancel();
-      await closeBrowser().catch(() => {});
+      if (ownsAutomationRun(session)) await closeBrowser().catch(() => {});
       log(onLog, 'info', 'Pipeline cancelled.');
       onStatus({ commandId, state: 'cancelled' });
+      return { state: 'cancelled', goalAchieved: false };
+    } else if (!loopResult.goalAchieved && !loopResult.isConversationalResponse) {
+      const error = loopResult.finalMessage || 'Agent stopped without confirming that the task was completed.';
+      sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions, commandId);
+      executionLogger.fail();
+      log(
+        onLog,
+        'warn',
+        `Pipeline incomplete — ${error} ` +
+          `[termination=${loopResult.terminationReason}, finish=${loopResult.finishReason}, ` +
+          `steps=${loopResult.stepCount}, done=${loopResult.goalAchieved}]`,
+      );
+      onStatus({ commandId, state: 'failed', error, result: { ...loopResult, originalInstruction: instruction } });
+      return { state: 'failed', goalAchieved: false, error };
     } else {
       sessionHistory.recordTurn(instruction, loopResult.finalMessage, loopResult.actions, commandId);
       await sessionHistory.maybeCompactHistory(resolveModel(provider, apiKey)).catch(() => {});
+      // Recording persistence happens before the terminal success event so a
+      // workflow is never shown as successfully created when saving failed.
+      if (loopResult.goalAchieved) await onCompleted?.(loopResult);
       executionLogger.complete();
       const summary = executionLogger.getSummary() as Record<string, any>;
       summary.totalSteps = loopResult.stepCount;
@@ -150,7 +190,9 @@ export async function runAgent(
       summary.actions = loopResult.actions;
       summary.finishReason = loopResult.finishReason;
       summary.goalAchieved = loopResult.goalAchieved;
+      summary.isConversationalResponse = loopResult.isConversationalResponse;
       summary.recordedSteps = loopResult.recordedSteps;
+      summary.executionTrace = loopResult.executionTrace;
       summary.originalInstruction = instruction;
       if (loopResult.finalMessage) {
         summary.finalMessage = loopResult.finalMessage;
@@ -163,24 +205,51 @@ export async function runAgent(
           `duration=${(summary.totalDuration / 1000).toFixed(1)}s`,
       );
       onStatus({ commandId, state: 'completed', result: summary });
+      return { state: 'completed', goalAchieved: true };
     }
   } catch (err) {
     executionLogger.fail();
-    await closeBrowser().catch(() => {});
+    if (ownsAutomationRun(session)) await closeBrowser().catch(() => {});
     const errInfo = extractError(err);
+    const recoveryMessage = describeProviderFailure(errInfo.message, provider);
+    terminalLog.error('run.error', {
+      commandId,
+      provider,
+      cancelled: session.isCancelled,
+      errorType: err instanceof Error ? err.name : typeof err,
+      message: recoveryMessage,
+    });
 
     if (session.isCancelled) {
+      terminalLog.warn('run.cancelled', { commandId, phase: 'error_handler' });
       log(onLog, 'info', 'Pipeline cancelled.');
       onStatus({ commandId, state: 'cancelled' });
+      return { state: 'cancelled', goalAchieved: false };
     } else {
-      log(onLog, 'error', `Pipeline failed: ${errInfo.message}`);
-      onStatus({ commandId, state: 'failed', error: errInfo.message });
+      log(onLog, 'error', `Pipeline failed: ${recoveryMessage}`);
+      onStatus({ commandId, state: 'failed', error: recoveryMessage });
+      return { state: 'failed', goalAchieved: false, error: recoveryMessage };
     }
   } finally {
+    policyGate.cancelSession(commandId);
     if (timeoutId) clearTimeout(timeoutId);
-    activeSession = null;
+    // A newer run may have replaced this session while this one was winding
+    // down. Never clear the newer run's lifecycle reference.
+    finishAutomationRun(session);
     localPage = null;
   }
+}
+
+function describeProviderFailure(message: string, provider: ApiProvider): string {
+  if (/resource has been exhausted|quota/i.test(message)) {
+    return `${provider === 'vertex' ? 'Vertex AI' : provider} quota is exhausted. Wait for quota to reset, increase the provider quota, or select another configured provider.`;
+  }
+  if (/unsupported model version v3/i.test(message)) {
+    return provider === 'gemini'
+      ? 'The selected Gemini model requires an unsupported provider protocol. Select a Gemini 2.5 model; stale Gemini 3 selections are automatically downgraded for the Gemini provider.'
+      : message;
+  }
+  return message;
 }
 
 function log(
@@ -190,8 +259,8 @@ function log(
   prefix = '[ExecutionEngine]',
 ): void {
   const line = `${prefix} ${message}`;
-  if (level === 'error') console.error(line);
-  else if (level === 'warn') console.warn(line);
-  else console.log(line);
+  if (level === 'error') terminalLog.error(line);
+  else if (level === 'warn') terminalLog.warn(line);
+  else terminalLog.info(line);
   onLog({ level, message });
 }

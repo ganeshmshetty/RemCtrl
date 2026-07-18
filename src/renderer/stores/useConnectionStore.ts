@@ -17,7 +17,10 @@ interface ConnectionState {
   hostState: HostSessionState;
   controllerState: ControllerSessionState;
   pendingControllerId: string | null; // for host approval modal
+  pendingControllerIntent: string | null;
+  isTrustedHost: boolean;
   error: string | null;
+  pendingTakeover: boolean;
   sendData: ((msg: any, reliable?: boolean) => void) | null;
 
   // Actions
@@ -26,7 +29,10 @@ interface ConnectionState {
   setHostState: (state: HostSessionState) => void;
   setControllerState: (state: ControllerSessionState) => void;
   setPendingControllerId: (id: string | null) => void;
+  setPendingControllerIntent: (intent: string | null) => void;
+  setTrustedHost: (trusted: boolean) => void;
   setError: (error: string | null) => void;
+  setPendingTakeover: (pending: boolean) => void;
   setSendData: (fn: ((msg: any, reliable?: boolean) => void) | null) => void;
   reset: () => void;
 }
@@ -37,7 +43,10 @@ const initialState = {
   hostState: 'IDLE' as HostSessionState,
   controllerState: 'IDLE' as ControllerSessionState,
   pendingControllerId: null,
+  pendingControllerIntent: null,
+  isTrustedHost: false,
   error: null,
+  pendingTakeover: false,
   sendData: null,
 };
 
@@ -49,7 +58,10 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   setHostState: (hostState) => set({ hostState }),
   setControllerState: (controllerState) => set({ controllerState }),
   setPendingControllerId: (pendingControllerId) => set({ pendingControllerId }),
+  setPendingControllerIntent: (pendingControllerIntent) => set({ pendingControllerIntent }),
+  setTrustedHost: (isTrustedHost) => set({ isTrustedHost }),
   setError: (error) => set({ error }),
+  setPendingTakeover: (pendingTakeover) => set({ pendingTakeover }),
   setSendData: (sendData) => set({ sendData }),
   reset: () => set(initialState),
 }));

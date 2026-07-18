@@ -1,0 +1,22 @@
+/* ─── Landing, Composer & Mini Window Refresh ─── */
+.browser-panel { padding-bottom: 16px; }
+.mini-window-root { padding: 12px 28px 22px; overflow: visible; }
+.mini-window-content {
+  border: 1px solid color-mix(in srgb, var(--border) 78%, white 22%);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, black 6%);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
+}
+.mini-input-bar { min-height: 102px; padding: 12px 14px 10px; gap: 8px; background: transparent; border-top: 0; display: flex; flex-wrap: wrap; align-content: space-between; }
+.mini-logo-icon { width: 28px; height: 28px; justify-content: center; border-radius: 7px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.mini-prompt-input { order: 1; flex: 0 0 100%; min-height: 42px; padding: 4px 3px; border: 0; border-radius: 0; background: transparent; font-size: 15px; }
+.mini-logo-icon { order: 2; }
+.mini-input-actions { order: 2; margin-left: auto; }
+.mini-prompt-input:focus,
+.mini-prompt-input:focus-visible { border: 0; outline: none; box-shadow: none; }
+.mini-action-btn { width: 30px; height: 30px; border-radius: 7px; }
+.mini-status-hud,
+.mini-checkpoint-hud { padding: 7px 14px 0; background: transparent; max-height: 42px; overflow: hidden; }
+.mini-status-info::before { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 15%, transparent); content: ''; }
+.mini-current-activity { margin-top: 6px; padding-left: 14px; color: var(--text-secondary); font-size: 12px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-log-card { border-radius: 7px; background: color-mix(in srgb, var(--bg-base) 64%, transparent); }

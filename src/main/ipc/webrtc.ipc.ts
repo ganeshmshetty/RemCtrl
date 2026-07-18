@@ -7,21 +7,24 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
-import { ApproveControllerSchema, ConnectPinSchema } from '../../shared/schemas.js';
+import { ApproveControllerSchema, ConnectPinSchema, StartHostSchema } from '../../shared/schemas.js';
 import { getSignalingUrl } from '../storage.js';
 import { webRTCManager } from '../webrtc-manager.js';
 import { closeBrowser } from '../browser-manager.js';
+import { policyGate } from '../policy/policy-gate.js';
+import { sendToRenderer } from './renderer-events.js';
 
 export function registerWebRtcIpc(win: BrowserWindow) {
-  ipcMain.handle('host:start', async () => {
+  ipcMain.handle('host:start', async (_e, rawOptions: unknown) => {
+    const options = StartHostSchema.parse(rawOptions ?? {});
     webRTCManager.destroyClient();
     const client = webRTCManager.getOrCreateClient();
     const url = getSignalingUrl();
     try {
-      await client.startHost(url);
+      await client.startHost(url, options.trusted);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!win.isDestroyed()) win.webContents.send('app:error', msg);
+      sendToRenderer(win, 'app:error', msg);
       return { ok: false, error: msg };
     }
     return { ok: true };
@@ -32,8 +35,12 @@ export function registerWebRtcIpc(win: BrowserWindow) {
     await closeBrowser();
   });
 
-  ipcMain.handle('host:approveController', async (_e, controllerId: unknown) => {
+  ipcMain.handle('host:approveController', async (_e, controllerId: unknown, intent: unknown) => {
     const { controllerId: id } = ApproveControllerSchema.parse({ controllerId });
+    const goal = typeof intent === 'string' ? intent.trim() : '';
+    if (!goal) throw new Error('Controller must declare a session intent before approval.');
+    const scope = policyGate.getScope();
+    if (scope && 'goal' in scope) policyGate.setScope({ ...scope, goal });
     webRTCManager.getClient()?.approveController(id);
   });
 
@@ -42,13 +49,13 @@ export function registerWebRtcIpc(win: BrowserWindow) {
     webRTCManager.getClient()?.rejectController(id);
   });
 
-  ipcMain.handle('controller:connect', async (_e, pin: string) => {
-    const parsed = ConnectPinSchema.parse({ pin });
+  ipcMain.handle('controller:connect', async (_e, raw: unknown) => {
+    const parsed = ConnectPinSchema.parse(raw);
     webRTCManager.destroyClient();
     const client = webRTCManager.getOrCreateClient();
     const url = getSignalingUrl();
     try {
-      await client.connectAsController(url, parsed.pin);
+      await client.connectAsController(url, parsed.pin, parsed.intent);
     } catch (err) {
       // Error already sent to renderer by pushError
     }

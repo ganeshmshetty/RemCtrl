@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connect domain · Northstar</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar"><a class="brand" href="./index.html" aria-label="Northstar home"><span class="brand-mark">N</span><span>Northstar</span></a><div class="account-chip"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch theme">☼</button><span class="avatar">MC</span><span>Maya Chen</span><span class="status-dot"></span></div></header>
+    <main class="shell narrow-shell">
+      <a class="back-link" href="./index.html">← Back to workspace</a>
+      <div class="setup-heading"><div><div class="eyebrow">Website settings</div><h1>Connect your domain</h1><p>Use a domain your clients already own to make the site easy to find.</p></div><div class="step-marker"><span class="step-active">1</span><i></i><span>2</span><i></i><span>3</span></div></div>
+      <div id="variation-badge" class="demo-notice" role="status"></div>
+      <form id="domain-form" class="setup-layout"><section id="setup-fields" class="card form-card" aria-labelledby="details-title"></section><aside class="card help-card"><span class="card-icon blue">?</span><h2>Need help?</h2><p>Your domain provider is the company where the domain was purchased. We will show the exact DNS records after this step.</p><span class="help-note">Ask your client or registrar if you are unsure.</span></aside></form>
+    </main>
+    <script src="./theme.js"></script>
+    <script>
+      (() => {
+        // Variant B is intentionally disabled for the current demo flow.
+        // Keep the alternate implementation below so it can be re-enabled
+        // later without redesigning the workflow scenario.
+        const variant = 'A';
+        const fields = document.getElementById('setup-fields');
+        document.getElementById('variation-badge').innerHTML = '<span class="demo-pulse"></span> Stable demo layout · Variant A is active.';
+        if (variant === 'A') {
+          fields.innerHTML = `<div class="card-heading"><div><span class="eyebrow">Step 1 of 3</span><h2 id="details-title">Tell us about your domain</h2></div><span class="form-number">01</span></div><p class="form-intro">Enter the domain you want to use for the Acme Studio website.</p><div class="field-group"><label for="domainName">Domain name</label><input id="domainName" name="domain" type="text" placeholder="example.com" autocomplete="off" required /><span class="field-hint">Use the domain exactly as it appears with your provider.</span></div><div class="field-group"><label for="dnsProvider">Domain provider</label><select id="dnsProvider" name="provider" required><option value="">Choose a provider</option><option value="cloudflare">Cloudflare</option><option value="godaddy">GoDaddy</option><option value="namecheap">Namecheap</option><option value="other">Another provider</option></select></div><div class="form-footer"><span class="secure-note">🔒 Your settings are private</span><button id="continueButton" class="button primary" type="submit">Continue setup <span>→</span></button></div>`;
+        } else {
+          fields.innerHTML = `<div class="form-number variant-number">02</div><div class="card-heading"><div><span class="eyebrow">Domain connection</span><h2 id="details-title">Choose where your domain lives</h2></div></div><p class="form-intro">We will prepare the right DNS instructions for the Acme Studio website.</p><div class="field-group provider-first"><label for="providerChoice">Domain provider</label><select id="providerChoice" name="provider" required><option value="">Choose a provider</option><option value="cloudflare">Cloudflare</option><option value="godaddy">GoDaddy</option><option value="namecheap">Namecheap</option><option value="other">Another provider</option></select></div><div class="field-group"><label for="websiteDomain">Domain name</label><input id="websiteDomain" name="domain" type="text" placeholder="example.com" autocomplete="off" required /><span class="field-hint">Use the domain exactly as it appears with your provider.</span></div><div class="form-footer"><span class="secure-note">🔒 Your settings are private</span><button id="saveDomain" class="button primary" type="submit">Save and continue <span>→</span></button></div>`;
+        }
+        document.getElementById('domain-form').addEventListener('submit', (event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          const domain = String(data.get('domain') || '').trim();
+          const provider = String(data.get('provider') || '');
+          if (!domain || !provider) return;
+          window.location.href = `./success.html?domain=${encodeURIComponent(domain)}&provider=${encodeURIComponent(provider)}`;
+        });
+      })();
+    </script>
+  </body>
+</html>

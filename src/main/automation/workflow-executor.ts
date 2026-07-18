@@ -6,10 +6,8 @@
  * AI Self-Healing & Integration: If a fast-path CSS selector fails, invokes the AI tool-calling loop (`runToolLoop`) using the original step description to find the healed element, and persists the repaired selector back to the database.
  */
 
-import { getBrowserPage } from './browser-pool.js';
 import type { Page } from 'playwright';
 import { resolveModel } from './model-resolver.js';
-import { ensureCursorOverlay } from './cursor-overlay.js';
 import type {
   AgentWorkflowBatchPayload,
   WorkflowStep,
@@ -17,15 +15,22 @@ import type {
   WorkflowStepStatus,
   AgentLogPayload,
 } from '../../shared/types.js';
-import { getPage, getCdpUrl, launchBrowser } from '../browser-manager.js';
 import { getPreferredProvider, getApiKey, updateWorkflowStepSelector } from '../storage.js';
-import {
-  BrowserNotReadyError,
-  extractError,
-} from '../errors.js';
+import { extractError } from '../errors.js';
 import { TaskSession } from './task-session.js';
 import { runToolLoop } from './agent-loop.js';
 import { buildWorkflowStepSystemPrompt } from './agent-system-prompt.js';
+import { acquireReadyPage } from './browser/runtime.js';
+import { SemanticActionEngine } from './browser/semantic-actions.js';
+import type { BrowserActionResult } from './browser/action-types.js';
+import { WorkflowConditionEngine } from './workflow-conditions.js';
+import {
+  beginAutomationRun,
+  finishAutomationRun,
+  getAutomationSession,
+  isAutomationRunActive,
+} from './run-lifecycle.js';
+import { createDevelopmentLogger } from '../dev-logger.js';
 
 export type WorkflowRunStatusCb = (s: WorkflowRunStatus) => void;
 export type WorkflowStepStatusCb = (s: WorkflowStepStatus) => void;
@@ -36,25 +41,25 @@ const RETRY_INITIAL_DELAY_MS = 1_000;
 const RETRY_MAX_DELAY_MS = 10_000;
 const RETRY_BACKOFF = 2;
 
-const CHECK_POLL_INTERVAL_MS = 500;
-const CHECK_POLL_MAX_MS = 3_000;
 const WORKFLOW_MAX_TRANSITIONS = 100;
+const terminalLog = createDevelopmentLogger('Dev');
 
-
-
-let activeSession: TaskSession | null = null;
+function promptValue(value: unknown): string {
+  return JSON.stringify(value).replaceAll('<', '\\u003c');
+}
 
 export function isWorkflowRunning(): boolean {
-  return activeSession?.isActive ?? false;
+  return isAutomationRunActive('workflow');
 }
 
 export function cancelWorkflow(): void {
-  activeSession?.cancel();
+  getAutomationSession('workflow')?.cancel();
 }
 
 export function setWorkflowPaused(paused: boolean): void {
-  if (paused) activeSession?.pause();
-  else activeSession?.resume();
+  const session = getAutomationSession('workflow');
+  if (paused) session?.pause();
+  else session?.resume();
 }
 
 export async function runWorkflow(
@@ -63,56 +68,47 @@ export async function runWorkflow(
   onStepStatus: WorkflowStepStatusCb,
   onLog: WorkflowLogCb,
 ): Promise<void> {
-  const { workflowRunId, name, startUrl, steps } = payload;
-  if (activeSession?.isActive) {
+  const { workflowRunId, name, steps } = payload;
+  const previousRun = getAutomationSession('workflow');
+  if (previousRun?.isActive) {
     emitLog(onLog, 'info', 'Terminating previous workflow run before starting new execution...', '[Workflow]');
-    activeSession.cancel();
+    previousRun.cancel();
   }
 
-  const session = new TaskSession();
-  activeSession = session;
+  const session = new TaskSession({ commandId: workflowRunId });
+  beginAutomationRun('workflow', session);
   session.start();
 
-  let localPage: Page | null = null;
-
   try {
-    let page = getPage();
-    let cdpUrl = getCdpUrl();
-
-    if (!page || !cdpUrl) {
-      emitLog(onLog, 'info', 'Launching local browser...', '[Workflow]');
-      await launchBrowser();
-      page = getPage();
-      cdpUrl = getCdpUrl();
-    }
-
-    if (!page || !cdpUrl) {
-      throw new BrowserNotReadyError('Browser failed to initialize.');
-    }
+    emitLog(onLog, 'info', 'Preparing browser session...', '[Workflow]');
+    const localPage = await acquireReadyPage({
+      launchIfMissing: true,
+      onLog: (level, message) => emitLog(onLog, level, message, '[Browser]'),
+    });
+    const actionEngine = new SemanticActionEngine(localPage, {
+      waitForNetworkIdle: false,
+      navigationTimeoutMs: 20_000,
+      networkIdleTimeoutMs: 10_000,
+    });
+    const conditions = new WorkflowConditionEngine(localPage);
 
     const provider = getPreferredProvider();
+    const requiresModel = steps.some((step) =>
+      step.type === 'extract' ||
+      (step.onFailure === 'self_heal' && (step.type === 'click' || step.type === 'fill' || step.type === 'select')),
+    );
+    if (requiresModel) {
+      const apiKey = getApiKey(provider);
+      if (!apiKey && provider !== 'vertex') {
+        throw new Error(`Workflow requires AI recovery, but no API key is configured for provider: ${provider}`);
+      }
+      // Resolve configuration before changing browser state, so incompatible
+      // provider/model settings fail at startup rather than midway through a run.
+      resolveModel(provider, apiKey);
+    }
 
     onRunStatus({ workflowRunId, state: 'running', currentStepIndex: 0 });
     emitLog(onLog, 'info', `Workflow "${name}" started — ${steps.length} step(s), provider="${provider}"`, '[Workflow]');
-
-    localPage = getPage();
-    if (!localPage) {
-      emitLog(onLog, 'info', `Connecting to local browser via CDP: ${cdpUrl}`, '[Workflow]');
-      localPage = await getBrowserPage(cdpUrl, (level, msg) => {
-        emitLog(onLog, level, msg, '[Browser]');
-      });
-    }
-
-    if (startUrl) {
-      let targetUrl = startUrl.trim();
-      if (!/^https?:\/\//i.test(targetUrl)) {
-        targetUrl = 'https://' + targetUrl;
-      }
-      emitLog(onLog, 'info', `Navigating to start URL: ${targetUrl}`, '[Workflow]');
-      await localPage.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 }).catch((e: Error) => {
-        emitLog(onLog, 'warn', `Start URL navigation warning: ${e.message}`, '[Workflow]');
-      });
-    }
 
     let currentStepId: string | null = steps[0]?.id ?? null;
     let transitions = 0;
@@ -149,7 +145,7 @@ export async function runWorkflow(
       emitLog(onLog, 'info', `▶ ${stepLabel}`, '[Workflow]');
 
       try {
-        const result = await executeStepWithRetry(localPage, resolvedStep, payload.workflowId, onLog);
+        const result = await executeStepWithRetry(localPage, actionEngine, conditions, session, resolvedStep, payload.workflowId, onLog);
 
         let jumpToStepId: string | null = null;
         if (resolvedStep.type === 'check') {
@@ -216,15 +212,15 @@ export async function runWorkflow(
       onRunStatus({ workflowRunId, state: 'failed', error: errorInfo.message });
     }
   } finally {
-    if (activeSession === session) {
-      activeSession = null;
-    }
-    localPage = null;
+    finishAutomationRun(session);
   }
 }
 
 async function executeStepWithRetry(
   page: Page,
+  actions: SemanticActionEngine,
+  conditions: WorkflowConditionEngine,
+  session: TaskSession,
   step: WorkflowStep,
   workflowId: string,
   onLog: WorkflowLogCb,
@@ -244,7 +240,7 @@ async function executeStepWithRetry(
       if (attempt > 1) {
         emitLog(onLog, 'info', `Attempt ${attempt}/${maxAttempts}`, '[Workflow]');
       }
-      return await executeStep(page, step, workflowId, onLog);
+      return await executeStep(page, actions, conditions, session, step, workflowId, onLog);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       const errorInfo = extractError(lastError);
@@ -267,73 +263,72 @@ async function executeStepWithRetry(
 
 async function executeStep(
   page: Page,
+  actions: SemanticActionEngine,
+  conditions: WorkflowConditionEngine,
+  session: TaskSession,
   step: WorkflowStep,
   workflowId: string,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
-  await ensureCursorOverlay(page);
-  await activeSession?.waitIfPaused(
+  await session.waitIfPaused(
     () => emitLog(onLog, 'info', 'Workflow paused for manual takeover. Waiting for resume…', '[Workflow]'),
     () => emitLog(onLog, 'info', 'Workflow resumed. Capturing fresh page state…', '[Workflow]'),
   );
 
+  let result: unknown;
   switch (step.type) {
-    case 'navigate': return executeNavigateStep(page, step as any, onLog);
+    case 'navigate': result = await executeNavigateStep(actions, session, step as any, onLog); break;
     case 'click':
     case 'fill':
     case 'select':
-    case 'keypress': return executeDeterministicActionWithSelfHeal(page, step as any, workflowId, onLog);
-    case 'wait':     return executeWaitStep(page, step as any, onLog);
-    case 'extract':  return executeExtractStep(page, step as any, onLog);
-    case 'check':    return executeCheckStep(page, step as any, onLog);
+    case 'keypress': result = await executeDeterministicActionWithSelfHeal(actions, page, session, step as any, workflowId, onLog); break;
+    case 'wait':     result = await executeWaitStep(actions, step as any, onLog); break;
+    case 'extract':  result = await executeExtractStep(page, session, step as any, onLog); break;
+    case 'check':    result = await executeCheckStep(conditions, session, step as any, onLog); break;
     default:
       throw new Error(`Unsupported or legacy step type: ${(step as any).type}`);
   }
+  if (step.postcondition) {
+    await conditions.verify(step.postcondition);
+    emitLog(onLog, 'info', `Verified postcondition: ${step.postcondition.kind}`, '[Verify]');
+  }
+  return result;
 }
 
 async function executeDeterministicActionWithSelfHeal(
+  actions: SemanticActionEngine,
   page: Page,
+  session: TaskSession,
   step: Extract<WorkflowStep, { type: 'click' | 'fill' | 'select' | 'keypress' }>,
   workflowId: string,
   onLog: WorkflowLogCb
 ) {
   try {
-    if (step.type !== 'keypress') {
-      const locator = page.locator(step.selector);
-      // Fast path: wait a brief moment for the selector
-      await locator.waitFor({ timeout: 3000, state: 'visible' });
-      
-      if (step.type === 'click') {
-        const msg = `Action: click on ${step.selector}`;
-        emitLog(onLog, 'info', msg, '');
-        if (activeSession?.journal) {
-          await activeSession.journal.recordAgentStep('act', { action: 'click', selector: step.selector }, null, msg);
-        }
-        await locator.click();
-      } else if (step.type === 'fill') {
-        const msg = `Action: fill "${step.value}" on ${step.selector}`;
-        emitLog(onLog, 'info', msg, '');
-        if (activeSession?.journal) {
-          await activeSession.journal.recordAgentStep('act', { action: 'fill', selector: step.selector, value: step.value }, null, msg);
-        }
-        await locator.fill(step.value);
-      } else if (step.type === 'select') {
-        const msg = `Action: select "${step.value}" on ${step.selector}`;
-        emitLog(onLog, 'info', msg, '');
-        if (activeSession?.journal) {
-          await activeSession.journal.recordAgentStep('act', { action: 'select', selector: step.selector, value: step.value }, null, msg);
-        }
-        await locator.selectOption(step.value);
-      }
-    } else {
-      const msg = `Pressing key: ${step.key}`;
-      emitLog(onLog, 'info', msg, '');
-      if (activeSession?.journal) {
-        await activeSession.journal.recordAgentStep('keys', { key: step.key }, null, msg);
-      }
-      await page.keyboard.press(step.key);
+    const msg = step.type === 'keypress'
+      ? `Pressing key: ${step.key}`
+      : `Action: ${step.type} on ${step.selector}`;
+    emitLog(onLog, 'info', msg, '');
+    if (session.journal) {
+      await session.journal.recordAgentStep(
+        step.type === 'keypress' ? 'keys' : 'act',
+        step.type === 'keypress'
+          ? { key: step.key }
+          : { action: step.type, selector: step.selector, ...('value' in step ? { value: step.value } : {}) },
+        null,
+        msg,
+      );
     }
-    return { success: true };
+
+    const result = step.type === 'keypress'
+      ? await actions.execute({ kind: 'keys', key: step.key })
+      : await actions.execute({
+          kind: 'element',
+          selector: step.selector,
+          action: step.type,
+          ...('value' in step ? { value: step.value } : {}),
+          description: step.description,
+        });
+    return requireActionSuccess(result);
   } catch (err) {
     if (step.type === 'keypress') throw err; // Cannot self-heal a pure keypress easily
     if (step.onFailure !== 'self_heal') throw err; // Enforce onFailure policy (bypasses self-healing if stop/skip/retry)
@@ -345,12 +340,18 @@ async function executeDeterministicActionWithSelfHeal(
     const model = resolveModel(provider, apiKey);
 
     // Provide the original semantic description to the agent so it knows what it's looking for
-    const instruction = `The automated workflow failed to find the element previously saved as "${step.selector}".
-However, the user originally described their intent as: "${step.description || 'Unknown'}".
-Please find the correct element that matches this description on the current page, and perform the '${step.type}' action on it.
-${step.type === 'fill' ? `The value to fill is: "${step.value}"` : ''}
-${step.type === 'select' ? `The value to select is: "${step.value}"` : ''}
-End your turn with 'done' once you have successfully interacted with it.`;
+    const instruction = [
+      '<recovery_task>',
+      `<failure_context encoding="json">${promptValue(`The saved selector ${step.selector} was not found.`)}</failure_context>`,
+      `<original_intent encoding="json">${promptValue(step.description || 'Unknown')}</original_intent>`,
+      `<required_action type="${step.type}">Find the matching element on the current page and perform exactly this action.</required_action>`,
+      step.type === 'fill' || step.type === 'select'
+        ? `<action_value encoding="json">${promptValue(step.value ?? '')}</action_value>`
+        : '',
+      '<success>Verify the visible effect, then call done({ taskComplete: true, message }).</success>',
+      '<failure>After bounded recovery attempts, call done({ taskComplete: false, message }) with the observed blocker.</failure>',
+      '</recovery_task>',
+    ].filter(Boolean).join('\n');
 
     const loopResult = await runToolLoop({
       commandId: `self-heal-${step.id}`,
@@ -358,9 +359,9 @@ End your turn with 'done' once you have successfully interacted with it.`;
       systemPrompt: buildWorkflowStepSystemPrompt('do', instruction), // reuse generic prompt
       page,
       session: (() => {
-        if (!activeSession) throw new Error('Cannot self-heal: workflow session is no longer active');
-        return activeSession;
+        return session;
       })(),
+      securityMode: 'local',
       model,
       maxSteps: 5,
       onLog: (l) => emitLog(onLog, l.level, l.message, '[SelfHeal]'),
@@ -388,7 +389,8 @@ End your turn with 'done' once you have successfully interacted with it.`;
 }
 
 async function executeNavigateStep(
-  page: Page,
+  actions: SemanticActionEngine,
+  session: TaskSession,
   step: Extract<WorkflowStep, { type: 'navigate' }>,
   onLog: WorkflowLogCb,
 ): Promise<{ navigatedTo: string; finalUrl: string; redirected: boolean }> {
@@ -401,13 +403,11 @@ async function executeNavigateStep(
 
   const msg = `Navigating to ${targetUrl}`;
   emitLog(onLog, 'info', msg, '');
-  if (activeSession?.journal) {
-    await activeSession.journal.recordAgentStep('goto', { url: targetUrl }, null, msg);
+  if (session.journal) {
+    await session.journal.recordAgentStep('goto', { url: targetUrl }, null, msg);
   }
-  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-  await ensureCursorOverlay(page);
-  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
-  const finalUrl = page.url();
+  const result = requireActionSuccess(await actions.execute({ kind: 'navigate', url: targetUrl }));
+  const finalUrl = typeof result.url === 'string' ? result.url : targetUrl;
   let redirected = false;
 
   try {
@@ -429,6 +429,7 @@ async function executeNavigateStep(
 
 async function executeExtractStep(
   page: Page,
+  session: TaskSession,
   step: Extract<WorkflowStep, { type: 'extract' }>,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
@@ -444,17 +445,17 @@ async function executeExtractStep(
     systemPrompt: buildWorkflowStepSystemPrompt('collect', step.instruction), // Reuse collect prompt logic
     page,
     session: (() => {
-      if (!activeSession) throw new Error('Cannot run extract step: workflow session is no longer active');
-      return activeSession;
+      return session;
     })(),
+    securityMode: 'local',
     model,
     maxSteps: 15,
     onLog: (l) => emitLog(onLog, l.level, l.message, '[Extract]'),
   });
 
   const msg = `Extracting from page`;
-  if (activeSession?.journal) {
-    await activeSession.journal.recordAgentStep('extract', { instruction: step.instruction }, loopResult.finalMessage, msg);
+  if (session.journal) {
+    await session.journal.recordAgentStep('extract', { instruction: step.instruction }, loopResult.finalMessage, msg);
   }
 
   return {
@@ -465,17 +466,22 @@ async function executeExtractStep(
 }
 
 async function executeWaitStep(
-  _page: Page,
+  actions: SemanticActionEngine,
   step: Extract<WorkflowStep, { type: 'wait' }>,
   onLog: WorkflowLogCb,
 ): Promise<unknown> {
   emitLog(onLog, 'info', `Waiting for ${step.ms}ms`, '[Wait]');
-  await sleep(step.ms);
-  return { success: true };
+  return requireActionSuccess(await actions.execute({ kind: 'wait', ms: step.ms }));
+}
+
+function requireActionSuccess(result: BrowserActionResult): Extract<BrowserActionResult, { success: true }> {
+  if (!result.success) throw new Error(result.reason);
+  return result;
 }
 
 async function executeCheckStep(
-  page: Page,
+  conditions: WorkflowConditionEngine,
+  session: TaskSession,
   step: Extract<WorkflowStep, { type: 'check' }>,
   onLog: WorkflowLogCb,
 ): Promise<boolean> {
@@ -484,35 +490,18 @@ async function executeCheckStep(
   const msg = `Action: check condition "${step.condition}"`;
   emitLog(onLog, 'info', msg, '');
 
-  const deadline = Date.now() + CHECK_POLL_MAX_MS;
-  while (Date.now() < deadline) {
-    const matchFound = await page.evaluate((query: string) => {
-      const doc = (globalThis as any).document;
-      if (!doc) return false;
-      const q = query.toLowerCase();
-      const nodes = Array.from(doc.querySelectorAll('input, button, a, select, [role="button"], [role="alert"], h1, h2, h3, p, span, div'));
-      for (const node of nodes) {
-        const el = node as any;
-        const text = (el.textContent || '').trim().toLowerCase();
-        const label = (el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').toLowerCase();
-        if (text.includes(q) || label.includes(q)) return true;
-      }
-      return false;
-    }, step.condition);
-
-    if (matchFound) {
-      emitLog(onLog, 'info', `Condition TRUE (matched "${step.condition}").`, '[Check]');
-      if (activeSession?.journal) {
-        await activeSession.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, true, msg);
-      }
-      return true;
+  const matchFound = await conditions.check(step.condition);
+  if (matchFound) {
+    emitLog(onLog, 'info', `Condition TRUE (matched "${step.condition}").`, '[Check]');
+    if (session.journal) {
+      await session.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, true, msg);
     }
-    await sleep(CHECK_POLL_INTERVAL_MS);
+    return true;
   }
 
-  emitLog(onLog, 'info', `Condition FALSE after ${CHECK_POLL_MAX_MS}ms.`, '[Check]');
-  if (activeSession?.journal) {
-    await activeSession.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, false, msg);
+  emitLog(onLog, 'info', 'Condition FALSE after timeout.', '[Check]');
+  if (session.journal) {
+    await session.journal.recordAgentStep('act', { action: 'check', selector: step.condition }, false, msg);
   }
   return false;
 }
@@ -524,9 +513,9 @@ function emitLog(
   prefix = '[Workflow]',
 ): void {
   const line = prefix ? `${prefix} ${message}` : message;
-  if (level === 'error') console.error(line);
-  else if (level === 'warn') console.warn(line);
-  else console.log(line);
+  if (level === 'error') terminalLog.error(line);
+  else if (level === 'warn') terminalLog.warn(line);
+  else terminalLog.info(line);
   onLog({ level, message });
 }
 

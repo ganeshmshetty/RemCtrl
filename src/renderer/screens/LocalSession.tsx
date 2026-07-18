@@ -1,19 +1,12 @@
-/**
- * @file LocalSession.tsx
- * @description Layout orchestrator for local/host browser sessions where the agent runs directly on the local machine.
- * Combines the direct browser canvas viewer (BrowserPanel) with the agent/workflow controller panel (RightPanelLayout).
- * Features a draggable vertical divider enabling users to adjust the right sidebar panel size interactively via pointer capture.
- * Differs from ControllerSession by assuming an active local session role unconditionally without verifying connection store states.
- * Key exports: LocalSession (function component).
- */
-
 import { useEffect, useRef, useState } from 'react';
 import { BrowserPanel } from './BrowserPanel';
 import { RightPanelLayout } from './RightPanelLayout';
+import { useUIStore } from '../stores/useUIStore';
 
 export function LocalSession() {
-  const [rightPanelWidth, setRightPanelWidth] = useState(380);
+  const [rightPanelWidth, setRightPanelWidth] = useState(384);
   const isResizing = useRef(false);
+  const { isSidebarOpen } = useUIStore();
 
   useEffect(() => {
     function handlePointerMove(e: PointerEvent) {
@@ -41,22 +34,25 @@ export function LocalSession() {
     <>
       <BrowserPanel />
 
-      <div 
-        className="drag-handle-vertical"
-        onPointerDown={(e) => {
-          isResizing.current = true;
-          document.body.style.cursor = 'col-resize';
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }}
-        onPointerUp={(e) => {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }}
-      />
+      {isSidebarOpen && (
+        <>
+          <div 
+            className="drag-handle-vertical"
+            onPointerDown={(e) => {
+              isResizing.current = true;
+              document.body.style.cursor = 'col-resize';
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerUp={(e) => {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }}
+          />
 
-      <div style={{ width: rightPanelWidth, height: '100%', flexShrink: 0 }}>
-        <RightPanelLayout />
-      </div>
+          <div className="workspace-sidepanel" style={{ width: rightPanelWidth }}>
+            <RightPanelLayout />
+          </div>
+        </>
+      )}
     </>
   );
 }
-

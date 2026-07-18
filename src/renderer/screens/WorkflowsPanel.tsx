@@ -1,65 +1,105 @@
 /**
  * @file WorkflowsPanel.tsx
- * @description Sidebar panel listing saved workflows and allowing execution triggering, viewing/editing, and deletion.
- * Uses useWorkflowStore to fetch, display, and manage stored workflow structures, and useUIStore to open the editor overlay.
- * Handles conditional execution routing: triggers workflow executions locally through window.RemoteCtrlAPI.browser.startWorkflow
- * if in local/host mode, or sends serialized agent workflow batches over the WebRTC data channel if in controller mode.
- * Key exports: WorkflowsPanel (function component).
+ * @description Saved workflow registry and the in-panel workflow preview/run view.
+ * Workflow execution deliberately stays in this tab so the operator can see the
+ * deterministic steps, live status, retries, and terminal result together.
  */
 
-import { useEffect, useState } from 'react';
-import { Play, Eye, Trash2, Wand2, Bot } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Bot,
+  CheckCircle2,
+  Circle,
+  Eye,
+  Loader2,
+  Play,
+  Trash2,
+  Wand2,
+  XCircle,
+} from 'lucide-react';
+import type { LocalWorkflow, WorkflowStep } from '../../shared/types';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
+import { describeWorkflowStep } from '../utils/workflow-preview';
+import './WorkflowsPanel.css';
+
+interface ActiveRun {
+  workflow: LocalWorkflow;
+  workflowRunId: string;
+  started: boolean;
+}
 
 export function WorkflowsPanel() {
   const { workflows, isLoading, error, loadWorkflows, deleteWorkflow } = useWorkflowStore();
-  const { openWorkflowEditor: onView } = useUIStore();
-  
+  const { openWorkflowEditor, pendingWorkflowRun, clearWorkflowRun } = useUIStore();
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
 
   useEffect(() => {
-    loadWorkflows();
+    void loadWorkflows();
   }, [loadWorkflows]);
+
+  useEffect(() => {
+    return window.RemoteCtrlAPI?.on.workflowCreated(() => {
+      void loadWorkflows();
+    });
+  }, [loadWorkflows]);
+
+  useEffect(() => {
+    if (!pendingWorkflowRun) return;
+    setActiveRun({ ...pendingWorkflowRun, started: true });
+    clearWorkflowRun();
+  }, [pendingWorkflowRun, clearWorkflowRun]);
 
   async function handleDelete(id: string) {
     await deleteWorkflow(id);
     setConfirmingDelete(null);
   }
 
+  function reviewWorkflow(workflow: LocalWorkflow) {
+    setActiveRun({ workflow, workflowRunId: crypto.randomUUID(), started: false });
+  }
+
+  if (activeRun) {
+    return (
+      <WorkflowRunView
+        activeRun={activeRun}
+        onBack={() => setActiveRun(null)}
+        onStart={() => setActiveRun((current) => current ? { ...current, started: true } : current)}
+      />
+    );
+  }
+
   return (
     <div className="workflows-panel">
-      <div className="workflows-header">
-        <h2 className="workflows-header-title">Workflows</h2>
-      </div>
-
       <div className="workflows-list">
         {isLoading && <div className="workflows-empty">Loading workflows...</div>}
         {error && <div className="workflows-empty" style={{ color: 'var(--danger)' }}>{error}</div>}
 
         {!isLoading && !error && workflows.length === 0 && (
           <div className="workflows-empty">
-            <div className="workflows-empty-icon">
-              <Bot size={24} />
-            </div>
-            <p>No workflows yet.</p>
+            <div className="workflows-empty-icon"><Bot size={24} /></div>
+            <p>No saved workflows yet.</p>
             <p style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Run an agent task, then click<br />
-              <strong style={{ color: 'var(--text-secondary)' }}>"Save as Workflow"</strong> to record it.
+              Describe and run a task with the agent, then save its<br />
+              recorded steps as a workflow.
             </p>
           </div>
         )}
 
-        {workflows.map((wf) => (
+        {workflows.map((workflow) => (
           <WorkflowCard
-            key={wf.id}
-            workflow={wf}
-            confirmingDelete={confirmingDelete === wf.id}
-            onView={() => onView(wf.id)}
-            onDelete={() => setConfirmingDelete(wf.id)}
-            onConfirmDelete={() => handleDelete(wf.id)}
+            key={workflow.id}
+            workflow={workflow}
+            confirmingDelete={confirmingDelete === workflow.id}
+            onView={() => openWorkflowEditor(workflow.id)}
+            onRun={() => reviewWorkflow(workflow)}
+            onDelete={() => setConfirmingDelete(workflow.id)}
+            onConfirmDelete={() => void handleDelete(workflow.id)}
             onCancelDelete={() => setConfirmingDelete(null)}
           />
         ))}
@@ -68,105 +108,250 @@ export function WorkflowsPanel() {
   );
 }
 
+function WorkflowRunView({
+  activeRun,
+  onBack,
+  onStart,
+}: {
+  activeRun: ActiveRun;
+  onBack: () => void;
+  onStart: () => void;
+}) {
+  const { role, controllerState, hostState, sendData } = useConnectionStore();
+  const {
+    workflowRunState,
+    workflowStepStatuses,
+    currentStepIndex,
+  } = useAgentStore();
+  const { setRightPanelTab } = useUIStore();
+  const [startError, setStartError] = useState<string | null>(null);
+  const [handoffPending, setHandoffPending] = useState(false);
+
+  const runId = activeRun.workflowRunId;
+  const statuses = useMemo(
+    () => workflowStepStatuses.filter((status) => status.workflowRunId === runId),
+    [workflowStepStatuses, runId],
+  );
+  const isConnected = role === 'local'
+    || ['SESSION_ACTIVE', 'AGENT_EXECUTING', 'HUMAN_TAKEOVER'].includes(hostState)
+    || ['SESSION_ACTIVE', 'CONTROLLING_REMOTELY'].includes(controllerState);
+  const hasStarted = activeRun.started;
+  const terminal = hasStarted && (Boolean(startError) || ['completed', 'failed', 'cancelled'].includes(workflowRunState));
+  const isRunning = hasStarted && !terminal && (workflowRunState === 'idle' || workflowRunState === 'running');
+
+  async function startWorkflow() {
+    if (!isConnected) return;
+    setStartError(null);
+    useAgentStore.getState().startNewExecution('workflow', runId, activeRun.workflow.name);
+    onStart();
+
+    const payload = {
+      workflowRunId: runId,
+      workflowId: activeRun.workflow.id,
+      name: activeRun.workflow.name,
+      steps: activeRun.workflow.steps,
+    };
+
+    try {
+      if (controllerState !== 'IDLE' && sendData) {
+        sendData({ type: 'AGENT_WORKFLOW_BATCH', version: '1.0', timestamp: Date.now(), payload }, true);
+      } else if (hostState !== 'IDLE' || role === 'local') {
+        const result = await window.RemoteCtrlAPI?.browser.startWorkflow(payload);
+        if (result && !result.ok) {
+          setStartError(result.error ?? 'Unable to start workflow.');
+          useAgentStore.getState().clearWorkflow();
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStartError(message);
+      useAgentStore.getState().clearWorkflow();
+    }
+  }
+
+  async function continueWithAgent() {
+    setHandoffPending(true);
+    try {
+      if (controllerState !== 'IDLE' && sendData) {
+        sendData({
+          type: 'WORKFLOW_CANCEL',
+          version: '1.0',
+          timestamp: Date.now(),
+          payload: { workflowRunId: runId },
+        }, true);
+      } else {
+        await window.RemoteCtrlAPI?.browser.cancelWorkflow();
+      }
+      // Wait for the run lifecycle event before enabling the next agent
+      // prompt. This avoids a race where the new prompt is rejected because
+      // the deterministic runner is still unwinding its current step.
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        const state = useAgentStore.getState().workflowRunState;
+        if (state !== 'running') break;
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+      }
+    } finally {
+      setRightPanelTab('agent');
+      window.setTimeout(() => window.dispatchEvent(new Event('remotectrl:focus-agent-input')), 0);
+      setHandoffPending(false);
+    }
+  }
+
+  return (
+    <div className="workflows-panel workflow-run-view">
+      <div className="workflow-run-header">
+        <button className="workflow-run-back" onClick={onBack} title="Back to workflows">
+          <ArrowLeft size={14} /> Workflows
+        </button>
+        <span className={`workflow-run-state ${workflowRunState}`}>
+          {hasStarted ? describeRunState(workflowRunState) : 'Ready to run'}
+        </span>
+      </div>
+
+      <div className="workflow-run-content">
+        <section className="workflow-run-summary">
+          <div className="workflow-run-title-row">
+            <div>
+              <h2>{activeRun.workflow.name}</h2>
+              {activeRun.workflow.description && <p>{activeRun.workflow.description}</p>}
+            </div>
+            {activeRun.workflow.source === 'ai_recorded' && (
+              <span className="wf-card-ai-badge" title="Recorded from an AI agent run"><Wand2 size={11} /></span>
+            )}
+          </div>
+          <div className="workflow-run-meta">
+            <span>{activeRun.workflow.steps.length} step{activeRun.workflow.steps.length === 1 ? '' : 's'}</span>
+            {hasStarted && currentStepIndex !== null && <span>Step {Math.min(currentStepIndex + 1, activeRun.workflow.steps.length)} of {activeRun.workflow.steps.length}</span>}
+          </div>
+          {!hasStarted && <p className="workflow-run-help">Check the deterministic steps below, then start the workflow when you are ready.</p>}
+          {startError && <div className="workflow-run-error"><AlertTriangle size={14} /> {startError}</div>}
+        </section>
+
+        <section className="workflow-step-list" aria-label="Workflow steps">
+          {activeRun.workflow.steps.map((step, index) => {
+            const status = statuses.find((item) => item.stepId === step.id);
+            return <WorkflowStepRow key={step.id} step={step} index={index} state={status?.state ?? (hasStarted && index < (currentStepIndex ?? 0) ? 'completed' : 'pending')} error={status?.error} />;
+          })}
+        </section>
+
+        {terminal && (
+          <div className={`workflow-run-terminal ${workflowRunState}`}>
+            {workflowRunState === 'completed' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+            <span>{terminalMessage(workflowRunState)}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="workflow-run-footer">
+        {!hasStarted ? (
+          <button className="workflow-run-primary" disabled={!isConnected} onClick={() => void startWorkflow()}>
+            <Play size={14} /> {isConnected ? 'Run workflow' : 'Connect to run'}
+          </button>
+        ) : isRunning ? (
+          <button className="workflow-run-secondary" disabled={handoffPending} onClick={() => void continueWithAgent()}>
+            {handoffPending ? <Loader2 className="spin" size={14} /> : <Bot size={14} />}
+            {handoffPending ? 'Switching to agent…' : 'Continue with agent'}
+          </button>
+        ) : (
+          <button className="workflow-run-secondary" onClick={onBack}><ArrowLeft size={14} /> Back to workflows</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkflowStepRow({
+  step,
+  index,
+  state,
+  error,
+}: {
+  step: WorkflowStep;
+  index: number;
+  state: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  error?: string;
+}) {
+  const Icon = state === 'running' ? Loader2 : state === 'completed' ? CheckCircle2 : state === 'failed' ? XCircle : state === 'skipped' ? AlertTriangle : Circle;
+  return (
+    <div className={`workflow-step-row ${state}`}>
+      <Icon size={15} className={state === 'running' ? 'spin' : ''} />
+      <div className="workflow-step-copy">
+        <span className="workflow-step-index">{index + 1}</span>
+        <span className="workflow-step-description">{describeWorkflowStep(step)}</span>
+        {error && <span className="workflow-step-error">{error}</span>}
+      </div>
+      {state !== 'pending' && <span className="workflow-step-state">{state}</span>}
+    </div>
+  );
+}
+
 function WorkflowCard({
   workflow,
   confirmingDelete,
   onView,
+  onRun,
   onDelete,
   onConfirmDelete,
   onCancelDelete,
-}: any) {
-  const { role, controllerState, hostState, sendData } = useConnectionStore();
-  const isConnected =
-    role === 'local' ||
-    hostState === 'SESSION_ACTIVE' ||
-    hostState === 'AGENT_EXECUTING' ||
-    hostState === 'HUMAN_TAKEOVER' ||
-    controllerState === 'SESSION_ACTIVE' ||
-    controllerState === 'CONTROLLING_REMOTELY';
-
-  const { setRightPanelTab } = useUIStore();
+}: {
+  workflow: LocalWorkflow;
+  confirmingDelete: boolean;
+  onView: () => void;
+  onRun: () => void;
+  onDelete: () => void;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
+}) {
+  const { role, controllerState, hostState } = useConnectionStore();
+  const isConnected = role === 'local'
+    || ['SESSION_ACTIVE', 'AGENT_EXECUTING', 'HUMAN_TAKEOVER'].includes(hostState)
+    || ['SESSION_ACTIVE', 'CONTROLLING_REMOTELY'].includes(controllerState);
   const isAiRecorded = workflow.source === 'ai_recorded';
-
-  function handleRun() {
-    if (!isConnected) return;
-    const workflowRunId = crypto.randomUUID();
-    useAgentStore.getState().startNewExecution('workflow', workflowRunId, workflow.name);
-
-    const payload = {
-      workflowRunId,
-      workflowId: workflow.id,
-      name: workflow.name,
-      startUrl: workflow.startUrl,
-      steps: workflow.steps,
-    };
-
-    if (controllerState !== 'IDLE' && sendData) {
-      sendData(
-        { type: 'AGENT_WORKFLOW_BATCH', version: '1.0', timestamp: Date.now(), payload },
-        true
-      );
-    } else if (hostState !== 'IDLE' || role === 'local') {
-      window.RemoteCtrlAPI?.browser.startWorkflow(payload);
-    }
-
-    setRightPanelTab('agent');
-  }
 
   return (
     <div className="workflow-card">
       <div className="workflow-card-header">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {isAiRecorded && (
-              <span className="wf-card-ai-badge" title="Auto-recorded from AI agent run">
-                <Wand2 size={10} />
-              </span>
-            )}
+            {isAiRecorded && <span className="wf-card-ai-badge" title="Auto-recorded from AI agent run"><Wand2 size={10} /></span>}
             <h3 className="workflow-card-name">{workflow.name}</h3>
           </div>
         </div>
         <div className="workflow-card-actions">
-          <button className="workflow-card-action-btn" onClick={onView} title="View">
-            <Eye size={14} />
-          </button>
+          <button className="workflow-card-action-btn" onClick={onView} title="View"><Eye size={14} /></button>
           {confirmingDelete ? (
             <div style={{ display: 'flex', gap: 4 }}>
               <button className="workflow-card-action-btn danger" onClick={onConfirmDelete}>✓</button>
               <button className="workflow-card-action-btn" onClick={onCancelDelete}>✗</button>
             </div>
-          ) : (
-            <button className="workflow-card-action-btn" onClick={onDelete} title="Delete">
-              <Trash2 size={14} />
-            </button>
-          )}
+          ) : <button className="workflow-card-action-btn" onClick={onDelete} title="Delete"><Trash2 size={14} /></button>}
         </div>
       </div>
 
-      {workflow.description && (
-        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.4 }}>
-          {workflow.description.length > 80
-            ? workflow.description.slice(0, 80) + '…'
-            : workflow.description}
-        </p>
-      )}
-
+      {workflow.description && <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.4 }}>
+        {workflow.description.length > 80 ? workflow.description.slice(0, 80) + '…' : workflow.description}
+      </p>}
       <div className="workflow-card-meta" style={{ display: 'flex', gap: 10 }}>
         <span>{workflow.steps.length} step{workflow.steps.length === 1 ? '' : 's'}</span>
-        {workflow.startUrl && (
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
-            {workflow.startUrl.replace(/^https?:\/\//, '')}
-          </span>
-        )}
       </div>
-
-      <button
-        className="workflow-card-run-btn"
-        onClick={handleRun}
-        disabled={!isConnected}
-      >
-        <Play size={14} /> {isConnected ? 'Run Workflow' : 'Connect to Run'}
+      <button className="workflow-card-run-btn" onClick={onRun} disabled={!isConnected}>
+        <Play size={14} /> {isConnected ? 'Run workflow' : 'Connect to Run'}
       </button>
     </div>
   );
+}
+
+function describeRunState(state: string): string {
+  if (state === 'completed') return 'Completed';
+  if (state === 'failed') return 'Failed';
+  if (state === 'cancelled') return 'Cancelled';
+  if (state === 'running') return 'Running';
+  return 'Queued';
+}
+
+function terminalMessage(state: string): string {
+  if (state === 'completed') return 'Workflow completed successfully.';
+  if (state === 'cancelled') return 'Workflow stopped. You can continue with the agent from the current browser state.';
+  return 'Workflow stopped after a step failed. Review the error and continue with the agent if needed.';
 }

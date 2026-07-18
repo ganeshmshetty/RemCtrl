@@ -1,0 +1,7 @@
+flowchart LR
+    A[Delegate a browser task] --> B[AI or operator acts]
+    B --> C{Within scope?}
+    C -->|Yes| D[Complete task]
+    C -->|No| E[Block or ask user]
+    E --> B
+    D --> F[Reuse as workflow]

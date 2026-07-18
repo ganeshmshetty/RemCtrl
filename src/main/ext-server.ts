@@ -9,35 +9,35 @@
  * - `broadcastToExtensions(type, payload)`: Transmits real-time agent/workflow logs and execution status updates to connected extension clients.
  * 
  * Mechanics & Relations:
- * - Validates received messages via Zod validation payloads (`ExtSaveWorkflowPayloadSchema`, `ExtStartAutomationPayloadSchema`, `ExtRunWorkflowPayloadSchema`).
- * - Invokes `launchBrowser` in `browser-manager.ts` and initiates agent/workflow processes (`runAgent`, `runWorkflow`) inside the automation runner.
+ * - Accepts validated extension recording imports and persists them as desktop workflows.
+ * - Never executes browser automation: RemoteCtrl's Playwright pipeline remains the sole executor.
  * - Propagates state updates to all opened Electron renderers using `BrowserWindow.getAllWindows()`.
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
-import crypto from 'crypto';
 import { BrowserWindow } from 'electron';
-import { saveWorkflow, listWorkflows, getPreferredProvider, getApiKey } from './storage.js';
-import { runAgent, isAgentRunning, runWorkflow, isWorkflowRunning } from './automation/index.js';
-import { launchBrowser } from './browser-manager.js';
-import type { LocalWorkflow, AgentWorkflowBatchPayload } from '../shared/types.js';
+import { saveWorkflow } from './storage.js';
+import type { LocalWorkflow } from '../shared/types.js';
 import {
   ExtSaveWorkflowPayloadSchema,
-  ExtStartAutomationPayloadSchema,
-  ExtRunWorkflowPayloadSchema,
 } from '../shared/schemas.js';
 
 let wss: WebSocketServer | null = null;
 const clients = new Set<WebSocket>();
-let isExecutionStarting = false;
 
 export function startExtensionBridgeServer(port = 45456): void {
   if (wss) return;
 
   try {
-    wss = new WebSocketServer({ port, host: '127.0.0.1' });
+    const server = new WebSocketServer({ port, host: '127.0.0.1' });
+    wss = server;
 
-    wss.on('connection', (ws, req) => {
+    server.once('error', (err) => {
+      if (wss === server) wss = null;
+      console.error(`[ext-server] Failed to start WebSocket server on port ${port}:`, err);
+    });
+
+    server.on('connection', (ws, req) => {
       const origin = req.headers.origin;
       if (origin && !origin.startsWith('chrome-extension://')) {
         console.warn(`[ext-server] Unauthorized WebSocket connection attempt from origin: ${origin}`);
@@ -64,7 +64,9 @@ export function startExtensionBridgeServer(port = 45456): void {
       });
     });
 
-    console.log(`[ext-server] Chrome Extension bridge listening on ws://127.0.0.1:${port}`);
+    server.once('listening', () => {
+      console.log(`[ext-server] Chrome Extension bridge listening on ws://127.0.0.1:${port}`);
+    });
   } catch (err) {
     console.error('[ext-server] Failed to start WebSocket server:', err);
   }
@@ -101,19 +103,20 @@ async function handleExtensionMessage(ws: WebSocket, msg: { type: string; payloa
       break;
 
     case 'EXT_SAVE_RECORDED_WORKFLOW': {
+      const requestId = typeof msg.payload?.requestId === 'string' ? msg.payload.requestId : undefined;
       const parsed = ExtSaveWorkflowPayloadSchema.safeParse(msg.payload || {});
       if (!parsed.success) {
-        ws.send(JSON.stringify({ type: 'SYNC_ERROR', error: 'Invalid workflow payload' }));
+        ws.send(JSON.stringify({ type: 'SYNC_ERROR', requestId, error: 'Desktop could not validate this recorded workflow.' }));
         break;
       }
       const payload = parsed.data;
       const now = Date.now();
       const newWorkflow: LocalWorkflow = {
-        id: payload.id || crypto.randomUUID(),
-        name: payload.name || `Recorded Workflow ${new Date().toLocaleDateString()}`,
+        id: payload.id,
+        name: payload.name,
         description: payload.description || 'Recorded directly from Chrome Extension',
-        startUrl: payload.startUrl || 'about:blank',
-        steps: Array.isArray(payload.steps) ? payload.steps : [],
+        steps: payload.steps,
+        source: 'chrome_ext',
         createdAt: now,
         updatedAt: now,
       };
@@ -127,145 +130,7 @@ async function handleExtensionMessage(ws: WebSocket, msg: { type: string; payloa
         }
       });
 
-      ws.send(JSON.stringify({ type: 'SYNC_SUCCESS', workflowId: newWorkflow.id }));
-      break;
-    }
-
-    case 'EXT_START_AUTOMATION': {
-      const parsed = ExtStartAutomationPayloadSchema.safeParse(msg.payload || {});
-      if (!parsed.success) {
-        ws.send(JSON.stringify({ type: 'AUTOMATION_ERROR', error: 'Invalid start automation payload.' }));
-        break;
-      }
-      const { url, instruction } = parsed.data;
-
-      if (isExecutionStarting || isWorkflowRunning() || isAgentRunning()) {
-        ws.send(JSON.stringify({ type: 'AUTOMATION_ERROR', error: 'An automation task is already running or starting on the desktop.' }));
-        break;
-      }
-      isExecutionStarting = true;
-
-      const provider = getPreferredProvider();
-      const apiKey = getApiKey(provider);
-
-      if (!apiKey && provider !== 'vertex') {
-        isExecutionStarting = false;
-        ws.send(JSON.stringify({ type: 'AUTOMATION_ERROR', error: `No API key set for provider: ${provider}` }));
-        break;
-      }
-
-      // Launch browser
-      try {
-        await launchBrowser(url || 'about:blank');
-      } catch (err) {
-        isExecutionStarting = false;
-        ws.send(JSON.stringify({
-          type: 'AUTOMATION_ERROR',
-          error: `Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`
-        }));
-        break;
-      }
-      isExecutionStarting = false;
-
-      const commandId = crypto.randomUUID();
-      ws.send(JSON.stringify({ type: 'AUTOMATION_STARTED', commandId }));
-
-      // Run agent asynchronously
-      runAgent(
-        commandId,
-        'act',
-        instruction,
-        apiKey,
-        provider,
-        (status) => {
-          BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send('agent:status', status);
-          });
-          broadcastToExtensions('agent:status', status);
-        },
-        (log) => {
-          BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send('agent:log', log);
-          });
-          broadcastToExtensions('agent:log', log);
-        }
-      ).catch((err) => {
-        console.error('[ext-server] Agent run error:', err);
-      });
-
-      break;
-    }
-
-    case 'EXT_RUN_WORKFLOW': {
-      const parsed = ExtRunWorkflowPayloadSchema.safeParse(msg.payload || {});
-      if (!parsed.success) {
-        ws.send(JSON.stringify({ type: 'RUN_WORKFLOW_ERROR', error: 'Invalid run workflow payload.' }));
-        break;
-      }
-      const { workflowId } = parsed.data;
-
-      if (isExecutionStarting || isWorkflowRunning() || isAgentRunning()) {
-        ws.send(JSON.stringify({ type: 'RUN_WORKFLOW_ERROR', error: 'An automation task is already running or starting on the desktop.' }));
-        break;
-      }
-      isExecutionStarting = true;
-
-      const workflows = listWorkflows();
-      const workflow = workflows.find((w) => w.id === workflowId);
-      if (!workflow) {
-        isExecutionStarting = false;
-        ws.send(JSON.stringify({ type: 'RUN_WORKFLOW_ERROR', error: `Workflow not found with ID: ${workflowId}` }));
-        break;
-      }
-
-      // Launch browser
-      try {
-        await launchBrowser(workflow.startUrl || 'about:blank');
-      } catch (err) {
-        isExecutionStarting = false;
-        ws.send(JSON.stringify({
-          type: 'RUN_WORKFLOW_ERROR',
-          error: `Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`
-        }));
-        break;
-      }
-      isExecutionStarting = false;
-
-      const workflowRunId = crypto.randomUUID();
-      const batch: AgentWorkflowBatchPayload = {
-        workflowRunId,
-        workflowId: workflow.id,
-        name: workflow.name,
-        startUrl: workflow.startUrl,
-        steps: workflow.steps,
-      };
-
-      ws.send(JSON.stringify({ type: 'RUN_WORKFLOW_STARTED', workflowRunId }));
-
-      runWorkflow(
-        batch,
-        (status) => {
-          BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send('workflow:runStatus', status);
-          });
-          broadcastToExtensions('workflow:runStatus', status);
-        },
-        (stepStatus) => {
-          BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send('workflow:stepStatus', stepStatus);
-          });
-          broadcastToExtensions('workflow:stepStatus', stepStatus);
-        },
-        (log) => {
-          BrowserWindow.getAllWindows().forEach((w) => {
-            if (!w.isDestroyed()) w.webContents.send('agent:log', log);
-          });
-          broadcastToExtensions('agent:log', log);
-        }
-      ).catch((err) => {
-        console.error('[ext-server] Workflow run error:', err);
-      });
-
+      ws.send(JSON.stringify({ type: 'SYNC_SUCCESS', requestId: payload.requestId, workflowId: newWorkflow.id }));
       break;
     }
 

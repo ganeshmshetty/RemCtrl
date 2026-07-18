@@ -75,7 +75,8 @@
   // ── Click Capture ─────────────────────────────────────────────────────────────
   document.addEventListener('click', (e) => {
     if (!isRecording) return;
-    const el = e.target;
+    const rawTarget = e.target;
+    const el = rawTarget?.closest?.('button, a, input, select, textarea, [role="button"], [role="link"]') || rawTarget;
     const tag = el?.tagName?.toLowerCase();
     // Skip invisible elements and trivial containers
     if (!tag || ['html', 'body', 'script', 'style'].includes(tag)) return;
@@ -105,10 +106,14 @@
 
     clearTimeout(inputTimer);
     inputTimer = setTimeout(() => {
+      const fieldIdentifier = [el.name, el.id, el.placeholder, el.getAttribute('aria-label'), el.getAttribute('autocomplete')]
+        .filter(Boolean).join(' ');
       const isPassword = el.type === 'password' || el.getAttribute('autocomplete') === 'current-password';
-      const isCreditCard = el.getAttribute('autocomplete')?.includes('cc') || el.getAttribute('name')?.match(/card|cvv|cvc/i);
+      const isCreditCard = el.getAttribute('autocomplete')?.includes('cc') || /card|cvv|cvc/i.test(fieldIdentifier);
+      const isSecret = /otp|one[- ]?time|verification|access.?code|token|secret|api.?key|recovery/i.test(fieldIdentifier);
       const rawVal = el.value || '';
-      const maskedVal = (isPassword || isCreditCard) ? '[MASKED]' : rawVal;
+      const isSensitive = isPassword || isCreditCard || isSecret;
+      const recordedValue = isSensitive ? '[REQUIRES_USER_INPUT]' : rawVal;
 
       send({
         event: 'input',
@@ -121,9 +126,10 @@
           inputType: el.type || null
         },
         raw: {
-          value: maskedVal,
+          value: recordedValue,
           fieldName: el.name || el.id || el.placeholder || el.getAttribute('aria-label') || null,
-          length: rawVal.length
+          length: rawVal.length,
+          sensitive: isSensitive,
         }
       });
     }, 350);

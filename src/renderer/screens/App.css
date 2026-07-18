@@ -1,0 +1,261 @@
+/* ─── App Shell Layout ─── */
+.app-shell {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+
+.top-nav {
+  height: 40px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+  background: var(--bg-surface);
+}
+
+.top-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.app-title {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+}
+
+.top-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.connection-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-overlay);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.connection-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.connection-pill-dot.connected {
+  background: var(--success);
+}
+
+.disconnect-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 8px;
+  transition: color var(--transition);
+}
+.disconnect-btn:hover {
+  color: var(--danger);
+}
+
+.top-nav-mini-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 8px;
+  transition: all 0.15s ease;
+}
+.top-nav-mini-btn:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+.top-nav-mini-btn:focus-visible,
+.top-nav-mini-btn:focus {
+  outline: none;
+}
+
+.top-nav-stop-btn {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 6px;
+  transition: all 0.15s ease;
+}
+.top-nav-stop-btn:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+.top-nav-stop-btn:focus-visible,
+.top-nav-stop-btn:focus {
+  outline: none;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  width: 100%;
+  height: calc(100vh - 40px);
+  overflow: hidden;
+}
+
+/* ─── Native Workspace Refinements ─── */
+.top-nav {
+  height: 46px;
+  padding: 0 14px 0 18px;
+  border-bottom-color: color-mix(in srgb, var(--border) 85%, var(--bg-overlay) 15%);
+  background: color-mix(in srgb, var(--bg-surface) 94%, var(--bg-base) 6%);
+}
+
+.top-nav-left { min-width: 220px; gap: 10px; }
+.platform-macos .top-nav { padding-left: 82px; }
+.top-nav-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 13px; font-weight: 650; letter-spacing: -0.01em; }
+.top-nav-brand-mark { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border) 45%); border-radius: 6px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.top-nav-context { padding-left: 10px; border-left: 1px solid var(--border); color: var(--text-muted); font-size: 12px; }
+.top-nav-right { gap: 7px; }
+
+.session-actions,
+.session-indicator { display: inline-flex; align-items: center; }
+.session-actions { gap: 10px; }
+.session-indicator { gap: 6px; padding-right: 2px; color: var(--text-secondary); font-size: 12px; font-weight: 550; }
+.connection-pill { min-height: 28px; gap: 7px; padding: 4px 9px; border-radius: 7px; background: color-mix(in srgb, var(--bg-overlay) 56%, transparent); font-size: 12px; }
+.connection-pill-idle { opacity: 0.75; }
+.connection-pill-label { color: var(--text-secondary); font-weight: 550; }
+.connection-pill-pin { padding-left: 2px; color: var(--text-primary); font-family: var(--font-mono); font-size: 11px; }
+.connection-pill-dot { width: 7px; height: 7px; box-shadow: none; }
+.connection-pill-dot.connected { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12); }
+
+.top-nav-mini-btn,
+.top-nav-stop-btn { height: 28px; padding: 0 9px; font-size: 12px; }
+.top-nav-mini-btn { border-color: var(--border); color: var(--text-secondary); }
+.top-nav-mini-btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text-primary); }
+.top-nav-stop-btn { margin-left: 0; }
+
+.main-content { height: calc(100vh - 46px); background: color-mix(in srgb, var(--bg-base) 92%, black 8%); }
+.workspace-sidepanel { height: 100%; flex-shrink: 0; }
+
+.browser-panel { min-height: 0; padding: 14px 14px 10px; background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%), var(--bg-base); }
+.browser-stage { container-type: size; flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding-bottom: 116px; box-sizing: border-box; }
+.browser-window {
+  width: min(100%, calc(160cqh - 118px));
+  height: auto;
+  max-height: 100%;
+  margin: 0;
+  border-radius: 10px;
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border) 70%);
+  background: #0c0c0e;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent), 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+.browser-video-container { flex: 0 1 auto; aspect-ratio: 1280 / 800; min-height: 0; background: #09090b; }
+.browser-video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
+.browser-loading { background: rgba(9, 9, 11, 0.76); backdrop-filter: blur(4px); }
+
+.ctrl-toolbar { background: color-mix(in srgb, var(--bg-elevated) 90%, var(--accent) 10%); border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border) 82%); }
+.ctrl-tabs-row { height: 36px; padding: 4px 7px 3px; }
+.ctrl-address-row { height: 38px; padding: 5px 9px; gap: 8px; border-top-color: color-mix(in srgb, var(--border) 80%, transparent); }
+.ctrl-tab { flex: 0 0 160px; width: 160px; height: 27px; min-width: 160px; max-width: 160px; border-color: color-mix(in srgb, var(--accent) 18%, var(--border) 82%); border-radius: 5px 5px 0 0; background: color-mix(in srgb, var(--bg-overlay) 46%, var(--accent) 12%); transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
+.ctrl-tab:hover { border-color: color-mix(in srgb, var(--accent) 32%, var(--border) 68%); background: color-mix(in srgb, var(--bg-overlay) 58%, var(--accent) 18%); }
+.ctrl-tab-active { border-color: color-mix(in srgb, var(--accent) 52%, var(--border) 48%); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--bg-surface) 80%, var(--accent) 20%); box-shadow: inset 0 -2px 0 var(--accent), 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent); }
+.ctrl-tab-new,
+.ctrl-nav-btn { width: 27px; height: 27px; }
+.ctrl-url-input { height: 28px; border-radius: 6px; background: color-mix(in srgb, var(--bg-base) 76%, var(--bg-surface) 24%); }
+.ctrl-address-bar { max-width: none; }
+.browser-panel .chat-input-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(calc(100% - 28px), 760px);
+  margin: 0;
+}
+
+.drag-handle-vertical { width: 5px; background: var(--bg-base); }
+.drag-handle-vertical::after { height: 32px; background: var(--accent); }
+.drag-handle-vertical:hover,
+.drag-handle-vertical:active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+.right-panel { border-left: 0; background: color-mix(in srgb, var(--bg-surface) 92%, black 8%); }
+.right-panel-tabs-container { min-height: 52px; margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.right-panel-tabs { position: absolute; left: 50%; width: 184px; height: 30px; margin-left: 0; transform: translateX(-50%); border-radius: 7px; background: color-mix(in srgb, var(--bg-overlay) 60%, transparent); }
+.right-panel-tab { border-radius: 5px; font-size: 11px; }
+.right-panel-tab.active { color: var(--text-primary); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.26); }
+.right-panel-menu-btn { width: 30px; height: 30px; border-radius: 6px; }
+.right-panel-tabs-container > div:last-child { margin-left: auto; }
+.right-panel-content { background: var(--bg-surface); }
+
+.workflows-create-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text-primary); font-size: 12px; font-weight: 600; }
+.workflows-create-btn:hover { background: var(--accent); color: white; }
+.workflows-empty .workflows-create-btn { margin-top: 14px; }
+
+/* Radix Tooltips */
+.top-nav-tooltip {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 550;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  animation: select-in 50ms cubic-bezier(0, 0, 0.2, 1);
+  z-index: 1000;
+}
+
+.top-nav-tooltip-arrow {
+  fill: var(--border);
+}
+
+/* Light desktop workspace: keep the browser frame and application chrome
+   distinct without carrying the dark theme's black blends into light mode. */
+:root.light-theme .main-content {
+  background: #eef1f6;
+}
+:root.light-theme .browser-panel {
+  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 42%), var(--bg-base);
+}
+:root.light-theme .browser-window {
+  background: var(--bg-surface);
+  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border) 72%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 9%, transparent), 0 18px 40px rgba(15, 23, 42, 0.14);
+}
+:root.light-theme .ctrl-toolbar {
+  background: color-mix(in srgb, var(--bg-surface) 94%, var(--bg-base) 6%);
+}
+:root.light-theme .right-panel {
+  background: color-mix(in srgb, var(--bg-surface) 92%, var(--bg-base) 8%);
+}
+:root.light-theme .right-panel-tabs {
+  background: color-mix(in srgb, var(--bg-overlay) 72%, var(--bg-surface) 28%);
+}
+:root.light-theme .right-panel-tab.active {
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
+}
+:root.light-theme .chat-input-bar {
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.13);
+}

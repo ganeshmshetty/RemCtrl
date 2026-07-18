@@ -8,21 +8,39 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Zap, Play, Radio, Plus, FolderPlus, ArrowRight } from 'lucide-react';
+import { Zap, Play, Radio, FolderPlus, ArrowRight, MonitorPlay, ListChecks, Link2, ShieldCheck, LockKeyhole, Sparkles, MousePointer2 } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useWorkflowStore } from '../stores/useWorkflowStore';
-import { useAgentStore } from '../stores/useAgentStore';
 import { useUIStore } from '../stores/useUIStore';
+import { useAgentStore } from '../stores/useAgentStore';
 import type { LocalWorkflow } from '../../shared/types';
+import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from '@/components/ui/input-otp';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import './ConnectionPlaceholder.css';
 
 export function ConnectionPlaceholder() {
+  const [selectedMode, setSelectedMode] = useState<'local' | 'workflows' | 'remote'>('local');
+  const [remoteAction, setRemoteAction] = useState<'host' | 'join'>('host');
   const [pinInput, setPinInput] = useState('');
-  const { setRole } = useConnectionStore();
+  const [sessionIntent, setSessionIntent] = useState('');
+  const [trustedMode, setTrustedMode] = useState(false);
+  const [workflowTask, setWorkflowTask] = useState('');
+  const { setRole, setTrustedHost } = useConnectionStore();
   const { workflows, loadWorkflows } = useWorkflowStore();
-  const { setRightPanelTab, openWorkflowEditor } = useUIStore();
+  const { setRightPanelTab, openWorkflowRun } = useUIStore();
 
   useEffect(() => {
     loadWorkflows();
+  }, [loadWorkflows]);
+
+  useEffect(() => {
+    return window.RemoteCtrlAPI?.on.workflowCreated(() => {
+      void loadWorkflows();
+    });
   }, [loadWorkflows]);
 
   function handleLocal() {
@@ -31,8 +49,41 @@ export function ConnectionPlaceholder() {
     window.RemoteCtrlAPI?.app.showMiniWindow(true);
   }
 
-  function handleCreateWorkflow() {
-    openWorkflowEditor();
+  async function handleRecordWorkflow() {
+    const description = workflowTask.trim();
+    if (description.length < 8) return;
+    setRole('local');
+    const recording = await window.RemoteCtrlAPI?.browser.startWorkflowRecording({ initialInstruction: description });
+    if (!recording?.ok || !recording.state) {
+      alert(recording?.error ?? 'Unable to start workflow recording.');
+      return;
+    }
+    useAgentStore.getState().setRecordingState({
+      recordingState: 'recording',
+      recordingSessionId: recording.state.id,
+      recordingTask: recording.state.initialInstruction,
+      recordingStepCount: recording.state.capturedStepCount,
+      recordingError: null,
+    });
+    try {
+      await window.RemoteCtrlAPI?.browser.launchRecording();
+      const commandId = crypto.randomUUID();
+      useAgentStore.getState().startNewExecution('agent', commandId, description);
+      const result = await window.RemoteCtrlAPI?.browser.startAgent({
+        commandId,
+        action: 'act',
+        instruction: description,
+        executionMode: 'local',
+        recordingSessionId: recording.state.id,
+      });
+      if (!result?.ok) throw new Error(result?.error ?? 'Unable to start recording agent.');
+      setRightPanelTab('agent');
+      setWorkflowTask('');
+    } catch (error) {
+      await window.RemoteCtrlAPI?.browser.discardWorkflowRecording();
+      useAgentStore.getState().clearRecordingState();
+      alert(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function handleQuickRunWorkflow(workflow: LocalWorkflow) {
@@ -47,175 +98,138 @@ export function ConnectionPlaceholder() {
 
     const workflowRunId = crypto.randomUUID();
     useAgentStore.getState().startNewExecution('workflow', workflowRunId, workflow.name);
+    openWorkflowRun(workflow, workflowRunId);
 
     try {
       const res = await window.RemoteCtrlAPI?.browser.startWorkflow({
         workflowRunId,
         workflowId: workflow.id,
         name: workflow.name,
-        startUrl: workflow.startUrl,
         steps: workflow.steps,
       });
       if (res && res.ok) {
-        setRightPanelTab('agent');
+        setRightPanelTab('workflows');
       } else {
+        useUIStore.getState().clearWorkflowRun();
         alert(`Failed to start workflow: ${res?.error || 'Unknown error'}`);
       }
     } catch (err) {
+      useUIStore.getState().clearWorkflowRun();
       alert(`Failed to start workflow: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   function handleHost() {
     setRole('host');
-    window.RemoteCtrlAPI?.host.start();
+    setTrustedHost(trustedMode);
+    window.RemoteCtrlAPI?.host.start({ trusted: trustedMode });
   }
 
   function handleJoin(e: React.FormEvent) {
     e.preventDefault();
     const cleaned = pinInput.replace(/\D/g, '');
-    if (cleaned.length === 9) {
+    if (cleaned.length === 9 && sessionIntent.trim().length >= 8) {
       setRole('controller');
-      window.RemoteCtrlAPI?.controller.connect(cleaned);
+      window.RemoteCtrlAPI?.controller.connect(cleaned, sessionIntent.trim());
     }
   }
 
   return (
-    <div className="connection-placeholder" style={{ maxWidth: '680px' }}>
-      {/* Top Hero Section */}
-      <div className="cp-icon">
-        <Zap size={36} strokeWidth={1.75} color="var(--accent)" />
-      </div>
-
+    <div className="connection-placeholder">
       <h2 className="cp-title">Start Automating</h2>
       <p className="cp-subtitle">
-        Run AI automation locally on your machine or execute saved workflows.
+        Choose how you want to work. You can change modes at any time.
       </p>
 
-      <button
-        className="btn btn-primary glow-accent"
-        style={{ width: '100%', maxWidth: '380px', padding: '12px 20px', fontSize: '15px', fontWeight: 600, marginBottom: '32px' }}
-        onClick={handleLocal}
-      >
-        Start Local Session
-      </button>
+      <div className="cp-mode-picker" aria-label="Choose a session mode">
+        <Button type="button" variant="outline" className={`cp-mode-option ${selectedMode === 'local' ? 'is-selected' : ''}`} aria-pressed={selectedMode === 'local'} onClick={() => setSelectedMode('local')}>
+          <MonitorPlay size={18} /><span><strong>Local</strong><small>Use this computer</small></span>
+        </Button>
+        <Button type="button" variant="outline" className={`cp-mode-option ${selectedMode === 'workflows' ? 'is-selected' : ''}`} aria-pressed={selectedMode === 'workflows'} onClick={() => setSelectedMode('workflows')}>
+          <ListChecks size={18} /><span><strong>Workflows</strong><small>Run repeatable tasks</small></span>
+        </Button>
+        <Button type="button" variant="outline" className={`cp-mode-option ${selectedMode === 'remote' ? 'is-selected' : ''}`} aria-pressed={selectedMode === 'remote'} onClick={() => setSelectedMode('remote')}>
+          <Link2 size={18} /><span><strong>Remote</strong><small>Share or control a session</small></span>
+        </Button>
+      </div>
 
-      {/* Workflows Section */}
-      <div style={{ width: '100%', marginBottom: '32px', textAlign: 'left' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
-            SAVED WORKFLOWS ({workflows.length})
-          </div>
-          <button
-            className="btn btn-sm btn-outline"
-            style={{ padding: '4px 10px', fontSize: '12px', gap: '6px', color: 'var(--text-primary)' }}
-            onClick={handleCreateWorkflow}
-          >
-            <Plus size={13} /> New Workflow
-          </button>
-        </div>
+      {selectedMode === 'local' && (
+        <Card className="cp-mode-panel">
+          <CardContent className="cp-panel-content cp-local-panel">
+            <div className="cp-local-copy">
+              <div className="cp-panel-eyebrow"><MonitorPlay size={14} /> Local automation</div>
+              <h3>Automate from your authenticated browser</h3>
+              <p>Let the agent complete a task in your existing browser session. You can take control at any time.</p>
+              <Button size="lg" className="cp-primary-action" onClick={handleLocal}><Zap size={17} /> Start local session</Button>
+            </div>
+            <div className="cp-local-guide" aria-label="What happens in a local session">
+              <div><LockKeyhole size={17} /><span><strong>Your session stays private</strong><small>Use the browser profile you already trust.</small></span></div>
+              <div><Sparkles size={17} /><span><strong>Give the agent a task</strong><small>Watch semantic, step-by-step activity as it works.</small></span></div>
+              <div><MousePointer2 size={17} /><span><strong>Take control whenever needed</strong><small>Pause the agent and interact directly.</small></span></div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-        {workflows.length > 0 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
-            {workflows.slice(0, 6).map((wf) => (
-              <div
-                key={wf.id}
-                style={{
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)',
-                  padding: '14px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  transition: 'border-color 0.15s ease',
-                }}
-              >
-                <div>
-                  <div className="truncate" style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', marginBottom: '4px' }}>
-                    {wf.name}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                    {wf.steps.length} step{wf.steps.length === 1 ? '' : 's'}
+      {selectedMode === 'workflows' && (
+        <Card className="cp-mode-panel">
+          <CardContent className="cp-panel-content">
+            <div className="cp-workflow-layout">
+              <section className="cp-workflow-create">
+                <div className="cp-panel-heading"><div><h3>Build a workflow</h3><p>Describe a task once. The agent records and validates a reusable workflow.</p></div></div>
+                <div className="cp-workflow-recorder">
+                  <Textarea
+                    className="cp-workflow-task-input"
+                    value={workflowTask}
+                    onChange={(event) => setWorkflowTask(event.target.value)}
+                    placeholder="Describe a task to record"
+                    rows={2}
+                  />
+                  <div className="cp-workflow-composer-footer">
+                    <span className="cp-workflow-composer-hint">The agent will capture each browser step.</span>
+                    <Button size="sm" className="cp-record-workflow" onClick={() => void handleRecordWorkflow()} disabled={workflowTask.trim().length < 8}>Record workflow</Button>
                   </div>
                 </div>
-                <button
-                  className="btn btn-sm btn-ghost"
-                  style={{ alignSelf: 'flex-start', color: 'var(--accent)', padding: '4px 8px', gap: '4px', background: 'rgba(99,102,241,0.08)' }}
-                  onClick={() => handleQuickRunWorkflow(wf)}
-                >
-                  <Play size={11} /> Run Now
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div
-            style={{
-              background: 'var(--bg-secondary)',
-              border: '1px dashed var(--border)',
-              borderRadius: 'var(--radius)',
-              padding: '24px',
-              textAlign: 'center',
-              color: 'var(--text-secondary)',
-              fontSize: '13px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <FolderPlus size={24} color="var(--text-muted)" />
-            <span>No saved workflows yet</span>
-            <button
-              className="btn btn-sm btn-ghost"
-              style={{ color: 'var(--accent)', marginTop: '4px' }}
-              onClick={handleCreateWorkflow}
-            >
-              + Create your first workflow
-            </button>
-          </div>
-        )}
-      </div>
+              </section>
+              <section className="cp-workflow-library">
+                <div className="cp-panel-heading"><div><h3>Saved workflows</h3><p>Preview and approve a workflow before every run.</p></div><span>{workflows.length} saved</span></div>
+                {workflows.length > 0 ? (
+                  <div className="cp-workflow-list">
+                    {workflows.slice(0, 6).map((wf) => (
+                      <Card key={wf.id} className="cp-workflow-card"><CardContent className="cp-workflow-card-content"><div><div className="truncate cp-workflow-name">{wf.name}</div><div className="cp-workflow-meta">{wf.steps.length} step{wf.steps.length === 1 ? '' : 's'}</div></div><Button size="sm" variant="ghost" className="cp-run-workflow" onClick={() => handleQuickRunWorkflow(wf)}><Play size={13} /> Run</Button></CardContent></Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="cp-empty-workflows"><FolderPlus size={22} /><strong>No saved workflows</strong><span>Describe a task to record your first one.</span></div>
+                )}
+              </section>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Remote Control Section */}
-      <div className="cp-divider" style={{ margin: '12px 0 20px' }}>
-        <div className="cp-divider-line"></div>
-        <span className="cp-divider-text">Remote Control</span>
-        <div className="cp-divider-line"></div>
-      </div>
-
-      <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
-        <button
-          className="btn btn-outline"
-          style={{ flex: '1 1 240px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
-          onClick={handleHost}
-        >
-          <Radio size={15} /> Host browser session
-        </button>
-
-        <form onSubmit={handleJoin} className="cp-pin-form" style={{ flex: '1 1 240px' }}>
-          <input
-            type="text"
-            className="cp-pin-input"
-            placeholder="PIN (9 digits)"
-            value={pinInput}
-            maxLength={9}
-            onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
-            style={{ flex: 1, minWidth: 0 }}
-          />
-          <button
-            type="submit"
-            className={`btn cp-join-btn ${pinInput.length === 9 ? 'btn-primary' : 'btn-ghost'}`}
-            disabled={pinInput.length !== 9}
-            style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            Join <ArrowRight size={14} />
-          </button>
-        </form>
-      </div>
+      {selectedMode === 'remote' && (
+        <Card className="cp-mode-panel">
+          <CardContent className="cp-panel-content">
+            <div className="cp-remote-layout">
+              <aside className="cp-remote-nav">
+                <div><h3>Remote access</h3><p>Choose how you want to participate.</p></div>
+                <div className="cp-remote-actions">
+                  <Button type="button" variant="outline" className={`cp-remote-choice ${remoteAction === 'host' ? 'is-selected' : ''}`} onClick={() => setRemoteAction('host')}><Radio size={16} /> Host a session</Button>
+                  <Button type="button" variant="outline" className={`cp-remote-choice ${remoteAction === 'join' ? 'is-selected' : ''}`} onClick={() => setRemoteAction('join')}><Link2 size={16} /> Connect with PIN</Button>
+                </div>
+              </aside>
+              <section className="cp-remote-config">
+                {remoteAction === 'host' ? (
+                  <div className="cp-remote-detail"><div><h4>Share this browser</h4><p>Approve the controller and their stated task before the session starts.</p></div><label className="cp-trusted-toggle"><Switch checked={trustedMode} onCheckedChange={setTrustedMode} aria-label="Enable trusted controller mode" className="data-[state=checked]:bg-[var(--accent)]" /><span><strong>Trusted controller</strong><small>Remote actions run without scope gates</small></span></label><Button className="cp-primary-action" onClick={handleHost}>Host browser session <ArrowRight size={15} /></Button></div>
+                ) : (
+                  <form onSubmit={handleJoin} className="cp-pin-form"><div><h4>Connect to a host</h4><p>Enter the host PIN and explain the task you want to complete.</p></div><InputOTP maxLength={9} value={pinInput} onChange={setPinInput}><InputOTPGroup><InputOTPSlot index={0} /><InputOTPSlot index={1} /><InputOTPSlot index={2} /></InputOTPGroup><InputOTPSeparator /><InputOTPGroup><InputOTPSlot index={3} /><InputOTPSlot index={4} /><InputOTPSlot index={5} /></InputOTPGroup><InputOTPSeparator /><InputOTPGroup><InputOTPSlot index={6} /><InputOTPSlot index={7} /><InputOTPSlot index={8} /></InputOTPGroup></InputOTP><Textarea value={sessionIntent} onChange={(event) => setSessionIntent(event.target.value)} placeholder="Describe what you want to do in this session" rows={3} className="cp-intent-input" /><Button type="submit" className="w-full" variant={pinInput.length === 9 ? 'default' : 'secondary'} disabled={pinInput.length !== 9 || sessionIntent.trim().length < 8}>Request connection <ArrowRight size={14} className="ml-2" /></Button></form>
+                )}
+              </section>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
-

@@ -13,7 +13,10 @@ import { ChevronLeft, ChevronRight, RotateCw, X, Plus, Loader2, Copy, Check } fr
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useControllerWebRTC, useHostWebRTC } from '../hooks/useWebRTC';
+import { ChatInputBar } from './ChatInputBar';
 import type { TabInfo, AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, AgentCheckpointPayload } from '../../shared/types';
+import * as ContextMenu from '@radix-ui/react-context-menu';
+import './BrowserPanel.css';
 
 function useLocalScreencast(isLocal: boolean) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -56,13 +59,21 @@ function useLocalScreencast(isLocal: boolean) {
 }
 
 export function BrowserPanel() {
-  const { role, controllerState, hostState, error, pin, pendingControllerId } = useConnectionStore();
-  const { isTakeoverActive } = useAgentStore();
+  const { role, controllerState, hostState, error, pin, pendingControllerId, pendingControllerIntent, pendingTakeover, setPendingTakeover } = useConnectionStore();
+  const { isTakeoverActive, recordingState } = useAgentStore();
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [urlInput, setUrlInput] = useState('');
   const [hasCopiedPin, setCopiedPin] = useState(false);
 
   const isLocal = role === 'local';
+  const isRecordingLocked = recordingState === 'recording' || recordingState === 'saving';
+
+  useEffect(() => {
+    if (isRecordingLocked && isTakeoverActive) {
+      useAgentStore.getState().setTakeoverActive(false);
+      void window.RemoteCtrlAPI?.browser.setTakeoverActive(false);
+    }
+  }, [isRecordingLocked, isTakeoverActive]);
 
   const isConnected = 
     isLocal ||
@@ -80,12 +91,13 @@ export function BrowserPanel() {
   const isHost = hostState !== 'IDLE' && hostState !== 'REGISTERING_PIN' && hostState !== 'WAITING_FOR_CONTROLLER' && hostState !== 'AWAITING_HOST_APPROVAL';
   const isController = controllerState !== 'IDLE';
 
+  const [showHostStream, setShowHostStream] = useState(false);
   const hostRTC = useHostWebRTC(isConnected && isHost);
   const ctrlRTC = useControllerWebRTC(isConnected && isController);
-  const localCanvasRef = useLocalScreencast(isConnected && isLocal);
+  const localCanvasRef = useLocalScreencast((isConnected && isLocal) || (isHost && showHostStream));
 
-  const videoRef = isHost ? hostRTC.videoRef : ctrlRTC.videoRef;
-  const hostSendData = useCallback((msg: any) => {
+  const canvasRef = isController ? ctrlRTC.canvasRef : localCanvasRef;
+  const hostSendData = useCallback((msg: any, _reliable = true) => {
     if (msg.type === 'BROWSER_ACTION') {
       const { action, url, tabId } = msg.payload;
       if (action === 'navigate') window.RemoteCtrlAPI?.browser.navigate(url);
@@ -106,8 +118,8 @@ export function BrowserPanel() {
       } else {
         window.RemoteCtrlAPI?.browser.startAgent(msg.payload);
       }
-    } else if (msg.type === 'AGENT_WORKFLOW_BATCH') {
-      window.RemoteCtrlAPI?.browser.startWorkflow(msg.payload);
+      } else if (msg.type === 'AGENT_WORKFLOW_BATCH') {
+        window.RemoteCtrlAPI?.browser.startWorkflow(msg.payload);
     }
   }, []);
   const sendData = (isHost || isLocal) ? hostSendData : ctrlRTC.sendData;
@@ -156,6 +168,10 @@ export function BrowserPanel() {
         store.handleAgentCheckpoint(msg.payload as AgentCheckpointPayload);
       } else if (msg.type === 'TAB_LIST') {
         setTabs(msg.payload as TabInfo[]);
+      } else if (msg.type === 'TAKEOVER_DECISION') {
+        const decision = msg.payload as { approved?: boolean; active?: boolean };
+        if (decision.approved) store.setTakeoverActive(Boolean(decision.active));
+        else store.appendMessage({ id: `takeover-rejected-${Date.now()}`, sender: 'agent', type: 'warn', text: 'The host declined the takeover request.', timestamp: Date.now() });
       }
     });
 
@@ -165,6 +181,7 @@ export function BrowserPanel() {
   }, [isHost, isLocal, ctrlRTC.onMessage]);
 
   function handleBrowserAction(action: 'goBack' | 'goForward' | 'reload' | 'navigate' | 'closeTab' | 'newTab', tabId?: string) {
+    if (isRecordingLocked) return;
     sendData({
       type: 'BROWSER_ACTION',
       version: '1.0',
@@ -173,7 +190,17 @@ export function BrowserPanel() {
     }, true);
   }
 
+  async function handleTakeoverDecision(approved: boolean) {
+    setPendingTakeover(false);
+    if (approved) {
+      useAgentStore.getState().setTakeoverActive(true);
+      await window.RemoteCtrlAPI?.browser.setTakeoverActive(true);
+    }
+    hostRTC.sendData({ type: 'TAKEOVER_DECISION', version: '1.0', timestamp: Date.now(), payload: { approved, active: approved } });
+  }
+
   function handleSwitchTab(tabId: string) {
+    if (isRecordingLocked) return;
     sendData({
       type: 'SWITCH_TAB',
       version: '1.0',
@@ -183,26 +210,14 @@ export function BrowserPanel() {
   }
 
   const getCoords = (clientX: number, clientY: number) => {
-    const el = isLocal ? localCanvasRef.current : videoRef.current;
+    const el = canvasRef.current;
     if (!el) return { xPercent: 0, yPercent: 0 };
     const rect = el.getBoundingClientRect();
-    const isUninitCanvas = isLocal && (el as HTMLCanvasElement).width === 300 && (el as HTMLCanvasElement).height === 150;
-    const nativeW = isLocal
-      ? (isUninitCanvas ? 1280 : (el as HTMLCanvasElement).width || 1280)
-      : (el as HTMLVideoElement).videoWidth || 1280;
-    const nativeH = isLocal
-      ? (isUninitCanvas ? 800 : (el as HTMLCanvasElement).height || 800)
-      : (el as HTMLVideoElement).videoHeight || 800;
-    const scale = Math.min(rect.width / nativeW, rect.height / nativeH);
-    const renderedW = nativeW * scale;
-    const renderedH = nativeH * scale;
-    const offsetX = (rect.width - renderedW) / 2;
-    const offsetY = (rect.height - renderedH) / 2;
-    const relX = clientX - rect.left - offsetX;
-    const relY = clientY - rect.top - offsetY;
+    const relX = clientX - rect.left;
+    const relY = clientY - rect.top;
     return {
-      xPercent: Math.max(0, Math.min(1, relX / renderedW)),
-      yPercent: Math.max(0, Math.min(1, relY / renderedH)),
+      xPercent: Math.max(0, Math.min(1, relX / rect.width)),
+      yPercent: Math.max(0, Math.min(1, relY / rect.height)),
     };
   };
 
@@ -269,8 +284,8 @@ export function BrowserPanel() {
 
 
   function handleApprove() {
-    if (pendingControllerId) {
-      window.RemoteCtrlAPI?.host.approveController(pendingControllerId);
+    if (pendingControllerId && pendingControllerIntent) {
+      window.RemoteCtrlAPI?.host.approveController(pendingControllerId, pendingControllerIntent);
     }
   }
 
@@ -299,28 +314,44 @@ export function BrowserPanel() {
 
   return (
     <div className="browser-panel">
-      {/* Browser Nav / Tabs */}
-      {isConnected && tabs.length > 0 && (
+      <div className="browser-stage">
+        <div className={`browser-window ${isTakeoverActive ? 'takeover-active' : ''} ${isRecordingLocked ? 'recording-locked' : ''}`}>
+        {/* Browser Nav / Tabs */}
+        {isConnected && tabs.length > 0 && (
         <div className="ctrl-toolbar">
           <div className="ctrl-tabs-row">
             <div className="ctrl-tabs">
               {tabs.map((tab) => (
-                <div key={tab.id} className={`ctrl-tab ${tab.active ? 'ctrl-tab-active' : ''}`} onClick={() => handleSwitchTab(tab.id)}>
-                  <span className="ctrl-tab-title truncate">{tab.title}</span>
-                  <button className="ctrl-tab-close" onClick={(e) => { e.stopPropagation(); handleBrowserAction('closeTab', tab.id); }}><X size={10} /></button>
-                </div>
+                <ContextMenu.Root key={tab.id}>
+                  <ContextMenu.Trigger asChild>
+                    <div className={`ctrl-tab ${tab.active ? 'ctrl-tab-active' : ''}`} onClick={() => handleSwitchTab(tab.id)} aria-disabled={isRecordingLocked}>
+                      <span className="ctrl-tab-title truncate">{tab.title}</span>
+                      <button className="ctrl-tab-close" disabled={isRecordingLocked} onClick={(e) => { e.stopPropagation(); handleBrowserAction('closeTab', tab.id); }}><X size={10} /></button>
+                    </div>
+                  </ContextMenu.Trigger>
+                  <ContextMenu.Portal>
+                    <ContextMenu.Content className="context-menu-content">
+                      <ContextMenu.Item className="context-menu-item" onClick={() => handleBrowserAction('reload')}>
+                        Reload Tab
+                      </ContextMenu.Item>
+                      <ContextMenu.Item className="context-menu-item" onClick={() => handleBrowserAction('closeTab', tab.id)}>
+                        Close Tab
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Portal>
+                </ContextMenu.Root>
               ))}
-              <button className="ctrl-tab-new" onClick={() => handleBrowserAction('newTab')}><Plus size={14} /></button>
+              <button className="ctrl-tab-new" disabled={isRecordingLocked} onClick={() => handleBrowserAction('newTab')}><Plus size={14} /></button>
             </div>
           </div>
           <div className="ctrl-address-row">
             <div className="ctrl-nav-btns">
-              <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('goBack')}><ChevronLeft size={14} /></button>
-              <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('goForward')}><ChevronRight size={14} /></button>
-              <button className="ctrl-nav-btn" onClick={() => handleBrowserAction('reload')}><RotateCw size={12} /></button>
+              <button className="ctrl-nav-btn" disabled={isRecordingLocked} onClick={() => handleBrowserAction('goBack')}><ChevronLeft size={14} /></button>
+              <button className="ctrl-nav-btn" disabled={isRecordingLocked} onClick={() => handleBrowserAction('goForward')}><ChevronRight size={14} /></button>
+              <button className="ctrl-nav-btn" disabled={isRecordingLocked} onClick={() => handleBrowserAction('reload')}><RotateCw size={12} /></button>
             </div>
             <form className="ctrl-address-bar" onSubmit={(e) => { e.preventDefault(); handleBrowserAction('navigate'); }}>
-              <input type="text" value={urlInput} onChange={e => setUrlInput(e.target.value)} className="ctrl-url-input" />
+              <input type="text" disabled={isRecordingLocked} value={urlInput} onChange={e => setUrlInput(e.target.value)} className="ctrl-url-input" />
             </form>
           </div>
         </div>
@@ -382,6 +413,9 @@ export function BrowserPanel() {
                 <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                   {pendingControllerId}
                 </div>
+                <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+                  <strong>Requested task:</strong> {pendingControllerIntent || 'No intent supplied'}
+                </div>
                 <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
                   <button className="btn btn-danger" onClick={handleReject}>Reject</button>
                   <button className="btn btn-primary" onClick={handleApprove}>Approve</button>
@@ -396,10 +430,29 @@ export function BrowserPanel() {
           </div>
         ) : isConnected ? (
           <>
-            {isLocal ? (
-              <canvas ref={localCanvasRef} className="browser-video" />
-            ) : (
-              <video ref={videoRef} className="browser-video" autoPlay muted playsInline />
+            {(isLocal || isController || showHostStream) && (
+              <canvas ref={canvasRef} className="browser-video" />
+            )}
+            {isHost && !showHostStream && (
+              <div className="browser-loading" style={{ flexDirection: 'column' }}>
+                <div style={{ marginBottom: 16 }}>Screen sharing is active.</div>
+                <button className="btn btn-primary" onClick={() => setShowHostStream(true)}>Preview Stream</button>
+              </div>
+            )}
+            {isHost && showHostStream && (
+              <button className="btn btn-ghost" style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, background: 'var(--bg-overlay)', backdropFilter: 'blur(8px)' }} onClick={() => setShowHostStream(false)}>
+                Hide Stream
+              </button>
+            )}
+            {isHost && pendingTakeover && !isRecordingLocked && (
+              <div className="browser-loading" style={{ zIndex: 12, background: 'rgba(10, 10, 15, .88)', gap: 12 }}>
+                <div style={{ fontWeight: 600 }}>Controller requests browser takeover</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', textAlign: 'center', maxWidth: 300 }}>Approve to pause automation and allow direct remote input. You can resume by ending takeover.</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-ghost" onClick={() => void handleTakeoverDecision(false)}>Reject</button>
+                  <button className="btn btn-primary" onClick={() => void handleTakeoverDecision(true)}>Approve takeover</button>
+                </div>
+              </div>
             )}
             {!isLocal && rtcStatus !== 'streaming' && (
               <div className="browser-loading">
@@ -440,7 +493,9 @@ export function BrowserPanel() {
           </div>
         )}
       </div>
+      </div>
+      </div>
+      <ChatInputBar />
     </div>
   );
 }
-

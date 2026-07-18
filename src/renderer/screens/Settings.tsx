@@ -1,20 +1,51 @@
-/**
- * @file Settings.tsx
- * @description Settings configuration modal component for the application frontend.
- * Provides tabbed controls for AI Models (API keys, active providers), Browser connection options (isolated profile dirs, persistence, headless mode), and Appearance (theme).
- * Utilizes Zustand stores (useSettingsStore, useUIStore) to load/save settings locally and manage modal visibility.
- * Interacts extensively with the Electron main process via window.RemoteCtrlAPI commands to query/set global shortcuts, available models, browser profiles, and connection modes.
- * Key exports: Settings (function component).
- */
-
-import { useState, useEffect } from 'react';
-
-import { X, Server, Cpu, RefreshCw, Eye, EyeOff, Palette, Globe, Sparkles } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Globe2,
+  MonitorCog,
+  Plus,
+  RefreshCw,
+  Server,
+  Settings2,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useSettingsStore } from '../stores/useWorkflowStore';
 import { useUIStore } from '../stores/useUIStore';
 import type { ApiProvider, BrowserMode } from '../../shared/types';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Dialog, DialogClose, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import './Settings.css';
+
+type SettingsTab = 'general' | 'ai' | 'browser' | 'connection';
+
+const TAB_DETAILS: Record<SettingsTab, { label: string; description: string; icon: typeof Settings2 }> = {
+  general: { label: 'General', description: 'Appearance and app controls', icon: Settings2 },
+  ai: { label: 'AI', description: 'Provider, model, and credentials', icon: Bot },
+  browser: { label: 'Browser', description: 'Automation and profiles', icon: MonitorCog },
+  connection: { label: 'Connection', description: 'Remote session signaling', icon: Globe2 },
+};
+
+const PROVIDER_LABELS: Record<ApiProvider, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Google Gemini',
+  vertex: 'Google Vertex AI',
+  groq: 'Groq',
+  deepseek: 'DeepSeek',
+  nebius: 'Nebius',
+  openrouter: 'OpenRouter',
+};
 
 export function Settings() {
+  const { isSettingsOpen, closeSettings } = useUIStore();
   const {
     preferredProvider,
     preferredModel,
@@ -45,824 +76,388 @@ export function Settings() {
     setTheme,
   } = useSettingsStore();
 
-  const [activeTab, setActiveTab] = useState<'ai' | 'browser' | 'appearance'>('ai');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [apiInput, setApiInput] = useState('');
   const [signalingInput, setSignalingInput] = useState('');
-  const [browserMode, setBrowserMode] = useState('internal');
+  const [browserMode, setBrowserMode] = useState<BrowserMode>('internal');
   const [showKey, setShowKey] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
   const [shortcutInput, setShortcutInput] = useState('');
   const [newProfileInput, setNewProfileInput] = useState('');
-
   const [cachedModels, setCachedModels] = useState<Record<string, string[]>>({});
-  const [hasFetchedApi, setHasFetchedApi] = useState<Record<string, boolean>>({});
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModelInput, setCustomModelInput] = useState('');
 
   useEffect(() => {
-    loadSettings().then(() => {
-      setSignalingInput(useSettingsStore.getState().signalingUrl);
-    });
+    void loadSettings().then(() => setSignalingInput(useSettingsStore.getState().signalingUrl));
     window.RemoteCtrlAPI?.settings.getBrowserMode().then(setBrowserMode).catch(() => {});
-    window.RemoteCtrlAPI?.settings.getGlobalShortcut?.()
-      .then((s: string) => setShortcutInput(s || 'CommandOrControl+Shift+Space'))
+    window.RemoteCtrlAPI?.settings.getGlobalShortcut()
+      .then((shortcut) => setShortcutInput(shortcut || 'CommandOrControl+Shift+Space'))
       .catch(() => setShortcutInput('CommandOrControl+Shift+Space'));
-  }, []);
+  }, [loadSettings]);
 
-  function hasKeyForProvider(p: ApiProvider) {
-    switch (p) {
-      case 'openai': return hasOpenAIKey;
-      case 'anthropic': return hasAnthropicKey;
-      case 'gemini': return hasGeminiKey;
-      case 'groq': return hasGroqKey;
-      case 'deepseek': return hasDeepseekKey;
-      case 'nebius': return hasNebiusKey;
-      case 'openrouter': return hasOpenRouterKey;
-      // Vertex uses ADC — always treat as configured (no API key needed)
-      case 'vertex': return true;
-      default: return false;
+  useEffect(() => {
+    void loadModels(preferredProvider);
+  }, [preferredProvider]);
+
+  function hasKeyForProvider(provider: ApiProvider) {
+    const keys: Partial<Record<ApiProvider, boolean>> = {
+      openai: hasOpenAIKey,
+      anthropic: hasAnthropicKey,
+      gemini: hasGeminiKey,
+      groq: hasGroqKey,
+      deepseek: hasDeepseekKey,
+      nebius: hasNebiusKey,
+      openrouter: hasOpenRouterKey,
+      vertex: true,
+    };
+    return keys[provider] ?? false;
+  }
+
+  async function loadModels(provider: ApiProvider) {
+    try {
+      const models = await window.RemoteCtrlAPI?.settings.getAvailableModels(provider);
+      if (!models?.length) return;
+      setCachedModels((current) => ({ ...current, [provider]: models }));
+      if (!useSettingsStore.getState().preferredModel) await setPreferredModel(models[0]);
+    } catch {
+      // The bundled model list is optional and the custom-model path remains available.
     }
+  }
+
+  function flash(message: string) {
+    setSavedMsg(message);
+    window.setTimeout(() => setSavedMsg(''), 2500);
+  }
+
+  async function handleProviderChange(provider: ApiProvider) {
+    await setPreferredProvider(provider);
+    setApiInput('');
+    setIsCustomModel(false);
+    const models = cachedModels[provider];
+    if (models?.length) await setPreferredModel(models[0]);
   }
 
   async function handleSaveApiKey() {
     if (!apiInput.trim()) return;
     await setApiKey(preferredProvider, apiInput.trim());
     setApiInput('');
-    flash('Key saved');
-  }
-
-  async function handleProviderChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const p = e.target.value as ApiProvider;
-    await setPreferredProvider(p);
-    setApiInput(''); // clear input when switching
-    setIsCustomModel(false);
-    // Auto-select first available model for the new provider
-    const available = cachedModels[p];
-    if (available && available.length > 0) {
-      await setPreferredModel(available[0]);
-    }
-  }
-
-  async function handleModelChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const m = e.target.value;
-    if (m === '__custom__') {
-      setIsCustomModel(true);
-      setCustomModelInput(preferredModel || '');
-    } else {
-      await setPreferredModel(m);
-    }
+    flash('API key saved');
   }
 
   async function handleSaveCustomModel() {
-    if (customModelInput.trim()) {
-      await setPreferredModel(customModelInput.trim());
-      setIsCustomModel(false);
-      flash('Custom model saved');
-    }
-  }
-
-  useEffect(() => {
-    async function loadModels() {
-      const ms = await window.RemoteCtrlAPI?.settings.getAvailableModels(preferredProvider);
-      if (ms && ms.length > 0) {
-        setCachedModels(prev => ({ ...prev, [preferredProvider]: ms }));
-        const currentModel = useSettingsStore.getState().preferredModel;
-        if (!currentModel) {
-          await setPreferredModel(ms[0]);
-        }
-      }
-    }
-    loadModels();
-  }, [preferredProvider]);
-
-  useEffect(() => {
-    if (['openai', 'groq', 'deepseek', 'nebius', 'openrouter'].includes(preferredProvider)) {
-      const hasKey = hasKeyForProvider(preferredProvider);
-      if ((hasKey || preferredProvider === 'openrouter') && !hasFetchedApi[preferredProvider]) {
-        fetchModelsSilently(preferredProvider);
-      }
-    }
-  }, [preferredProvider, hasOpenAIKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasFetchedApi]);
-
-  async function fetchModelsSilently(provider: ApiProvider) {
-    setHasFetchedApi(prev => ({ ...prev, [provider]: true }));
-    try {
-      const ms = await window.RemoteCtrlAPI?.settings.fetchModels(provider);
-      if (ms && ms.length > 0) {
-        setCachedModels(prev => ({ ...prev, [provider]: ms }));
-      }
-    } catch (e) {
-      // ignore
-    }
+    if (!customModelInput.trim()) return;
+    await setPreferredModel(customModelInput.trim());
+    setIsCustomModel(false);
+    flash('Custom model saved');
   }
 
   async function handleSaveSignaling() {
     try {
       await setSignalingUrl(signalingInput.trim());
-      flash('Saved');
+      flash('Connection settings saved');
     } catch {
-      flash('Invalid URL');
-    }
-  }
-
-  async function handleResetBrowser() {
-    if (!confirm('Reset browser profile? This will clear cookies and local storage.')) return;
-    try {
-      if (!window.RemoteCtrlAPI?.browser?.resetProfile) {
-        flash('Failed: resetProfile API unavailable');
-        return;
-      }
-      await window.RemoteCtrlAPI.browser.resetProfile();
-      flash('Browser profile reset');
-    } catch {
-      flash('Failed to reset browser profile');
+      flash('Enter a valid signaling URL');
     }
   }
 
   async function handleSaveShortcut() {
     if (!shortcutInput.trim()) return;
     try {
-      if (!window.RemoteCtrlAPI?.settings?.setGlobalShortcut) {
-        flash('Failed: setGlobalShortcut API unavailable');
-        return;
-      }
-      await window.RemoteCtrlAPI.settings.setGlobalShortcut(shortcutInput.trim());
+      await window.RemoteCtrlAPI?.settings.setGlobalShortcut(shortcutInput.trim());
       flash('Shortcut saved — restart required');
     } catch {
-      flash('Failed to save shortcut');
+      flash('Could not save shortcut');
     }
   }
 
-  async function handleSaveBrowserMode(m: BrowserMode) {
-    setBrowserMode(m);
-    await window.RemoteCtrlAPI?.settings.setBrowserMode(m);
+  async function handleBrowserMode(mode: BrowserMode) {
+    setBrowserMode(mode);
+    await window.RemoteCtrlAPI?.settings.setBrowserMode(mode);
     flash('Browser mode saved');
   }
 
-  function flash(msg: string) {
-    setSavedMsg(msg);
-    setTimeout(() => setSavedMsg(''), 2500);
+  async function handleCreateProfile() {
+    const name = newProfileInput.trim();
+    if (!name) return;
+    await addCustomProfile(name);
+    await setBrowserProfile(name);
+    setNewProfileInput('');
+    flash('Profile created');
   }
 
+  async function handleResetBrowser() {
+    if (!confirm('Reset this browser profile? This removes cookies, logins, and local storage.')) return;
+    try {
+      await window.RemoteCtrlAPI?.browser.resetProfile();
+      flash('Browser profile reset');
+    } catch {
+      flash('Could not reset browser profile');
+    }
+  }
+
+  const models = cachedModels[preferredProvider] ?? [];
   const hasCurrentKey = hasKeyForProvider(preferredProvider);
-  const models = cachedModels[preferredProvider] || [];
+  const tab = TAB_DETAILS[activeTab];
+  const close = () => closeSettings();
 
   return (
-    <div className="settings-overlay" onClick={() => useUIStore.getState().closeSettings()}>
-      <div className="settings-root" onClick={(e) => e.stopPropagation()}>
-        
-        {/* Sidebar Tabs */}
-        <div className="settings-sidebar">
-          <div className="settings-sidebar-header">
-            Settings
-          </div>
-          <div className="settings-sidebar-tabs">
-            <button className={`settings-tab ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => setActiveTab('ai')}>
-              <Sparkles size={16} /> AI Models
-            </button>
-            <button className={`settings-tab ${activeTab === 'browser' ? 'active' : ''}`} onClick={() => setActiveTab('browser')}>
-              <Globe size={16} /> Browser Connection
-            </button>
-            <button className={`settings-tab ${activeTab === 'appearance' ? 'active' : ''}`} onClick={() => setActiveTab('appearance')}>
-              <Palette size={16} /> Appearance
-            </button>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="settings-content-area">
-          <div className="settings-content-header">
-            <h1 className="settings-content-title">
-              {activeTab === 'ai' && 'AI & Models'}
-              {activeTab === 'browser' && 'Browser Connection'}
-              {activeTab === 'appearance' && 'Appearance'}
-            </h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {savedMsg && <span className="settings-saved-toast animate-fade-in">{savedMsg}</span>}
-              <button className="icon-btn" onClick={() => useUIStore.getState().closeSettings()}>
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-          
-          <div className="settings-content-body">
-            
-            {/* AI Models Tab */}
-            {activeTab === 'ai' && (
-              <Section icon={<Cpu size={15} />} title="Active AI Setup">
-                <p className="settings-hint">
-                  Select your preferred AI provider and model. The API key you enter will be associated with the selected provider. Keys are stored locally.
-                </p>
-                
-                <div className="settings-row" style={{ display: 'flex', gap: '16px' }}>
-                  <SettingField label="Provider" status="" style={{ flex: 1 }}>
-                    <select className="settings-select" value={preferredProvider} onChange={handleProviderChange}>
-                      <option value="openai">OpenAI</option>
-                      <option value="anthropic">Anthropic</option>
-                      <option value="gemini">Google Gemini</option>
-                      <option value="vertex">Google Vertex AI</option>
-                      <option value="groq">Groq</option>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="nebius">Nebius</option>
-                      <option value="openrouter">OpenRouter</option>
-                    </select>
-                  </SettingField>
-
-                  <SettingField label="Model" status="" style={{ flex: 1 }}>
-                    {isCustomModel ? (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <input
-                          type="text"
-                          className="settings-input"
-                          value={customModelInput}
-                          onChange={e => setCustomModelInput(e.target.value)}
-                          placeholder="e.g. custom-model-name"
-                          autoFocus
-                        />
-                        <button className="btn btn-primary" onClick={handleSaveCustomModel} disabled={!customModelInput.trim()}>
-                          Save
-                        </button>
-                        <button className="btn btn-secondary" onClick={() => setIsCustomModel(false)}>
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <select className="settings-select" value={preferredModel || ''} onChange={handleModelChange} style={{ flex: 1 }}>
-                          {models.map(m => <option key={m} value={m}>{m}</option>)}
-                          {!models.includes(preferredModel as string) && preferredModel && (
-                             <option value={preferredModel}>{preferredModel} (Custom)</option>
-                          )}
-                          <option value="__custom__">Custom Model...</option>
-                        </select>
-                      </div>
-                    )}
-                  </SettingField>
-                </div>
-
-                {preferredProvider === 'vertex' ? (
-                  <SettingField label="Google Vertex AI — Authentication" status="ADC (keyless)" hasKey={true}>
-                    <p className="settings-hint" style={{ margin: 0 }}>
-                      Vertex AI authenticates via <strong>Application Default Credentials (ADC)</strong>. No API key is required.
-                      Make sure you have run <code>gcloud auth application-default login</code> and set the environment variables
-                      <code> GOOGLE_CLOUD_PROJECT</code> (or <code>GOOGLE_VERTEX_PROJECT</code>) and optionally <code>GOOGLE_VERTEX_LOCATION</code>
-                      (defaults to <code>us-central1</code>).
-                    </p>
-                  </SettingField>
-                ) : (
-                  <SettingField label={`${preferredProvider.charAt(0).toUpperCase() + preferredProvider.slice(1)} API Key`} status={hasCurrentKey ? 'Configured' : 'Not set'} hasKey={hasCurrentKey}>
-                    <div className="settings-input-row">
-                      <div className="settings-input-wrap">
-                        <input
-                          type={showKey ? 'text' : 'password'}
-                          className="settings-input"
-                          placeholder={hasCurrentKey ? '••••••••••••••••' : 'Enter API Key...'}
-                          value={apiInput}
-                          onChange={(e) => setApiInput(e.target.value)}
-                          autoComplete="off"
-                          spellCheck={false}
-                        />
-                        <button className="settings-eye-btn" onClick={() => setShowKey(!showKey)}>
-                          {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
-                        </button>
-                      </div>
-                      <button
-                        className="btn btn-primary"
-                        disabled={!apiInput.trim()}
-                        onClick={handleSaveApiKey}
-                      >
-                        Save Key
-                      </button>
-                    </div>
-                  </SettingField>
-                )}
-              </Section>
-            )}
-
-            {/* Browser Tab */}
-            {activeTab === 'browser' && (
-              <>
-                <Section icon={<RefreshCw size={15} />} title="Browser Mode">
-                  <p className="settings-hint">
-                    <strong>Internal:</strong> Launches a fresh, isolated, headless browser.<br/>
-                    <strong>Local Chrome:</strong> Connects to your existing browser. You must launch Chrome with <code>--remote-debugging-port=9222</code>.
-                  </p>
-                  <SettingField label="Connection Mode" status="">
-                    <div className="settings-radio-group">
-                      {(['internal', 'local_chrome'] as BrowserMode[]).map((m) => (
-                        <label key={m} className="settings-radio">
-                          <input
-                            type="radio"
-                            name="browserMode"
-                            value={m}
-                            checked={browserMode === m}
-                            onChange={() => handleSaveBrowserMode(m)}
-                          />
-                          <span className="settings-radio-label">
-                            {m === 'internal' ? 'Internal Isolated' : 'Local Chrome (Port 9222)'}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </SettingField>
-
-                  {browserMode === 'internal' && (
-                    <SettingField label="Headless Mode" status="">
-                      <ToggleSwitch 
-                        checked={headlessMode} 
-                        onChange={(val) => setHeadlessMode(val)} 
-                        label="Run invisibly in background (prevents stealing OS focus)" 
-                      />
-                    </SettingField>
-                  )}
-
-                  {browserMode === 'internal' && (
-                    <SettingField label="Persistence" status="">
-                      <ToggleSwitch 
-                        checked={keepBrowserOpenOnQuit} 
-                        onChange={(val) => setKeepBrowserOpenOnQuit(val)} 
-                        label="Keep browser running on screen even after quitting RemoteCtrl app" 
-                      />
-                    </SettingField>
-                  )}
-
-                  {browserMode === 'internal' && (
-                    <SettingField label="Browser Profile" status="">
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                        <select
-                          className="settings-select"
-                          value={browserProfile || 'default'}
-                          onChange={(e) => setBrowserProfile(e.target.value)}
-                          style={{ flex: 1 }}
-                        >
-                          <option value="default">Default Profile (Standard logins & cookies)</option>
-                          <option value="work">Work Profile (Isolated business session)</option>
-                          <option value="personal">Personal Profile (Isolated personal session)</option>
-                          <option value="clean">Clean / Ephemeral Profile (Fresh session)</option>
-                          {(customProfiles || []).map((p) => (
-                            <option key={p} value={p}>{p} (Custom Profile)</option>
-                          ))}
-                        </select>
-                        {browserProfile !== 'default' && browserProfile !== 'work' && browserProfile !== 'personal' && browserProfile !== 'clean' && (
-                          <button
-                            className="btn btn-secondary"
-                            style={{ color: '#ef4444' }}
-                            onClick={() => deleteCustomProfile(browserProfile)}
-                            title="Delete this custom profile"
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                        <input
-                          type="text"
-                          className="settings-input"
-                          placeholder="Create custom profile (e.g. Client A, Staging)..."
-                          value={newProfileInput}
-                          onChange={(e) => setNewProfileInput(e.target.value)}
-                        />
-                        <button
-                          className="btn btn-primary"
-                          disabled={!newProfileInput.trim()}
-                          onClick={async () => {
-                            if (newProfileInput.trim()) {
-                              await addCustomProfile(newProfileInput.trim());
-                              await setBrowserProfile(newProfileInput.trim());
-                              setNewProfileInput('');
-                            }
-                          }}
-                        >
-                          + Create
-                        </button>
-                      </div>
-                      <p className="settings-hint" style={{ marginTop: 6 }}>
-                        Choose or create any persistent profile directory. Each profile gets its own isolated cookies, logins, and storage.
-                      </p>
-                    </SettingField>
-                  )}
-
-                  {browserMode === 'internal' && (
-                    <SettingField label="Computer Use API (Vision)" status="">
-                      <ToggleSwitch 
-                        checked={useVisionCUA} 
-                        onChange={(val) => setUseVisionCUA(val)} 
-                        label="Enable Vision/CUA fallback for complex apps. Forces viewport to 1288x711." 
-                      />
-                    </SettingField>
-                  )}
-                </Section>
-
-                <Section icon={<Server size={15} />} title="Advanced">
-                  <SettingField label="Signaling Server URL" status="">
-                    <div className="settings-input-row">
-                      <input
-                        type="url"
-                        className="settings-input"
-                        value={signalingInput}
-                        onChange={(e) => setSignalingInput(e.target.value)}
-                        placeholder="http://localhost:3001"
-                      />
-                      <button className="btn btn-primary" onClick={handleSaveSignaling}>
-                        Save
-                      </button>
-                    </div>
-                  </SettingField>
-
-                  <SettingField label="Global Shortcut" status="">
-                    <p className="settings-hint" style={{ marginBottom: 8 }}>
-                      Keyboard shortcut to open RemoteCtrl from anywhere. Restart required after changing.
-                    </p>
-                    <div className="settings-input-row">
-                      <input
-                        type="text"
-                        className="settings-input"
-                        value={shortcutInput}
-                        onChange={(e) => setShortcutInput(e.target.value)}
-                        placeholder="CommandOrControl+Shift+Space"
-                        style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
-                      />
-                      <button className="btn btn-primary" onClick={handleSaveShortcut} disabled={!shortcutInput.trim()}>
-                        Save
-                      </button>
-                    </div>
-                  </SettingField>
-
-                  <div style={{ marginTop: 16 }}>
-                    <p className="settings-hint">
-                      Reset the persistent browser profile. Clears all session data, cookies, and logins.
-                    </p>
-                    <button className="btn btn-danger-outline settings-reset-btn" onClick={handleResetBrowser}>
-                      <RefreshCw size={13} />
-                      Reset Browser Profile
-                    </button>
-                  </div>
-                </Section>
-              </>
-            )}
-
-            {/* Appearance Tab */}
-            {activeTab === 'appearance' && (
-              <Section icon={<Palette size={15} />} title="Appearance">
-                <SettingField label="Theme" status="">
-                  <select
-                    className="settings-select"
-                    value={theme}
-                    onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}
-                    style={{ width: '100%', maxWidth: '240px' }}
+    <Dialog open={isSettingsOpen} onOpenChange={(open) => { if (!open) close(); }}>
+      <DialogContent className="preferences-window p-0 gap-0 max-w-[920px] border-0 shadow-none bg-[var(--bg-base)] [&>button]:hidden" aria-describedby={undefined}>
+        <DialogTitle className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)' }}>
+          Preferences
+        </DialogTitle>
+          <aside className="preferences-sidebar">
+            <div className="preferences-sidebar-title drag-region">RemoteCtrl</div>
+            <nav className="preferences-nav" aria-label="Settings categories">
+              {(Object.keys(TAB_DETAILS) as SettingsTab[]).map((id) => {
+                const detail = TAB_DETAILS[id];
+                const Icon = detail.icon;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`preferences-nav-item ${activeTab === id ? 'is-active' : ''}`}
+                    onClick={() => setActiveTab(id)}
                   >
-                    <option value="system">System Settings</option>
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                  </select>
-                </SettingField>
-              </Section>
-            )}
+                    <Icon size={16} />
+                    <span>{detail.label}</span>
+                    {activeTab === id && <ChevronRight size={14} className="preferences-nav-chevron" />}
+                  </button>
+                );
+              })}
+            </nav>
+            <p className="preferences-sidebar-foot">Changes are saved locally on this device.</p>
+          </aside>
 
-          </div>
-        </div>
+          <main className="preferences-main">
+            <header className="preferences-header drag-region">
+              <div>
+                <h1>{tab.label}</h1>
+                <p>{tab.description}</p>
+              </div>
+              <div className="preferences-header-actions no-drag">
+                {savedMsg && <span className="preferences-toast"><Check size={13} /> {savedMsg}</span>}
+                <DialogClose asChild>
+                  <button type="button" className="preferences-close" onClick={close} aria-label="Close settings">
+                    <X size={17} />
+                  </button>
+                </DialogClose>
+              </div>
+            </header>
 
-        <style>{`
-          .settings-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-            animation: fadeIn 0.15s ease-out;
-            backdrop-filter: blur(2px);
-          }
-          .settings-root {
-            width: 780px;
-            height: 550px;
-            max-height: 85vh;
-            display: flex;
-            flex-direction: row;
-            background: var(--bg-base);
-            border-radius: var(--radius);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-            border: 1px solid var(--border);
-            overflow: hidden;
-          }
-          @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.98); }
-            to { opacity: 1; transform: scale(1); }
-          }
-          
-          /* Sidebar */
-          .settings-sidebar {
-            width: 220px;
-            background: var(--bg-surface);
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-            -webkit-app-region: drag;
-          }
-          .settings-sidebar-header {
-            height: 54px;
-            display: flex;
-            align-items: center;
-            padding: 0 20px;
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--text-primary);
-            border-bottom: 1px solid transparent;
-          }
-          .settings-sidebar-tabs {
-            padding: 12px 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            -webkit-app-region: no-drag;
-          }
-          .settings-tab {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 12px;
-            border-radius: var(--radius-sm);
-            color: var(--text-secondary);
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            border: none;
-            background: transparent;
-            transition: all var(--transition);
-            text-align: left;
-          }
-          .settings-tab:hover {
-            background: var(--bg-overlay);
-            color: var(--text-primary);
-          }
-          .settings-tab.active {
-            background: var(--accent);
-            color: white;
-          }
+            <div className="preferences-content no-drag">
+              {activeTab === 'general' && (
+                <>
+                  <PreferenceGroup title="Appearance" description="Choose how RemoteCtrl looks on this device.">
+                    <PreferenceRow title="Theme" description="Follows your system setting by default.">
+                      <PreferenceSelect
+                        value={theme}
+                        onChange={(val) => void setTheme(val as typeof theme)}
+                        options={[
+                          { value: 'system', label: 'System' },
+                          { value: 'dark', label: 'Dark' },
+                          { value: 'light', label: 'Light' },
+                        ]}
+                        className="w-[168px]"
+                      />
+                    </PreferenceRow>
+                  </PreferenceGroup>
 
-          /* Content */
-          .settings-content-area {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: var(--bg-base);
-            position: relative;
-          }
-          .settings-content-header {
-            height: 54px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 24px;
-            border-bottom: 1px solid var(--border);
-            -webkit-app-region: drag;
-          }
-          .settings-content-title {
-            font-weight: 600;
-            font-size: 15px;
-            color: var(--text-primary);
-            margin: 0;
-          }
-          .settings-content-body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 24px 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 32px;
-            -webkit-app-region: no-drag;
-          }
+                  <PreferenceGroup title="Quick access" description="Open the compact command window from anywhere.">
+                    <PreferenceRow title="Global shortcut" description="Use Electron accelerator syntax. Restart RemoteCtrl after changing it.">
+                      <div className="preferences-inline-control">
+                        <input className="preferences-input preferences-shortcut" value={shortcutInput} onChange={(event) => setShortcutInput(event.target.value)} />
+                        <Button onClick={() => void handleSaveShortcut()} disabled={!shortcutInput.trim()}>Save</Button>
+                      </div>
+                    </PreferenceRow>
+                  </PreferenceGroup>
+                </>
+              )}
 
-          .settings-saved-toast {
-            font-size: 12px;
-            color: var(--success);
-            font-weight: 500;
-          }
-          
-          .settings-section {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-          }
-          .settings-section-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: var(--text-muted);
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 10px;
-          }
-          .settings-field {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-          }
-          .settings-field-label-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-          }
-          .settings-field-label {
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-primary);
-          }
-          .settings-field-status {
-            font-size: 11px;
-            padding: 2px 8px;
-            border-radius: 99px;
-            font-weight: 600;
-          }
-          .status-ok  { background: rgba(34,197,94,0.1); color: var(--success); }
-          .status-off { background: var(--bg-overlay); color: var(--text-muted); }
-          .settings-hint {
-            font-size: 12px;
-            color: var(--text-muted);
-            line-height: 1.6;
-          }
-          .settings-input-row {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-          }
-          .settings-input-wrap {
-            position: relative;
-            flex: 1;
-          }
-          .settings-input, .settings-select {
-            width: 100%;
-            height: 36px;
-            padding: 0 12px;
-            background: var(--bg-surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            color: var(--text-primary);
-            font-size: 13px;
-            outline: none;
-            transition: border-color var(--transition);
-          }
-          .settings-input { padding-right: 36px; font-family: var(--font-mono); }
-          .settings-input:focus, .settings-select:focus { border-color: var(--accent); }
-          .settings-eye-btn {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            padding: 2px;
-          }
-          .settings-eye-btn:hover { color: var(--text-secondary); }
-          .settings-radio-group {
-            display: flex;
-            gap: 12px;
-          }
-          .settings-radio {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-          }
-          .settings-radio-label { font-size: 13px; color: var(--text-secondary); }
-          .settings-reset-btn { margin-top: 4px; }
-          
-          /* Buttons */
-          .icon-btn {
-            display: flex; align-items: center; justify-content: center;
-            width: 28px; height: 28px; border-radius: var(--radius-sm);
-            border: none; background: transparent; color: var(--text-muted);
-            cursor: pointer; transition: color var(--transition), background var(--transition);
-            -webkit-app-region: no-drag;
-          }
-          .icon-btn:hover { color: var(--text-primary); background: var(--bg-elevated); }
-          .btn {
-            display: inline-flex; align-items: center; justify-content: center;
-            gap: 6px; height: 36px; padding: 0 16px; border-radius: var(--radius-sm);
-            font-size: 13px; font-weight: 600; cursor: pointer; border: none;
-            transition: background var(--transition), opacity var(--transition), transform var(--transition);
-            white-space: nowrap;
-          }
-          .btn:active { transform: scale(0.97); }
-          .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-          .btn-primary { background: var(--accent); color: white; }
-          .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
-          .btn-secondary { background: var(--bg-overlay); color: var(--text-primary); border: 1px solid var(--border); }
-          .btn-secondary:hover { background: var(--bg-elevated); }
-          .btn-danger-outline { background: transparent; color: var(--danger); border: 1px solid rgba(239,68,68,0.4); }
-          .btn-danger-outline:hover { background: rgba(239,68,68,0.1); }
+              {activeTab === 'ai' && (
+                <>
+                  <PreferenceGroup title="Model selection" description="Choose the provider and model used for agent tasks.">
+                    <div className="preferences-grid">
+                      <label className="preferences-control-label">Provider
+                        <PreferenceSelect
+                          value={preferredProvider}
+                          onChange={(val) => void handleProviderChange(val as ApiProvider)}
+                          options={(Object.keys(PROVIDER_LABELS) as ApiProvider[]).map((provider) => ({
+                            value: provider,
+                            label: PROVIDER_LABELS[provider],
+                          }))}
+                        />
+                      </label>
+                      <label className="preferences-control-label">Model
+                        {isCustomModel ? (
+                          <div className="preferences-inline-control">
+                            <input className="preferences-input" value={customModelInput} onChange={(event) => setCustomModelInput(event.target.value)} placeholder="Model identifier" autoFocus />
+                            <Button onClick={() => void handleSaveCustomModel()}>Save</Button>
+                          </div>
+                        ) : (
+                          <PreferenceSelect
+                            value={preferredModel ?? ''}
+                            onChange={(val) =>
+                              val === '__custom__'
+                                ? (setCustomModelInput(preferredModel ?? ''), setIsCustomModel(true))
+                                : void setPreferredModel(val)
+                            }
+                            options={[
+                              ...models.map((model) => ({ value: model, label: model })),
+                              ...((!!preferredModel && !models.includes(preferredModel))
+                                ? [{ value: preferredModel, label: `${preferredModel} (Custom)` }]
+                                : []),
+                              { value: '__custom__', label: 'Custom model…' },
+                            ]}
+                          />
+                        )}
+                      </label>
+                    </div>
+                  </PreferenceGroup>
 
-          /* Toggle Switch */
-          .toggle-switch-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            cursor: pointer;
-            user-select: none;
-          }
-          .toggle-switch {
-            width: 36px;
-            height: 20px;
-            border-radius: 20px;
-            background: var(--bg-overlay);
-            border: 1px solid var(--border);
-            position: relative;
-            transition: background 0.2s, border-color 0.2s;
-            flex-shrink: 0;
-          }
-          .toggle-switch.checked {
-            background: var(--success);
-            border-color: var(--success);
-          }
-          .toggle-switch-thumb {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: white;
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            transition: transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-          }
-          .toggle-switch.checked .toggle-switch-thumb {
-            transform: translateX(16px);
-          }
-          .toggle-switch-label {
-            font-size: 13px;
-            color: var(--text-secondary);
-            line-height: 1.4;
-            flex: 1;
-          }
-          .toggle-switch-wrapper:hover .toggle-switch-label {
-            color: var(--text-primary);
-          }
-        `}</style>
-      </div>
-    </div>
+                  <PreferenceGroup title="Credentials" description="Keys are stored locally and are never sent to RemoteCtrl services.">
+                    {preferredProvider === 'vertex' ? (
+                      <PreferenceRow title="Google Vertex AI" description="Uses Application Default Credentials (ADC). Configure gcloud and your Google Cloud project in the environment.">
+                        <StatusPill label="ADC" />
+                      </PreferenceRow>
+                    ) : (
+                      <PreferenceRow title={`${PROVIDER_LABELS[preferredProvider]} API key`} description={hasCurrentKey ? 'A key is configured for this provider.' : 'No key has been saved yet.'}>
+                        <div className="preferences-key-control">
+                          <div className="preferences-key-input">
+                            <input type={showKey ? 'text' : 'password'} className="preferences-input" placeholder={hasCurrentKey ? '••••••••••••••••' : 'Paste an API key'} value={apiInput} onChange={(event) => setApiInput(event.target.value)} autoComplete="off" spellCheck={false} />
+                            <button type="button" className="preferences-reveal" onClick={() => setShowKey((shown) => !shown)} aria-label={showKey ? 'Hide API key' : 'Show API key'}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</button>
+                          </div>
+                          <Button onClick={() => void handleSaveApiKey()} disabled={!apiInput.trim()}>Save key</Button>
+                        </div>
+                      </PreferenceRow>
+                    )}
+                  </PreferenceGroup>
+                </>
+              )}
+
+              {activeTab === 'browser' && (
+                <>
+                  <PreferenceGroup title="Automation browser" description="Control which browser RemoteCtrl uses for automation.">
+                    <PreferenceRow title="Browser mode" description={browserMode === 'internal' ? 'A managed, isolated browser profile.' : 'Connects to Chrome running with remote debugging on port 9222.'}>
+                      <PreferenceSelect
+                        value={browserMode}
+                        onChange={(val) => void handleBrowserMode(val as BrowserMode)}
+                        options={[
+                          { value: 'internal', label: 'Internal browser' },
+                          { value: 'local_chrome', label: 'Local Chrome' },
+                        ]}
+                        className="w-[168px]"
+                      />
+                    </PreferenceRow>
+                    {browserMode === 'internal' && <PreferenceToggle title="Headless mode" description="Run the managed browser in the background." checked={headlessMode} onChange={(checked) => void setHeadlessMode(checked)} />}
+                    {browserMode === 'internal' && <PreferenceToggle title="Keep browser open on quit" description="Leave the managed browser running when RemoteCtrl closes." checked={keepBrowserOpenOnQuit} onChange={(checked) => void setKeepBrowserOpenOnQuit(checked)} />}
+                    {browserMode === 'internal' && <PreferenceToggle title="Vision fallback" description="Allow visual computer-use fallback for complex interfaces. Uses a 1288 × 711 viewport." checked={useVisionCUA} onChange={(checked) => void setUseVisionCUA(checked)} />}
+                  </PreferenceGroup>
+
+                  {browserMode === 'internal' && <PreferenceGroup title="Profiles" description="Profiles isolate browser cookies, sessions, and logins.">
+                    <PreferenceRow title="Active profile" description="Switch profiles before starting a new browser session.">
+                      <div className="preferences-inline-control">
+                        <PreferenceSelect
+                          value={browserProfile || 'default'}
+                          onChange={(val) => void setBrowserProfile(val)}
+                          options={[
+                            { value: 'default', label: 'Default' },
+                            { value: 'work', label: 'Work' },
+                            { value: 'personal', label: 'Personal' },
+                            { value: 'clean', label: 'Clean' },
+                            ...customProfiles.map((profile) => ({ value: profile, label: profile })),
+                          ]}
+                        />
+                        {customProfiles.includes(browserProfile) && <Button variant="destructive" size="icon" onClick={() => void deleteCustomProfile(browserProfile)} aria-label="Delete selected profile"><Trash2 size={15} /></Button>}
+                      </div>
+                    </PreferenceRow>
+                    <PreferenceRow title="New profile" description="Create another isolated browser space.">
+                      <div className="preferences-inline-control">
+                        <input className="preferences-input" value={newProfileInput} onChange={(event) => setNewProfileInput(event.target.value)} placeholder="e.g. Client A" />
+                        <Button onClick={() => void handleCreateProfile()} disabled={!newProfileInput.trim()}><Plus size={14} className="mr-1" /> Create</Button>
+                      </div>
+                    </PreferenceRow>
+                  </PreferenceGroup>}
+
+                  <PreferenceGroup title="Reset" description="This removes browser data from the active profile.">
+                    <PreferenceRow title="Reset browser profile" description="Cookies, logins, local storage, and site preferences will be removed.">
+                      <Button variant="destructive" onClick={() => void handleResetBrowser()}><RefreshCw size={14} className="mr-1" /> Reset profile</Button>
+                    </PreferenceRow>
+                  </PreferenceGroup>
+                </>
+              )}
+
+              {activeTab === 'connection' && (
+                <PreferenceGroup title="Remote sessions" description="Use a custom signaling service for host and controller pairing.">
+                  <PreferenceRow title="Signaling server" description="The Socket.io service RemoteCtrl uses to establish remote sessions.">
+                    <div className="preferences-inline-control">
+                      <input type="url" className="preferences-input" value={signalingInput} onChange={(event) => setSignalingInput(event.target.value)} placeholder="http://localhost:3001" />
+                      <Button onClick={() => void handleSaveSignaling()}><Server size={14} className="mr-1" /> Save</Button>
+                    </div>
+                  </PreferenceRow>
+                </PreferenceGroup>
+              )}
+            </div>
+          </main>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
-  return (
-    <div className="settings-section">
-      <div className="settings-section-header">
-        {icon}
-        {title}
-      </div>
-      {children}
-    </div>
-  );
+function PreferenceGroup({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return <section className="preferences-group"><div className="preferences-group-heading"><h2>{title}</h2><p>{description}</p></div><div className="preferences-card">{children}</div></section>;
 }
 
-function SettingField({
-  label,
-  status,
-  hasKey,
-  children,
-  style,
-}: {
-  label: string;
-  status: string;
-  hasKey?: boolean;
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div className="settings-field" style={style}>
-      <div className="settings-field-label-row">
-        <div className="settings-field-label">{label}</div>
-        {status && (
-          <span className={`settings-field-status ${hasKey ? 'status-ok' : 'status-off'}`}>
-            {status}
-          </span>
-        )}
-      </div>
-      {children}
-    </div>
-  );
+function PreferenceRow({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return <div className="preferences-row"><div className="preferences-row-copy"><strong>{title}</strong><span>{description}</span></div><div className="preferences-row-action">{children}</div></div>;
 }
 
-function ToggleSwitch({ checked, onChange, label }: { checked: boolean, onChange: (v: boolean) => void, label?: string }) {
+function PreferenceToggle({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label className="toggle-switch-wrapper">
-      <div className={`toggle-switch ${checked ? 'checked' : ''}`}>
-        <div className="toggle-switch-thumb" />
-      </div>
-      {label && <span className="toggle-switch-label">{label}</span>}
-      <input 
-        type="checkbox" 
-        style={{ display: 'none' }} 
-        checked={checked} 
-        onChange={(e) => onChange(e.target.checked)} 
+    <PreferenceRow title={title} description={description}>
+      <Switch
+        checked={checked}
+        onCheckedChange={onChange}
       />
-    </label>
+    </PreferenceRow>
+  );
+}
+
+function StatusPill({ label }: { label: string }) {
+  return <span className="preferences-status"><Check size={13} /> {label}</span>;
+}
+
+interface SelectOption {
+  value: string;
+  label: string;
+}
+
+function PreferenceSelect({
+  value,
+  onChange,
+  options,
+  className = '',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  className?: string;
+}) {
+  const selectedLabel = options.find((opt) => opt.value === value)?.label || value;
+
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className={`w-full ${className}`}>
+        <SelectValue placeholder={selectedLabel} />
+      </SelectTrigger>
+      <SelectContent position="popper" sideOffset={4}>
+        {options.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value}>
+            {opt.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
