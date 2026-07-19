@@ -24,3 +24,12 @@ DONE
 ## Scope
 
 Only `src/renderer/screens/MiniWindow.tsx`, `src/renderer/screens/MiniWindow.css`, and this report were changed for Task 3. Existing unrelated worktree edits were preserved.
+
+## Fix validation
+
+- `npx vitest run src/renderer/screens/miniWindowSpeech.test.ts` — passed: 1 file, 4 tests.
+- `npm test` — passed: 22 files, 64 tests.
+- `npm run typecheck` — passed.
+- `npm run build` — passed: renderer and main process builds.
+- `git diff --check` — passed.
+- Manual textarea changes now explicitly mark the speech composition inactive before stopping recognition, so queued interim/final callbacks cannot overwrite the edit.

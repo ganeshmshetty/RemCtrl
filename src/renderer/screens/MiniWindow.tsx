@@ -13,6 +13,15 @@ import { AlertCircle, Mic, MicOff, Play, Square, Sparkles, X } from 'lucide-reac
 import { useAgentStore } from '../stores/useAgentStore';
 import { useSettingsStore } from '../stores/useWorkflowStore';
 import { useSpeechToText } from '../hooks/useSpeechToText';
+import {
+  applySpeechTranscript,
+  beginSpeechComposition,
+  canStartSpeech,
+  markManualSpeechEdit,
+  stopSpeechComposition,
+  toggleSpeechComposition,
+  type SpeechComposition,
+} from './miniWindowSpeech';
 import type { AgentCheckpointPayload } from '../../shared/types';
 import './MiniWindow.css';
 
@@ -22,16 +31,15 @@ export function MiniWindow() {
   const [activeCheckpoint, setActiveCheckpoint] = useState<AgentCheckpointPayload | null>(null);
   const [activityIndex, setActivityIndex] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const speechBaseRef = useRef('');
+  const speechCompositionRef = useRef<SpeechComposition>({ active: false, base: '' });
 
   const { speechToTextEnabled, speechInputMode } = useSettingsStore();
 
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
-    setInstruction(() => {
-      const base = speechBaseRef.current;
-      const next = `${base}${base && !base.endsWith(' ') ? ' ' : ''}${text}`.replace(/\s+/g, ' ');
-      if (isFinal) speechBaseRef.current = next;
-      return next;
+    setInstruction((currentInstruction) => {
+      const result = applySpeechTranscript(speechCompositionRef.current, currentInstruction, text, isFinal);
+      speechCompositionRef.current = result.state;
+      return result.instruction;
     });
   }, []);
 
@@ -159,7 +167,7 @@ export function MiniWindow() {
     if (!instruction.trim() || isRunning) return;
     const text = instruction.trim();
     speech.stop();
-    speechBaseRef.current = '';
+    speechCompositionRef.current = stopSpeechComposition(speechCompositionRef.current);
     setInstruction('');
     setErrorMsg(null);
 
@@ -183,13 +191,30 @@ export function MiniWindow() {
   };
 
   const startSpeech = () => {
-    if (isRunning) return;
-    speechBaseRef.current = instruction.trim() ? `${instruction.trim()} ` : '';
+    if (!canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })) return;
+    speechCompositionRef.current = beginSpeechComposition(instruction);
     speech.start();
   };
 
   const stopSpeech = () => {
+    speechCompositionRef.current = stopSpeechComposition(speechCompositionRef.current);
     speech.stop();
+  };
+
+  const toggleHandsFreeSpeech = () => {
+    const next = toggleSpeechComposition(speechCompositionRef.current, instruction);
+    if (next.active && !canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })) return;
+    speechCompositionRef.current = next;
+    if (next.active) speech.start();
+    else speech.stop();
+  };
+
+  const handleInstructionChange = (value: string) => {
+    if (speechCompositionRef.current.active) {
+      speechCompositionRef.current = markManualSpeechEdit(speechCompositionRef.current);
+      speech.stop();
+    }
+    setInstruction(value);
   };
 
   const handleStop = async () => {
@@ -260,7 +285,7 @@ export function MiniWindow() {
             className="mini-prompt-input no-drag"
             placeholder="What would you like to automate?..."
             value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
+            onChange={(e) => handleInstructionChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault(); // Prevent newline
@@ -283,7 +308,7 @@ export function MiniWindow() {
                     onPointerUp={stopSpeech}
                     onPointerCancel={stopSpeech}
                     onPointerLeave={() => { if (speech.isListening) stopSpeech(); }}
-                    disabled={isRunning || !speech.isSupported || speech.status === 'error' || speech.status === 'permission'}
+                    disabled={!canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })}
                     aria-label="Hold to dictate"
                     title="Hold to dictate"
                   >
@@ -293,8 +318,8 @@ export function MiniWindow() {
                   <button
                     type="button"
                     className={`mini-action-btn mic ${speech.isListening ? 'active' : ''}`}
-                    onClick={() => speech.isListening ? stopSpeech() : startSpeech()}
-                    disabled={isRunning || !speech.isSupported || speech.status === 'error' || speech.status === 'permission'}
+                    onClick={toggleHandsFreeSpeech}
+                    disabled={!canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) }) && !speech.isListening}
                     aria-label={speech.isListening ? 'Stop dictation' : 'Start dictation'}
                     title={speech.isListening ? 'Stop dictation' : 'Start dictation'}
                   >
