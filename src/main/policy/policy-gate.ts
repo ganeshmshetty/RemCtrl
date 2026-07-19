@@ -586,7 +586,10 @@ function legacyScopeToPolicyScope(scope: TaskScope): PolicyScope {
     id: scope.id,
     capabilities: { allow: ['*'], deny: [] },
     origins: { allow: [], deny: [] },
-    domains: { allow: [...scope.allowedDomains], deny: [] },
+    // Domain matching is deliberately opt-in. Keeping the adapter responsible
+    // for this makes browser, agent, workflow, and remote-human actions share
+    // one policy decision instead of relying on renderer-side hints.
+    domains: { allow: scope.domainRestrictionEnabled ? [...scope.allowedDomains] : ['*'], deny: [] },
     paths: { allow: [], deny: [] },
     requireApproval: [...scope.requireApprovalFor],
     limits: {
@@ -785,6 +788,7 @@ const DEFAULT_TASK_SCOPE: TaskScope = {
   id: 'demo-scoped-task',
   name: 'Demo scoped task',
   goal: '',
+  domainRestrictionEnabled: false,
   allowedDomains: ['*'],
   requireApprovalFor: ['browser.navigate', 'browser.click', 'browser.type', 'browser.keypress', 'browser.tab'],
   maxActions: 100,

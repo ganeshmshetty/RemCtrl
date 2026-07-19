@@ -114,6 +114,12 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 - Replaced `any`-typed connection-store callbacks and agent-result formatting with shared data-channel types and unknown-safe result narrowing.
 - Centralized tab synchronization through one update path so browser URL state follows local and remote tab events without a render-triggered state effect.
 
+## 2026-07-19 · Policy language and scope controls
+
+- Removed passive idle status labels such as `Ready` and `Ready to start`; the shell now reserves status pills for active work, pauses, approvals, and connection waits.
+- Domain limits are now explicit opt-in policy. The task scope UI uses an accessible toggle bar, and the main-process adapter applies the same setting to agent, workflow, remote-human, and browser actions.
+- Disabled domain limits retain the domain field for quick re-enablement but map to an open rule in the policy gate, so hiding the field cannot accidentally create a different enforcement path.
+
 Verified:
 
 - Fresh local renderer smoke test in the in-app browser after starting a local session.

@@ -288,6 +288,7 @@ export const TaskScopeSchema = z.object({
   id: z.string().min(1).max(100),
   name: z.string().min(1).max(120),
   goal: z.string().trim().min(8).max(1_000),
+  domainRestrictionEnabled: z.boolean().default(false),
   allowedDomains: z.array(z.string().min(1).max(253)).min(1).max(50),
   requireApprovalFor: z.array(z.enum([
     'browser.read', 'browser.navigate', 'browser.click', 'browser.type',

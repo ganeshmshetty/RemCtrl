@@ -15,7 +15,7 @@ const intent = (overrides: Partial<ActionIntent> = {}): ActionIntent => ({
 describe('PolicyGate', () => {
   it('blocks a navigation outside the declared domains before execution', async () => {
     const gate = new PolicyGate();
-    gate.setScope({ id: 'scope', name: 'Scoped task', goal: 'Read an article on the allowed site.', allowedDomains: ['allowed.example'], requireApprovalFor: [], maxActions: 2 });
+    gate.setScope({ id: 'scope', name: 'Scoped task', goal: 'Read an article on the allowed site.', domainRestrictionEnabled: true, allowedDomains: ['allowed.example'], requireApprovalFor: [], maxActions: 2 });
 
     await expect(gate.authorize(intent({ url: 'https://blocked.example' }))).resolves.toMatchObject({
       decision: 'blocked',
@@ -25,7 +25,7 @@ describe('PolicyGate', () => {
 
   it('waits for a single host approval before allowing a protected action', async () => {
     const gate = new PolicyGate();
-    gate.setScope({ id: 'scope', name: 'Scoped task', goal: 'Update the account profile.', allowedDomains: ['allowed.example'], requireApprovalFor: ['browser.click'], maxActions: 2 });
+    gate.setScope({ id: 'scope', name: 'Scoped task', goal: 'Update the account profile.', domainRestrictionEnabled: true, allowedDomains: ['allowed.example'], requireApprovalFor: ['browser.click'], maxActions: 2 });
     let approvalId = '';
     gate.subscribe((event) => {
       if ('approval' in event) approvalId = event.approval.id;
@@ -43,6 +43,7 @@ describe('PolicyGate', () => {
     const gate = new PolicyGate();
     gate.setScope({
       id: 'scope', name: 'Research task', goal: 'Find and read the latest product documentation.',
+      domainRestrictionEnabled: true,
       allowedDomains: ['allowed.example'], requireApprovalFor: ['browser.navigate'], maxActions: 5,
     });
 
@@ -53,6 +54,7 @@ describe('PolicyGate', () => {
     const gate = new PolicyGate();
     gate.setScope({
       id: 'scope', name: 'Open a site', goal: 'Open YouTube.',
+      domainRestrictionEnabled: true,
       allowedDomains: ['youtube.com', '*.youtube.com'], requireApprovalFor: ['browser.navigate'], maxActions: 5,
     });
 
@@ -61,11 +63,36 @@ describe('PolicyGate', () => {
 
   it('requires a declared goal before it authorizes an action', async () => {
     const gate = new PolicyGate();
-    gate.setScope({ id: 'scope', name: 'Incomplete task', goal: '', allowedDomains: ['allowed.example'], requireApprovalFor: [], maxActions: 2 });
+    gate.setScope({ id: 'scope', name: 'Incomplete task', goal: '', domainRestrictionEnabled: true, allowedDomains: ['allowed.example'], requireApprovalFor: [], maxActions: 2 });
 
     await expect(gate.authorize(intent())).resolves.toMatchObject({
       decision: 'blocked',
       reason: expect.stringContaining('Declare the task goal'),
     });
+  });
+
+  it('leaves domain matching open when the optional restriction is disabled', async () => {
+    const gate = new PolicyGate();
+    gate.setScope({
+      id: 'scope', name: 'Open browser task', goal: 'Research a topic across the web.',
+      domainRestrictionEnabled: false, allowedDomains: ['allowed.example'], requireApprovalFor: [], maxActions: 5,
+    });
+
+    await expect(gate.authorize(intent({ url: 'https://another.example/article' }))).resolves.toMatchObject({ decision: 'allowed' });
+  });
+
+  it('applies the same enabled domain rule to every legacy action source', async () => {
+    const gate = new PolicyGate();
+    gate.setScope({
+      id: 'scope', name: 'Source-consistent task', goal: 'Work only on the approved site.',
+      domainRestrictionEnabled: true, allowedDomains: ['allowed.example'], requireApprovalFor: [], maxActions: 10,
+    });
+
+    for (const source of ['agent', 'workflow', 'remote-human', 'local-ui'] as const) {
+      await expect(gate.authorize(intent({ source, url: 'https://blocked.example' }))).resolves.toMatchObject({
+        decision: 'blocked',
+        reason: 'domain_not_allowed',
+      });
+    }
   });
 });

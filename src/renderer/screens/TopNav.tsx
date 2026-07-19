@@ -8,7 +8,7 @@
  * Key exports: TopNav (function component).
  */
 
-import { Activity, CheckCircle2, CircleAlert, Command as CommandIcon, PanelRight, Pause, Settings, Wifi } from 'lucide-react';
+import { Activity, CircleAlert, Command as CommandIcon, PanelRight, Pause, Settings, Wifi } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
@@ -34,9 +34,9 @@ export function TopNav() {
       ? 'Host session'
       : role === 'controller'
         ? 'Remote session'
-        : 'Ready';
-  const sessionStatus = getSessionStatus({ role, hostState, controllerState, agentStatus, workflowRunState, pendingApproval: chatHistory.some((message) => message.type === 'checkpoint') });
-  const StatusIcon = sessionStatus.Icon;
+        : 'Workspace';
+  const sessionStatus = getSessionStatus({ role, hostState, agentStatus, workflowRunState, pendingApproval: chatHistory.some((message) => message.type === 'checkpoint') });
+  const StatusIcon = sessionStatus?.Icon;
 
   function handleDisconnect() {
     if (window.RemoteCtrlAPI) {
@@ -64,10 +64,10 @@ export function TopNav() {
           <span>RemoteCtrl</span>
         </div>
         <span className="top-nav-context">{workspaceLabel}</span>
-        <span className={`top-nav-status ${sessionStatus.tone}`} aria-live="polite">
+        {sessionStatus && StatusIcon && <span className={`top-nav-status ${sessionStatus.tone}`} aria-live="polite">
           <StatusIcon size={12} aria-hidden="true" />
           <span>{sessionStatus.label}</span>
-        </span>
+        </span>}
       </div>
       <div className="top-nav-right no-drag">
         <button className="top-nav-command-trigger" onClick={() => window.dispatchEvent(new Event('remotectrl:open-command-palette'))} aria-label="Open command palette">
@@ -131,10 +131,9 @@ export function TopNav() {
   );
 }
 
-function getSessionStatus({ role, hostState, controllerState, agentStatus, workflowRunState, pendingApproval }: {
+function getSessionStatus({ role, hostState, agentStatus, workflowRunState, pendingApproval }: {
   role: ReturnType<typeof useConnectionStore.getState>['role'];
   hostState: ReturnType<typeof useConnectionStore.getState>['hostState'];
-  controllerState: ReturnType<typeof useConnectionStore.getState>['controllerState'];
   agentStatus: ReturnType<typeof useAgentStore.getState>['agentStatus'];
   workflowRunState: ReturnType<typeof useAgentStore.getState>['workflowRunState'];
   pendingApproval: boolean;
@@ -143,8 +142,7 @@ function getSessionStatus({ role, hostState, controllerState, agentStatus, workf
   if (agentStatus === 'running' || workflowRunState === 'running') return { label: 'Working', tone: 'active', Icon: Activity };
   if (agentStatus === 'paused') return { label: 'Paused', tone: 'warning', Icon: Pause };
   if (role === 'host' && hostState === 'WAITING_FOR_CONTROLLER') return { label: 'Waiting for controller', tone: 'idle', Icon: Wifi };
-  if (role !== 'idle' && (hostState !== 'IDLE' || controllerState !== 'IDLE' || role === 'local')) return { label: 'Ready', tone: 'success', Icon: CheckCircle2 };
-  return { label: 'Ready to start', tone: 'idle', Icon: CheckCircle2 };
+  return null;
 }
 
 function NavTooltip({ text, children }: { text: string; children: React.ReactNode }) {

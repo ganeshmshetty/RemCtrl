@@ -224,6 +224,8 @@ export interface TaskScope {
   name: string;
   /** The user-declared outcome. The gate refuses actions until this is set. */
   goal: string;
+  /** Domain matching is opt-in; an empty domain restriction keeps the browser open-ended. */
+  domainRestrictionEnabled: boolean;
   allowedDomains: string[];
   requireApprovalFor: ActionCapability[];
   maxActions: number;

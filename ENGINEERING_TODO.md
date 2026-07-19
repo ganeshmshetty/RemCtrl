@@ -11,6 +11,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 ## Audit findings
 
 - [x] Agent runs have a hard three-minute timeout, which is too short for real browser work and can leave an in-flight model call detached.
+- [ ] Cmd+Q does not quit the app cleanly on macOS; trace the menu/close/before-quit lifecycle and add a regression check.
 - [x] Agent and workflow lifecycle state is process-memory-only; a renderer restart cannot recover or explain an active run.
 - [x] Agent history is a singleton and is not keyed by session, so separate sessions can contaminate one another.
 - [x] Cancellation and pause handling are not uniformly interruptible: waits, retry backoff, and some browser operations do not observe the abort signal.

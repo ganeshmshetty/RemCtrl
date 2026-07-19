@@ -205,7 +205,7 @@ function WorkflowRunView({
           <ArrowLeft size={14} /> Workflows
         </button>
         <span className={`workflow-run-state ${workflowRunState}`}>
-          {hasStarted ? describeRunState(workflowRunState) : 'Ready to run'}
+          {hasStarted ? describeRunState(workflowRunState) : 'Review steps'}
         </span>
       </div>
 
@@ -224,7 +224,7 @@ function WorkflowRunView({
             <span>{activeRun.workflow.steps.length} step{activeRun.workflow.steps.length === 1 ? '' : 's'}</span>
             {hasStarted && currentStepIndex !== null && <span>Step {Math.min(currentStepIndex + 1, activeRun.workflow.steps.length)} of {activeRun.workflow.steps.length}</span>}
           </div>
-          {!hasStarted && <p className="workflow-run-help">Check the deterministic steps below, then start the workflow when you are ready.</p>}
+          {!hasStarted && <p className="workflow-run-help">Check the deterministic steps below, then start the workflow.</p>}
           {startError && <div className="workflow-run-error"><AlertTriangle size={14} /> {startError}</div>}
         </section>
 

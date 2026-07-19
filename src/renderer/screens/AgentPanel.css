@@ -112,8 +112,18 @@
 .agent-scope-header span { color: var(--accent); font-size: 11px; }
 .agent-scope-row { display: flex; gap: 6px; margin-top: 8px; }
 .agent-scope-row.compact { margin-top: 6px; }
+.agent-scope-row.is-disabled { opacity: .58; }
 .agent-scope-input { min-width: 0; flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text-primary); }
 .agent-scope-input:focus { border-color: var(--accent); outline: none; }
+.agent-scope-domain-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--bg-secondary) 72%, transparent); }
+.agent-scope-domain-toggle > div { display: grid; gap: 2px; min-width: 0; }
+.agent-scope-domain-toggle strong { color: var(--text-primary); font-size: 12px; }
+.agent-scope-domain-toggle span { color: var(--text-secondary); font-size: 11px; line-height: 1.35; }
+.agent-scope-toggle { position: relative; width: 34px; height: 20px; flex: 0 0 auto; padding: 2px; border: 0; border-radius: 999px; background: var(--border-active); cursor: pointer; transition: background var(--transition); }
+.agent-scope-toggle > span { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--text-primary); box-shadow: 0 1px 2px rgba(0,0,0,.24); transition: transform var(--transition); }
+.agent-scope-toggle.is-on { background: var(--accent); }
+.agent-scope-toggle.is-on > span { transform: translateX(14px); }
+.agent-scope-toggle:disabled { cursor: not-allowed; opacity: .5; }
 .agent-scope-help { margin-top: 6px; color: var(--text-secondary); font-size: 11px; line-height: 1.4; }
 .agent-scope-message { margin-top: 5px; color: var(--text-secondary); font-size: 11px; }
 .agent-approval-card { margin-top: 10px; padding: 9px; border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warning) 13%, transparent); }

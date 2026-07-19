@@ -414,7 +414,7 @@ export function BrowserPanel() {
               <div className="browser-loading">
                 <div className="browser-state-card browser-state-card-compact">
                   <div className="browser-state-icon"><Radio size={18} /></div>
-                  <div><h3>Screen sharing is active</h3><p>Your browser is ready for the connected controller.</p></div>
+                  <div><h3>Screen sharing is active</h3><p>Your browser is available to the connected controller.</p></div>
                   <button className="btn btn-primary" onClick={() => setShowHostStream(true)}>Preview stream</button>
                 </div>
               </div>

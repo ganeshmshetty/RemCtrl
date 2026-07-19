@@ -215,7 +215,7 @@ export function AgentPanel() {
         {chatHistory.length === 0 && workflowRunState === 'idle' && (
           <div className="agent-chat-empty">
             <div className="agent-ready-mark"><Bot size={20} /></div>
-            <div className="agent-ready-kicker"><Sparkles size={12} /> Browser coworker ready</div>
+            <div className="agent-ready-kicker"><Sparkles size={12} /> Browser coworker</div>
             <div className="agent-ready-title">What should we work on?</div>
             <div className="agent-ready-copy">Describe the outcome you want. The agent will show each browser step and pause when it needs you.</div>
             
@@ -309,6 +309,7 @@ function ScopeGuard({ role }: { role: 'idle' | 'host' | 'controller' | 'local' }
   const [scope, setScope] = useState<TaskScope | null>(null);
   const [goal, setGoal] = useState('');
   const [domains, setDomains] = useState('');
+  const [domainRestrictionEnabled, setDomainRestrictionEnabled] = useState(false);
   const [pending, setPending] = useState<PolicyApprovalRequest[]>([]);
   const [message, setMessage] = useState('');
 
@@ -318,6 +319,7 @@ function ScopeGuard({ role }: { role: 'idle' | 'host' | 'controller' | 'local' }
       if (!mounted) return;
       setScope(loaded);
       setGoal(loaded.goal);
+      setDomainRestrictionEnabled(loaded.domainRestrictionEnabled);
       setDomains(loaded.allowedDomains.join(', '));
     }).catch(() => setMessage('Unable to load task scope.'));
     refreshScope();
@@ -333,11 +335,22 @@ function ScopeGuard({ role }: { role: 'idle' | 'host' | 'controller' | 'local' }
   async function saveScope() {
     if (!scope) return;
     const allowedDomains = domains.split(',').map((domain) => domain.trim()).filter(Boolean);
-    const next = { ...scope, goal: goal.trim(), allowedDomains: allowedDomains.length ? allowedDomains : ['*'] };
+    if (domainRestrictionEnabled && allowedDomains.length === 0) {
+      setMessage('Add at least one domain or turn off domain limits.');
+      return;
+    }
+    const next = {
+      ...scope,
+      goal: goal.trim(),
+      domainRestrictionEnabled,
+      allowedDomains: allowedDomains.length ? allowedDomains : ['*'],
+    };
     const result = await window.RemoteCtrlAPI?.policy.setScope(next);
     if (result?.ok) {
       setScope(next);
-      setMessage('Scope saved. Protected actions now require host approval.');
+      setMessage(domainRestrictionEnabled
+        ? 'Scope saved. Browser actions stay within the listed domains.'
+        : 'Scope saved. Domain limits are off; action approvals still apply.');
     } else {
       setMessage(result?.error ?? 'Unable to save scope.');
     }
@@ -375,12 +388,29 @@ function ScopeGuard({ role }: { role: 'idle' | 'host' | 'controller' | 'local' }
           className="agent-scope-input"
         />
       </div>
-      <div className="agent-scope-row compact">
+      <div className="agent-scope-domain-toggle">
+        <div>
+          <strong>Limit browser to listed domains</strong>
+          <span>{domainRestrictionEnabled ? 'Only matching sites can be used.' : 'Open domain access for this task.'}</span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={domainRestrictionEnabled}
+          aria-label="Enable domain limits"
+          className={`agent-scope-toggle ${domainRestrictionEnabled ? 'is-on' : ''}`}
+          disabled={!isHost}
+          onClick={() => setDomainRestrictionEnabled((enabled) => !enabled)}
+        >
+          <span />
+        </button>
+      </div>
+      <div className={`agent-scope-row compact ${domainRestrictionEnabled ? '' : 'is-disabled'}`}>
         <input
           aria-label="Allowed domains"
           value={domains}
           onChange={(event) => setDomains(event.target.value)}
-          disabled={!isHost}
+          disabled={!isHost || !domainRestrictionEnabled}
           placeholder="example.com, *.example.org"
           className="agent-scope-input"
         />
