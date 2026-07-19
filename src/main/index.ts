@@ -229,14 +229,23 @@ function configureMediaPermissions() {
   });
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
+export function getMainWindowOptions(platform: NodeJS.Platform): Electron.BrowserWindowConstructorOptions {
+  const isMac = platform === 'darwin';
+
+  return {
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 380,
     frame: true,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? {} : {
+      titleBarOverlay: {
+        color: '#1c1c1e',
+        symbolColor: '#e6e6e6',
+        height: 46,
+      },
+    }),
     backgroundColor: '#0a0a0f',
     show: false,
     webPreferences: {
@@ -247,7 +256,11 @@ function createWindow() {
       webSecurity: true,
       preload: path.join(__dirname, 'preload.cjs'),
     },
-  });
+  };
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow(getMainWindowOptions(process.platform));
 
   // Force dark mode
   nativeTheme.themeSource = 'dark';
@@ -285,7 +298,12 @@ function createWindow() {
   return mainWindow;
 }
 
-function createMenu() {
+export function createMenu(platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return false;
+  }
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'File',
@@ -344,25 +362,24 @@ function createMenu() {
     },
   ];
 
-  if (process.platform === 'darwin') {
-    template.unshift({
-      label: app.getName(),
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    });
-  }
+  template.unshift({
+    label: app.getName(),
+    submenu: [
+      { role: 'about' },
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' },
+      { role: 'hideOthers' },
+      { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' },
+    ],
+  });
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+  return true;
 }
 
 // ── Single Instance Lock ──────────────────────────────────────────────────────

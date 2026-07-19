@@ -95,24 +95,27 @@
   outline: none;
 }
 
-.top-nav-stop-btn {
+.top-nav-leave-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: transparent;
-  color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 3px 10px;
+  padding: 0 9px;
+  height: 28px;
   font-size: 11px;
   font-weight: 500;
-  margin-left: 6px;
   transition: all 0.15s ease;
 }
-.top-nav-stop-btn:hover {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #ffffff;
+.top-nav-leave-btn:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+  color: var(--text-primary);
 }
-.top-nav-stop-btn:focus-visible,
-.top-nav-stop-btn:focus {
+.top-nav-leave-btn:focus-visible,
+.top-nav-leave-btn:focus {
   outline: none;
 }
 
@@ -126,8 +129,8 @@
 
 /* ─── Native Workspace Refinements ─── */
 .top-nav {
-  height: 46px;
-  padding: 0 14px 0 18px;
+  height: max(46px, env(titlebar-area-height, 46px));
+  padding: env(titlebar-area-y, 0px) max(14px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))) 0 max(18px, env(titlebar-area-x, 0px));
   border-bottom-color: color-mix(in srgb, var(--border) 85%, var(--bg-overlay) 15%);
   background: color-mix(in srgb, var(--bg-surface) 94%, var(--bg-base) 6%);
 }
@@ -162,12 +165,12 @@
 .connection-pill-dot.connected { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12); }
 
 .top-nav-mini-btn,
-.top-nav-stop-btn { height: 28px; padding: 0 9px; font-size: 12px; }
+.top-nav-leave-btn { height: 28px; padding: 0 9px; font-size: 12px; }
 .top-nav-mini-btn { border-color: var(--border); color: var(--text-secondary); }
 .top-nav-mini-btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text-primary); }
-.top-nav-stop-btn { margin-left: 0; }
+.top-nav-leave-btn { margin-left: 0; }
 
-.main-content { height: calc(100vh - 46px); background: color-mix(in srgb, var(--bg-base) 92%, black 8%); }
+.main-content { height: auto; background: color-mix(in srgb, var(--bg-base) 92%, black 8%); }
 .workspace-sidepanel { height: 100%; flex-shrink: 0; }
 
 .browser-panel { min-height: 0; padding: 14px 14px 10px; background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%), var(--bg-base); }

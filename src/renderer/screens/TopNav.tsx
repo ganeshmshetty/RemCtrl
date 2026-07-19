@@ -8,11 +8,17 @@
  * Key exports: TopNav (function component).
  */
 
-import { Activity, CircleAlert, Command as CommandIcon, PanelRight, Pause, Settings, Wifi } from 'lucide-react';
+import { Activity, ArrowLeft, CircleAlert, Command as CommandIcon, PanelRight, Pause, Settings, Wifi } from 'lucide-react';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import * as Tooltip from '@radix-ui/react-tooltip';
+
+export function confirmAndCloseSession(confirmExit: () => boolean, closeSession: () => void): boolean {
+  if (!confirmExit()) return false;
+  closeSession();
+  return true;
+}
 
 export function TopNav() {
   const { role, hostState, controllerState, pin, reset } = useConnectionStore();
@@ -38,7 +44,7 @@ export function TopNav() {
   const sessionStatus = getSessionStatus({ role, hostState, agentStatus, workflowRunState, pendingApproval: chatHistory.some((message) => message.type === 'checkpoint') });
   const StatusIcon = sessionStatus?.Icon;
 
-  function handleDisconnect() {
+  function closeSession() {
     if (window.RemoteCtrlAPI) {
       if (role === 'local') {
         window.RemoteCtrlAPI.browser.close();
@@ -53,6 +59,17 @@ export function TopNav() {
     reset();
   }
 
+  function handleDisconnect() {
+    closeSession();
+  }
+
+  function handleLeave() {
+    confirmAndCloseSession(
+      () => window.confirm('Leave this session? The active browser will close and the session will be reset.'),
+      closeSession,
+    );
+  }
+
   function handleOpenSettings() {
     openSettings();
   }
@@ -60,6 +77,14 @@ export function TopNav() {
   return (
     <div className="top-nav">
       <div className="top-nav-left drag-region">
+        {role === 'local' && (
+          <NavTooltip text="Back / Leave Local Session">
+            <button className="top-nav-leave-btn no-drag" onClick={handleLeave} aria-label="Back and leave local session">
+              <ArrowLeft size={14} aria-hidden="true" />
+              <span>Leave</span>
+            </button>
+          </NavTooltip>
+        )}
         <div className="top-nav-brand">
           <span>RemoteCtrl</span>
         </div>
@@ -85,14 +110,6 @@ export function TopNav() {
                 onClick={() => window.RemoteCtrlAPI?.app.showMiniWindow(true)}
               >
                 Mini Window ↗
-              </button>
-            </NavTooltip>
-            <NavTooltip text="Stop Local Session">
-              <button 
-                className="top-nav-stop-btn"
-                onClick={handleDisconnect}
-              >
-                Stop
               </button>
             </NavTooltip>
           </div>
