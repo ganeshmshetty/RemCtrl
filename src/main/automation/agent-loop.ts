@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import type { AutomationSecurityMode } from './security-mode.js';
 import { buildAgentTaskPrompt } from './agent-system-prompt.js';
 import { createDevelopmentLogger } from '../dev-logger.js';
+import { getUseVisionCUA } from '../storage.js';
 
 export type AgentTerminationReason = 'done_true' | 'done_false' | 'max_steps' | 'model_text' | 'stopped_without_done';
 
@@ -108,7 +109,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
       action: formatToolAction(toolName, input),
     });
     onLog({ level: 'info', message: formatToolAction(toolName, input), phase: 'started' });
-  });
+  }, getUseVisionCUA());
   let goalAchieved = false;
   let taskTerminated = false;
   let finalMessage: string | undefined;
@@ -151,6 +152,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
       }
 
       for (const tc of event.toolCalls ?? []) {
+        if (!tc) continue;
         // AI SDK v5: tool call args are at tc.input (not tc.args)
         const input = (tc as any).input ?? {};
         // AI SDK v5: tool result output is at tr.output (not tr.result)
@@ -291,7 +293,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     },
   });
 
-  const readOnlyTools = new Set(['observe', 'extract', 'getPageUrl']);
+  const readOnlyTools = new Set(['observe', 'extract', 'getPageUrl', 'inspectScreenshot']);
   const isConversationalResponse = !goalAchieved
     && Boolean(finalMessage?.trim())
     && executionTrace.every((entry) => readOnlyTools.has(entry.tool));

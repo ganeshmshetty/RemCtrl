@@ -44,6 +44,7 @@ export function createBrowserTools(
   contextGetter?: () => { taskId: string; step: number; taskProgress: string; abortSignal?: AbortSignal },
   securityMode: AutomationSecurityMode = 'policy-enforced',
   onToolStart?: (toolName: string, input: Record<string, unknown>) => void,
+  visionEnabled = false,
 ) {
   const toolMutex = new Mutex();
   const authorize = async ({ capability, summary, details, url }: BrowserActionGuardRequest): Promise<PolicyBlockedResult | undefined> => {
@@ -174,6 +175,26 @@ export function createBrowserTools(
         return actions.execute({ kind: 'page-url' });
       }),
     }),
+
+    ...(visionEnabled ? {
+      inspectScreenshot: tool({
+        description:
+          'Inspect a screenshot of the current page when the DOM snapshot is incomplete, the layout or visual state matters, an element is difficult to identify, or you need to verify a visual change. Use this whenever visual evidence is more reliable than page text; do not call it on every step when observe() is sufficient. This is read-only and does not change browser state.',
+        inputSchema: z.object({
+          reason: z.string().min(1).max(240).describe('Briefly state what visual uncertainty or verification requires the screenshot'),
+        }),
+        execute: wrap('inspectScreenshot', async ({ reason }) => {
+          const image = await page.screenshot({ type: 'png' });
+          return {
+            type: 'content' as const,
+            value: [
+              { type: 'text' as const, text: `Current-page screenshot captured for: ${reason}` },
+              { type: 'image-data' as const, data: image.toString('base64'), mediaType: 'image/png' },
+            ],
+          };
+        }),
+      }),
+    } : {}),
 
     keys: tool({
       description: 'Send one global keyboard key (for example Enter, Tab, Escape, or ArrowDown). Use only when the intended focus is known; avoid destructive shortcuts unless explicitly required. Re-observe after a key changes page state.',

@@ -37,6 +37,7 @@ import { acquireReadyPage } from './browser/runtime.js';
 import { createDevelopmentLogger } from '../dev-logger.js';
 import type { AutomationSecurityMode } from './security-mode.js';
 import { waitFor } from './abortable.js';
+import { getUseVisionCUA } from '../storage.js';
 
 export type AgentStatusCb = (payload: AgentStatusPayload) => void;
 export type AgentLogCb = (payload: AgentLogPayload) => void;
@@ -142,7 +143,7 @@ export async function runAgent(
       return await runToolLoop({
         commandId,
         instruction: fullInstruction,
-        systemPrompt: buildAgentSystemPrompt(instruction, securityMode),
+        systemPrompt: buildAgentSystemPrompt(instruction, securityMode, getUseVisionCUA()),
         page: localPage!,
         session,
         model: resolveModel(provider, apiKey),

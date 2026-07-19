@@ -15,7 +15,7 @@ import type {
   WorkflowStepStatus,
   AgentLogPayload,
 } from '../../shared/types.js';
-import { getPreferredProvider, getApiKey, updateWorkflowStepSelector } from '../storage.js';
+import { getPreferredProvider, getApiKey, getUseVisionCUA, updateWorkflowStepSelector } from '../storage.js';
 import { extractError } from '../errors.js';
 import { TaskSession } from './task-session.js';
 import { runToolLoop } from './agent-loop.js';
@@ -380,7 +380,7 @@ async function executeDeterministicActionWithSelfHeal(
     const loopResult = await runToolLoop({
       commandId: `self-heal-${step.id}`,
       instruction,
-      systemPrompt: buildWorkflowStepSystemPrompt('do', instruction), // reuse generic prompt
+      systemPrompt: buildWorkflowStepSystemPrompt('do', instruction, 'local', getUseVisionCUA()), // reuse generic prompt
       page,
       session: (() => {
         return session;
@@ -466,7 +466,7 @@ async function executeExtractStep(
   const loopResult = await runToolLoop({
     commandId: `extract-${step.id}`,
     instruction: step.instruction,
-    systemPrompt: buildWorkflowStepSystemPrompt('collect', step.instruction), // Reuse collect prompt logic
+    systemPrompt: buildWorkflowStepSystemPrompt('collect', step.instruction, 'local', getUseVisionCUA()), // Reuse collect prompt logic
     page,
     session: (() => {
       return session;

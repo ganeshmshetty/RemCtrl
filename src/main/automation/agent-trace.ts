@@ -27,6 +27,7 @@ export function formatToolAction(toolName: string, input: unknown): string {
     }
     case 'type': return 'Type into the focused field';
     case 'getPageUrl': return 'Getting current page URL';
+    case 'inspectScreenshot': return 'Inspecting current page visually';
     case 'keys': return `Pressing key: ${data.key || ''}`;
     case 'scroll': return `Scrolling ${data.direction || ''} ${data.pixels || 500}px`;
     case 'done': return 'Task completed';

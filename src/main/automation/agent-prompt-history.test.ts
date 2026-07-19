@@ -64,4 +64,28 @@ describe('agent prompt and history boundaries', () => {
     expect((tools.done as { description?: string }).description).toContain('single terminal result');
     expect((tools.runActionSequence as { description?: string }).description).toContain('stops at the first error');
   });
+
+  it('exposes screenshot inspection only when vision is enabled', () => {
+    const disabledTools = createBrowserTools({} as Page, undefined, 'local');
+    const enabledTools = createBrowserTools({} as Page, undefined, 'local', undefined, true);
+
+    expect('inspectScreenshot' in disabledTools).toBe(false);
+    expect('inspectScreenshot' in enabledTools).toBe(true);
+    expect(buildAgentSystemPrompt('Inspect the page', 'local', false)).not.toContain('inspectScreenshot');
+    expect(buildAgentSystemPrompt('Inspect the page', 'local', true)).toContain('inspectScreenshot');
+  });
+
+  it('returns a multimodal current-page screenshot result', async () => {
+    const page = { screenshot: async () => Buffer.from('png-bytes') } as unknown as Page;
+    const tools = createBrowserTools(page, undefined, 'local', undefined, true) as Record<string, { execute?: (input: { reason: string }) => Promise<unknown> }>;
+    const result = await tools.inspectScreenshot.execute?.({ reason: 'The modal layout is ambiguous' });
+
+    expect(result).toEqual({
+      type: 'content',
+      value: [
+        { type: 'text', text: 'Current-page screenshot captured for: The modal layout is ambiguous' },
+        { type: 'image-data', data: Buffer.from('png-bytes').toString('base64'), mediaType: 'image/png' },
+      ],
+    });
+  });
 });
