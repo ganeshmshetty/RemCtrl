@@ -103,6 +103,11 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 - Refined agent activity into a compact numbered timeline with explicit running/completed/failed icons, per-step elapsed time, and an overall step-duration summary.
 - Kept the activity disclosure behavior from the existing agent panel while borrowing the compact tool/reasoning hierarchy from OpenCode and Onlook.
 
+## 2026-07-19 · Shared response surfaces
+
+- Moved Markdown response styling out of inline declarations into a reusable tokenized stylesheet.
+- Standardized code cards, copy actions, headings, lists, inline code, and links for dark/light theme inheritance and keyboard-visible interaction.
+
 Verified:
 
 - Fresh local renderer smoke test in the in-app browser after starting a local session.

@@ -9,6 +9,7 @@
 
 import React, { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
+import './MarkdownRenderer.css';
 
 interface MarkdownRendererProps {
   content: string;
@@ -25,7 +26,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const blocks = parseCodeBlocks(content);
 
   return (
-    <div className="markdown-renderer" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div className="markdown-renderer">
       {blocks.map((block, idx) => {
         if (block.type === 'code') {
           return <CodeBlockCard key={idx} language={block.language} code={block.content} />;
@@ -83,63 +84,20 @@ function CodeBlockCard({ language, code }: { language?: string; code: string }) 
   };
 
   return (
-    <div
-      style={{
-        background: 'rgba(0, 0, 0, 0.35)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: 'var(--radius-md)',
-        overflow: 'hidden',
-        margin: '6px 0',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '6px 12px',
-          background: 'rgba(255, 255, 255, 0.05)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          fontSize: '11px',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-        }}
-      >
+    <div className="markdown-code-card">
+      <div className="markdown-code-header">
         <span>{language || 'code'}</span>
         <button
           onClick={handleCopy}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            background: 'none',
-            border: 'none',
-            color: copied ? 'var(--success)' : 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontSize: '11px',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            transition: 'all 0.15s ease',
-          }}
+          className={`markdown-code-copy ${copied ? 'is-copied' : ''}`}
           title="Copy code"
+          aria-label={copied ? 'Code copied' : 'Copy code'}
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      <pre
-        style={{
-          margin: 0,
-          padding: '12px',
-          overflowX: 'auto',
-          fontSize: '12.5px',
-          fontFamily: 'var(--font-mono)',
-          lineHeight: 1.5,
-          color: 'var(--text-primary)',
-        }}
-      >
+      <pre className="markdown-code-pre">
         <code>{code}</code>
       </pre>
     </div>
@@ -150,29 +108,29 @@ function TextBlock({ text }: { text: string }) {
   const lines = text.split('\n');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', lineHeight: 1.55 }}>
+    <div className="markdown-text-block">
       {lines.map((line, idx) => {
         const trimmed = line.trim();
-        if (!trimmed) return <div key={idx} style={{ height: '4px' }} />;
+        if (!trimmed) return <div key={idx} className="markdown-empty-line" />;
 
         // Headings
         if (trimmed.startsWith('### ')) {
           return (
-            <h4 key={idx} style={{ margin: '8px 0 4px 0', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            <h4 key={idx} className="markdown-heading markdown-heading-h4">
               {renderInlineFormatting(trimmed.slice(4))}
             </h4>
           );
         }
         if (trimmed.startsWith('## ')) {
           return (
-            <h3 key={idx} style={{ margin: '10px 0 4px 0', fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            <h3 key={idx} className="markdown-heading markdown-heading-h3">
               {renderInlineFormatting(trimmed.slice(3))}
             </h3>
           );
         }
         if (trimmed.startsWith('# ')) {
           return (
-            <h2 key={idx} style={{ margin: '10px 0 6px 0', fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            <h2 key={idx} className="markdown-heading markdown-heading-h2">
               {renderInlineFormatting(trimmed.slice(2))}
             </h2>
           );
@@ -182,9 +140,9 @@ function TextBlock({ text }: { text: string }) {
         if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
           const listText = trimmed.replace(/^([-*]|\d+\.)\s+/, '');
           return (
-            <div key={idx} style={{ display: 'flex', gap: '8px', paddingLeft: '8px', alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>•</span>
-              <span style={{ flex: 1 }}>{renderInlineFormatting(listText)}</span>
+            <div key={idx} className="markdown-list-item">
+              <span className="markdown-list-marker">•</span>
+              <span className="markdown-list-text">{renderInlineFormatting(listText)}</span>
             </div>
           );
         }
@@ -212,23 +170,13 @@ function renderInlineFormatting(line: string): React.ReactNode[] {
     const token = match[0];
     if (token.startsWith('**') && token.endsWith('**')) {
       parts.push(
-        <strong key={match.index} style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+        <strong key={match.index} className="markdown-strong">
           {token.slice(2, -2)}
         </strong>
       );
     } else if (token.startsWith('`') && token.endsWith('`')) {
       parts.push(
-        <code
-          key={match.index}
-          style={{
-            background: 'rgba(255, 255, 255, 0.08)',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
-            color: '#e2e8f0',
-          }}
-        >
+        <code key={match.index} className="markdown-inline-code">
           {token.slice(1, -1)}
         </code>
       );
@@ -236,13 +184,7 @@ function renderInlineFormatting(line: string): React.ReactNode[] {
       const linkMatch = /^\[(.*?)\]\((.*?)\)/.exec(token);
       if (linkMatch) {
         parts.push(
-          <a
-            key={match.index}
-            href={linkMatch[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--accent)', textDecoration: 'underline' }}
-          >
+          <a key={match.index} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="markdown-link">
             {linkMatch[1]}
           </a>
         );

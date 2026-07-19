@@ -1,0 +1,68 @@
+.markdown-renderer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.markdown-code-card {
+  margin: 6px 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-tertiary) 80%, #000 20%);
+}
+
+.markdown-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  background: color-mix(in srgb, var(--bg-overlay) 70%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.markdown-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  transition: background var(--transition), color var(--transition);
+}
+
+.markdown-code-copy:hover { background: var(--bg-overlay); color: var(--text-primary); }
+.markdown-code-copy.is-copied { color: var(--success); }
+
+.markdown-code-pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.markdown-text-block { display: flex; flex-direction: column; gap: 4px; line-height: 1.55; }
+.markdown-empty-line { height: 4px; }
+.markdown-heading { margin: 8px 0 4px; color: var(--text-primary); font-weight: 700; }
+.markdown-heading-h2 { margin-top: 10px; margin-bottom: 6px; font-size: 16px; }
+.markdown-heading-h3 { font-size: 15px; }
+.markdown-heading-h4 { font-size: 14px; }
+.markdown-list-item { display: flex; align-items: flex-start; gap: 8px; padding-left: 8px; }
+.markdown-list-marker { color: var(--accent); font-weight: 700; }
+.markdown-list-text { flex: 1; }
+.markdown-strong { color: var(--text-primary); font-weight: 600; }
+.markdown-inline-code { padding: 2px 6px; border-radius: 4px; background: var(--bg-overlay); color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; }
+.markdown-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.markdown-link:hover { color: var(--accent-hover); }
