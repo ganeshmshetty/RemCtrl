@@ -1,16 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, StopCircle, Plus, Hand, Mic, MicOff, AlertCircle } from 'lucide-react';
+import { Send, StopCircle, Plus, Hand, Mic, MicOff } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useSettingsStore } from '../stores/useWorkflowStore';
-import { useUIStore } from '../stores/useUIStore';
 import { useSpeechToText } from '../hooks/useSpeechToText';
 
 export function ChatInputBar() {
   const { agentStatus, isTakeoverActive, recordingState, recordingSessionId } = useAgentStore();
   const { role, controllerState, hostState, sendData } = useConnectionStore();
   const { microphoneAudioEnabled, speechInputMode, whisperSetup } = useSettingsStore();
-  const { openSettings } = useUIStore();
   const [prompt, setPrompt] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -195,7 +193,6 @@ export function ChatInputBar() {
                 {speech.isListening ? <MicOff size={16} /> : <Mic size={16} />}
               </button>
             )}
-            {speech.error && <><span className="chat-speech-status" role="status"><AlertCircle size={13} /> {speech.error}</span><button type="button" className="chat-speech-setup" onClick={openSettings}>Set up</button></>}
           </div>
           {agentStatus === 'running' ? (
             <button type="button" className="chat-prompt-send danger" onClick={handleCancelAgent} title="Stop execution">

@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AlertCircle, Mic, MicOff, Play, Square, Sparkles, X } from 'lucide-react';
+import { Mic, MicOff, Play, Square, Sparkles, X } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useSettingsStore } from '../stores/useWorkflowStore';
 import { useSpeechToText } from '../hooks/useSpeechToText';
@@ -157,8 +157,6 @@ export function MiniWindow() {
     workflowRunState === 'running';
 
   const activityCopy = miniActivityCopy(currentAction, workflowRunState === 'running');
-  const speechStatusMessage = speech.error;
-
   useEffect(() => {
     if (!isRunning || activityCopy.length < 2) return;
     const interval = window.setInterval(() => setActivityIndex((index) => (index + 1) % activityCopy.length), 2200);
@@ -323,11 +321,6 @@ export function MiniWindow() {
                     title={speech.isListening ? 'Stop dictation' : 'Start dictation'}
                   >
                     {speech.isListening ? <MicOff size={14} className="no-drag" /> : <Mic size={14} className="no-drag" />}
-                  </button>
-                )}
-                {speechStatusMessage && (
-                  <button type="button" className="mini-speech-setup no-drag" role="status" onClick={() => void window.RemoteCtrlAPI?.app.showMainWindow()} title="Open RemoteCtrl settings to set up local Whisper">
-                    <AlertCircle size={12} /> Set up speech
                   </button>
                 )}
               </>
