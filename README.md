@@ -16,15 +16,15 @@ The user keeps the authenticated browser session. An agent performs the delegate
 
 This capability matrix is based on the source-linked market study in [research/remotectrl-market](research/remotectrl-market/) and the architecture reference repositories in `research/`. A ✓ marks a documented, first-class focus; — means it is not the product’s core position in this comparison.
 
-| Product | AI browser agent | User’s browser session/profile | Human takeover or approval | Reusable browser workflows | Remote operator | Task-scoped policy for agent actions |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| [RustDesk](https://github.com/rustdesk/rustdesk) | — | ✓ | — | — | ✓ | — |
-| [browser-use](https://github.com/browser-use/browser-use) | ✓ | — | — | — | — | — |
-| [Stagehand](https://github.com/browserbase/stagehand) | ✓ | — | — | — | — | — |
-| [Nanobrowser](https://github.com/nanobrowser/nanobrowser) | ✓ | ✓ | — | — | — | — |
-| [n8n](https://github.com/n8n-io/n8n) | — | — | — | ✓ | — | — |
-| [browserless](https://github.com/browserless/browserless), Playwright, Puppeteer | — | — | — | — | — | — |
-| **RemoteCtrl** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Product | AI browser agent | Human takeover or approval | Reusable browser workflows | Remote operator | Task-scoped policy for agent actions |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| [RustDesk](https://github.com/rustdesk/rustdesk) | — | — | — | ✓ | — |
+| [browser-use](https://github.com/browser-use/browser-use) | ✓ | — | — | — | — |
+| [Stagehand](https://github.com/browserbase/stagehand) | ✓ | — | — | — | — |
+| [Nanobrowser](https://github.com/nanobrowser/nanobrowser) | ✓ | — | — | — | — |
+| [n8n](https://github.com/n8n-io/n8n) | — | — | ✓ | — | — |
+| [browserless](https://github.com/browserless/browserless), Playwright, Puppeteer | — | — | — | — | — |
+| **RemoteCtrl** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 RemoteCtrl’s distinction is the combined row: task-scoped agent execution inside a user-controlled browser, with human intervention and workflow replay in the same product.
 
