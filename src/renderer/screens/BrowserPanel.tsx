@@ -465,8 +465,8 @@ export function BrowserPanel() {
         ) : (
           <div className="browser-loading" role="alert">
             <div className="browser-state-card browser-state-card-error">
-              <div className={`browser-state-icon ${isSignalingRetrying ? '' : 'danger'}`}>{isSignalingRetrying ? <Loader2 size={18} className="animate-spin" /> : <AlertCircle size={18} />}</div>
-              <div className={`browser-state-eyebrow ${isSignalingRetrying ? '' : 'danger'}`}>{isSignalingRetrying ? 'Reconnecting' : 'Session ended'}</div>
+              <div className="browser-state-icon">{isSignalingRetrying ? <Loader2 size={18} className="animate-spin" /> : <AlertCircle size={18} />}</div>
+              <div className="browser-state-eyebrow">{isSignalingRetrying ? 'Reconnecting' : 'Session ended'}</div>
               <h3>{isSignalingRetrying ? 'Connection interrupted' : error ? 'Connection interrupted' : 'Browser disconnected'}</h3>
               <p>{isSignalingRetrying ? 'The signaling connection dropped. RemoteCtrl is restoring the session automatically.' : error ?? 'The browser session is no longer available.'}</p>
               <button className="btn btn-primary"

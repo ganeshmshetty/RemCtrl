@@ -21,6 +21,13 @@
   padding: 46px 32px 56px;
 }
 
+.cp-status-surface {
+  width: 100%;
+  max-width: 720px;
+  margin: -6px 0 14px;
+  text-align: left;
+}
+
 .cp-icon {
   width: 58px;
   height: 58px;

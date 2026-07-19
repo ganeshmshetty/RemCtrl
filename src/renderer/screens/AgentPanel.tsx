@@ -14,6 +14,7 @@ import { useConnectionStore } from '../stores/useConnectionStore';
 import type { ChatMessage } from '../stores/useAgentStore';
 import type { AgentCheckpointPayload, PolicyApprovalRequest, TaskScope } from '../../shared/types';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { StatusSurface } from '../components/StatusSurface';
 import './AgentPanel.css';
 
 const timestampNow = () => Date.now();
@@ -194,7 +195,7 @@ export function AgentPanel() {
               {firstRecoverableRun.kind === 'agent' ? 'Dismiss' : 'Clear notice'}
             </button>}
           </div>
-          {recoveryError && <div className="agent-recovery-error" role="alert">{recoveryError}</div>}
+          {recoveryError && <StatusSurface className="agent-recovery-error" message={recoveryError} actionLabel="Dismiss" onAction={() => setRecoveryError(null)} />}
         </section>
       )}
       {recordingState !== 'idle' && (
@@ -202,7 +203,7 @@ export function AgentPanel() {
           <div className="agent-recording-copy">
             <div className="agent-recording-title"><span className="agent-recording-dot" /> Recording workflow</div>
             <div className="agent-recording-task">{recordingTask || 'Capturing agent actions'} · {recordingStepCount} captured step{recordingStepCount === 1 ? '' : 's'}</div>
-            {recordingError && <div className="agent-recording-error">{recordingError}</div>}
+            {recordingError && <StatusSurface className="agent-recording-error" message={recordingError} actionLabel="Discard" onAction={() => void handleDiscardRecording()} />}
           </div>
           <div className="agent-recording-actions">
             <button className="btn btn-primary btn-sm" disabled={recordingState !== 'recording' || recordingStepCount === 0} onClick={() => void handleSaveRecording()}><Save size={13} /> Save workflow</button>

@@ -25,6 +25,7 @@ import { useUIStore } from '../stores/useUIStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { describeWorkflowStep } from '../utils/workflow-preview';
+import { StatusSurface } from '../components/StatusSurface';
 import './WorkflowsPanel.css';
 
 interface ActiveRun {
@@ -79,7 +80,7 @@ export function WorkflowsPanel() {
     <div className="workflows-panel">
       <div className="workflows-list">
         {isLoading && <div className="workflows-empty">Loading workflows...</div>}
-        {error && <div className="workflows-empty workflows-error">{error}</div>}
+        {error && <StatusSurface className="workflows-error" message={error} role="alert" />}
 
         {!isLoading && !error && workflows.length === 0 && (
           <div className="workflows-empty">
@@ -229,7 +230,7 @@ function WorkflowRunView({
             {hasStarted && currentStepIndex !== null && <span>Step {Math.min(currentStepIndex + 1, activeRun.workflow.steps.length)} of {activeRun.workflow.steps.length}</span>}
           </div>
           {!hasStarted && <p className="workflow-run-help">Check the deterministic steps below, then start the workflow.</p>}
-          {startError && <div className="workflow-run-error"><AlertTriangle size={14} /> {startError}</div>}
+          {startError && <StatusSurface className="workflow-run-error" message={startError} role="alert" />}
         </section>
 
         <section className="workflow-step-list" aria-label="Workflow steps">

@@ -41,7 +41,7 @@
   padding: 32px;
 }
 
-.workflows-error { color: var(--danger); }
+.workflows-error { margin: 0 0 4px; }
 .workflows-more { padding: 2px 4px; color: var(--text-muted); font-size: 11px; text-align: center; }
 .workflows-empty-help { margin-top: 4px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 
@@ -191,12 +191,6 @@
 .workflow-run-meta { display: flex; gap: 12px; margin-top: 10px; color: var(--text-muted); font-size: 11px; }
 .workflow-run-help { margin: 12px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .workflow-run-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  color: var(--danger);
-  font-size: 12px;
-  line-height: 1.4;
   margin-top: 10px;
 }
 .workflow-step-list { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }

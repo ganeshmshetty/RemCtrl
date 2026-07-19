@@ -20,6 +20,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { StatusSurface } from '../components/StatusSurface';
 import './ConnectionPlaceholder.css';
 
 export function ConnectionPlaceholder() {
@@ -29,6 +30,7 @@ export function ConnectionPlaceholder() {
   const [sessionIntent, setSessionIntent] = useState('');
   const [trustedMode, setTrustedMode] = useState(false);
   const [workflowTask, setWorkflowTask] = useState('');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const { setRole, setTrustedHost } = useConnectionStore();
   const { workflows, loadWorkflows } = useWorkflowStore();
   const { setRightPanelTab, openWorkflowRun } = useUIStore();
@@ -44,6 +46,7 @@ export function ConnectionPlaceholder() {
   }, [loadWorkflows]);
 
   function handleLocal() {
+    setConnectionError(null);
     setRole('local');
     window.RemoteCtrlAPI?.browser.launch();
     window.RemoteCtrlAPI?.app.showMiniWindow(true);
@@ -52,10 +55,11 @@ export function ConnectionPlaceholder() {
   async function handleRecordWorkflow() {
     const description = workflowTask.trim();
     if (description.length < 8) return;
+    setConnectionError(null);
     setRole('local');
     const recording = await window.RemoteCtrlAPI?.browser.startWorkflowRecording({ initialInstruction: description });
     if (!recording?.ok || !recording.state) {
-      alert(recording?.error ?? 'Unable to start workflow recording.');
+      setConnectionError(recording?.error ?? 'Unable to start workflow recording.');
       return;
     }
     useAgentStore.getState().setRecordingState({
@@ -82,17 +86,18 @@ export function ConnectionPlaceholder() {
     } catch (error) {
       await window.RemoteCtrlAPI?.browser.discardWorkflowRecording();
       useAgentStore.getState().clearRecordingState();
-      alert(error instanceof Error ? error.message : String(error));
+      setConnectionError(error instanceof Error ? error.message : String(error));
     }
   }
 
   async function handleQuickRunWorkflow(workflow: LocalWorkflow) {
+    setConnectionError(null);
     setRole('local');
     try {
       await window.RemoteCtrlAPI?.browser.launch();
     } catch (err) {
       setRole('idle');
-      alert(`Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`);
+      setConnectionError(`Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
 
@@ -111,11 +116,13 @@ export function ConnectionPlaceholder() {
         setRightPanelTab('workflows');
       } else {
         useUIStore.getState().clearWorkflowRun();
-        alert(`Failed to start workflow: ${res?.error || 'Unknown error'}`);
+        setRole('idle');
+        setConnectionError(`Failed to start workflow: ${res?.error || 'Unknown error'}`);
       }
     } catch (err) {
       useUIStore.getState().clearWorkflowRun();
-      alert(`Failed to start workflow: ${err instanceof Error ? err.message : String(err)}`);
+      setRole('idle');
+      setConnectionError(`Failed to start workflow: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -140,6 +147,14 @@ export function ConnectionPlaceholder() {
       <p className="cp-subtitle">
         Choose how you want to work. You can change modes at any time.
       </p>
+      {connectionError && (
+        <StatusSurface
+          className="cp-status-surface"
+          message={connectionError}
+          actionLabel="Dismiss"
+          onAction={() => setConnectionError(null)}
+        />
+      )}
 
       <div className="cp-mode-picker" aria-label="Choose a session mode">
         <Button type="button" variant="outline" className={`cp-mode-option ${selectedMode === 'local' ? 'is-selected' : ''}`} aria-pressed={selectedMode === 'local'} onClick={() => setSelectedMode('local')}>

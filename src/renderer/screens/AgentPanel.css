@@ -45,9 +45,6 @@
 
 .agent-recovery-error {
   flex-basis: 100%;
-  color: var(--danger);
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 @media (max-width: 720px) {
@@ -491,7 +488,7 @@
 .agent-recording-title { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; }
 .agent-recording-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px rgba(239, 68, 68, .15); }
 .agent-recording-task { margin-top: 4px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent-recording-error { margin-top: 4px; color: var(--danger); font-size: 11px; }
+.agent-recording-error { margin-top: 4px; flex-basis: 100%; }
 .agent-recording-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
 .agent-input-area {

@@ -86,7 +86,7 @@
 .browser-state-card-compact h3 { font-size: 14px; }
 .browser-state-card-compact p { margin-top: 2px; font-size: 11px; }
 .browser-state-card-compact > .btn { margin-left: auto; flex: 0 0 auto; }
-.browser-state-card-error { border-color: color-mix(in srgb, var(--danger) 35%, var(--border) 65%); background: color-mix(in srgb, var(--bg-surface) 94%, var(--danger) 6%); }
+.browser-state-card-error { border-color: var(--border-active); background: var(--bg-surface); }
 .browser-state-card-error p { overflow-wrap: anywhere; }
 
 :root.light-theme .browser-state-card { box-shadow: 0 18px 45px rgba(15, 23, 42, .12); }

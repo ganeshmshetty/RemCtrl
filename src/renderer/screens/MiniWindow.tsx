@@ -23,6 +23,7 @@ import {
   type SpeechComposition,
 } from './miniWindowSpeech';
 import type { AgentCheckpointPayload } from '../../shared/types';
+import { StatusSurface } from '../components/StatusSurface';
 import './MiniWindow.css';
 
 export function MiniWindow() {
@@ -272,9 +273,7 @@ export function MiniWindow() {
         )}
 
         {errorMsg && (
-          <div className="mini-error-banner drag-region">
-            <span className="no-drag">{errorMsg}</span>
-          </div>
+          <StatusSurface className="mini-error-banner drag-region" message={errorMsg} actionLabel="Dismiss" onAction={() => setErrorMsg(null)} />
         )}
 
         {/* Search Input Bar (acts as window drag region except for controls) */}

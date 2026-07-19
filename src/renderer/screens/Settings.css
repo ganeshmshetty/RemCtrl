@@ -824,12 +824,11 @@
 }
 
 .mini-error-banner {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--danger);
   font-size: 11px;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  border-bottom: 1px solid var(--border);
 }
+.mini-error-banner button { -webkit-app-region: no-drag; }
 
 /* Checkpoint HUD */
 .mini-checkpoint-hud {

@@ -25,6 +25,7 @@ import { moveCursorTo, triggerRipple } from './automation/cursor-overlay.js';
 import { BrowserWindow } from 'electron';
 import { spawn } from 'child_process';
 import { createDevelopmentLogger } from './dev-logger.js';
+import { buildManagedChromeLaunchArgs, buildManagedPersistentContextOptions } from './browser-launch-options.js';
 
 export const BROWSER_TITLE = 'RemoteCtrl Host Browser';
 const NEW_TAB_URL = 'https://duckduckgo.com/';
@@ -261,8 +262,6 @@ export async function launchBrowser(startUrl = 'https://www.google.com', headles
   } else {
     // ── Internal mode: persistent profile ───────────────────────────────────
     const headless = headlessOverride ?? getHeadlessMode();
-    const width = 1280;
-    const height = 800;
     const profileDir = getBrowserProfileDir();
 
     // Detect first-launch for onboarding (before creating profile dir)
@@ -288,7 +287,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com', headles
         browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
         context = browser.contexts()[0];
         if (!context) {
-          context = await browser.newContext({ viewport: { width, height } });
+          context = await browser.newContext();
         }
         cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${cdpPort}`);
       } else {
@@ -312,21 +311,11 @@ export async function launchBrowser(startUrl = 'https://www.google.com', headles
           throw new Error('Chrome browser not found on this system. Please install Google Chrome or Edge.');
         }
         terminalLog.info(`[browser] Spawning detached Chrome process: ${executablePath}`);
-        const args = [
-          `--remote-debugging-port=${cdpPort}`,
-          `--user-data-dir=${profileDir}`,
-          `--window-size=${width},${height}`,
-          '--window-position=100,100',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--test-type',
-        ];
-        if (launchHeadless) {
-          args.push('--headless=new');
-        }
+        const args = buildManagedChromeLaunchArgs({
+          remoteDebuggingPort: cdpPort,
+          userDataDir: profileDir,
+          headless: launchHeadless,
+        });
         const child = spawn(executablePath, args, {
           detached: true,
           stdio: 'ignore',
@@ -337,7 +326,7 @@ export async function launchBrowser(startUrl = 'https://www.google.com', headles
         browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
         context = browser.contexts()[0];
         if (!context) {
-          context = await browser.newContext({ viewport: { width, height } });
+          context = await browser.newContext();
         }
       } else {
       // Try system Chrome first, fall back to bundled Playwright Chromium
@@ -353,22 +342,12 @@ export async function launchBrowser(startUrl = 'https://www.google.com', headles
 
       const dynamicPort = await getAvailablePort(INTERNAL_CDP_PORT);
 
-      context = await chromium.launchPersistentContext(profileDir, {
+      context = await chromium.launchPersistentContext(profileDir, buildManagedPersistentContextOptions({
+        remoteDebuggingPort: dynamicPort,
+        userDataDir: profileDir,
         headless: launchHeadless,
         executablePath,
-        args: [
-          `--remote-debugging-port=${dynamicPort}`,
-          `--window-size=${width},${height}`,
-          '--window-position=100,100',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--test-type',
-        ],
-        viewport: { width, height },
-      });
+      }));
 
       browser = context.browser() ?? (context as unknown as Browser);
       cdpWsUrl = await resolveCdpWsUrl(`http://127.0.0.1:${dynamicPort}`);
