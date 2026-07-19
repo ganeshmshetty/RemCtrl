@@ -15,3 +15,12 @@
 - `npm run build`: passed.
 - `git diff --check`: passed.
 - `npm run lint`: blocked by the repository's pre-existing lint baseline (136 errors across unrelated files, including existing `any` usage in automation modules). The Task 2 test's added overload cast was removed; no new Task 2-specific lint error remains beyond the existing file-level baseline.
+
+## Follow-up prompt validation
+
+- Confirmed `src/main/automation/agent-system-prompt.ts` advertises the implemented tool names `inspectScreenshot` and `clickVisualCoordinate`.
+- Confirmed both prompt entries are emitted only when `visionEnabled` is true, matching the factory's disabled-tool behavior.
+- `npm test -- --run src/main/automation/agent-prompt-history.test.ts`: passed — 1 file, 12 tests.
+- `npm run typecheck:main`: passed.
+- `git diff --check`: passed.
+- Follow-up commit: `Task 2 prompt tool advertisement`.

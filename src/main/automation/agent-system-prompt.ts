@@ -38,7 +38,7 @@ do not invent policy-block messages.
 
 function commonTools(visionEnabled: boolean): string {
   const visionTool = visionEnabled
-    ? '\n- inspectScreenshot: inspect the current page visually when DOM evidence is incomplete or the layout/state matters; use it selectively, not on every step.'
+    ? '\n- inspectScreenshot: inspect a marked current-page screenshot with numbered target mapping when DOM evidence is incomplete or the layout/state matters; use it selectively.\n- clickVisualCoordinate: use normalized [0,1] viewport coordinates to send a vision-only hardware click when DOM targeting is unavailable; provide an explicit reason and verify the result.'
     : '';
   return `<available_tools>
 Use the smallest tool that can make progress. Tool results are observations,
