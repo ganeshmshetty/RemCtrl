@@ -11,10 +11,15 @@
 .mini-logo-icon { width: 28px; height: 28px; justify-content: center; border-radius: 7px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .mini-prompt-input { order: 1; flex: 0 0 100%; min-height: 42px; padding: 4px 3px; border: 0; border-radius: 0; background: transparent; font-size: 15px; }
 .mini-logo-icon { order: 2; }
-.mini-input-actions { order: 2; margin-left: auto; }
+.mini-input-actions { order: 2; margin-left: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mini-prompt-input:focus,
 .mini-prompt-input:focus-visible { border: 0; outline: none; box-shadow: none; }
 .mini-action-btn { width: 30px; height: 30px; border-radius: 7px; }
+.mini-action-btn.mic { background: transparent; border-color: transparent; }
+.mini-action-btn.mic:hover:not(:disabled) { background: var(--bg-overlay); color: var(--text-primary); }
+.mini-action-btn.mic.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+.mini-action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mini-speech-status { display: inline-flex; align-items: center; gap: 4px; max-width: 190px; color: var(--text-muted); font-size: 10px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-status-hud,
 .mini-checkpoint-hud { padding: 7px 14px 0; background: transparent; max-height: 42px; overflow: hidden; }
 .mini-status-info::before { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 15%, transparent); content: ''; }

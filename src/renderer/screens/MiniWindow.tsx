@@ -9,8 +9,10 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, Sparkles, X } from 'lucide-react';
+import { AlertCircle, Mic, MicOff, Play, Square, Sparkles, X } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
+import { useSettingsStore } from '../stores/useWorkflowStore';
+import { useSpeechToText } from '../hooks/useSpeechToText';
 import type { AgentCheckpointPayload } from '../../shared/types';
 import './MiniWindow.css';
 
@@ -20,6 +22,24 @@ export function MiniWindow() {
   const [activeCheckpoint, setActiveCheckpoint] = useState<AgentCheckpointPayload | null>(null);
   const [activityIndex, setActivityIndex] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const speechBaseRef = useRef('');
+
+  const { speechToTextEnabled, speechInputMode } = useSettingsStore();
+
+  const handleTranscript = useCallback((text: string, isFinal: boolean) => {
+    setInstruction(() => {
+      const base = speechBaseRef.current;
+      const next = `${base}${base && !base.endsWith(' ') ? ' ' : ''}${text}`.replace(/\s+/g, ' ');
+      if (isFinal) speechBaseRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const speech = useSpeechToText({
+    enabled: speechToTextEnabled,
+    mode: speechInputMode,
+    onTranscript: handleTranscript,
+  });
 
   const handleCheckpointSelect = useCallback(async (optionId: string) => {
     if (!activeCheckpoint) return;
@@ -127,6 +147,7 @@ export function MiniWindow() {
     workflowRunState === 'running';
 
   const activityCopy = miniActivityCopy(currentAction, workflowRunState === 'running');
+  const speechStatusMessage = speech.error ?? (!speech.isSupported ? 'Microphone unavailable.' : null);
 
   useEffect(() => {
     if (!isRunning || activityCopy.length < 2) return;
@@ -137,6 +158,8 @@ export function MiniWindow() {
   const handleRunAgent = async () => {
     if (!instruction.trim() || isRunning) return;
     const text = instruction.trim();
+    speech.stop();
+    speechBaseRef.current = '';
     setInstruction('');
     setErrorMsg(null);
 
@@ -157,6 +180,16 @@ export function MiniWindow() {
       setAgentStatus('idle');
       setErrorMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  const startSpeech = () => {
+    if (isRunning) return;
+    speechBaseRef.current = instruction.trim() ? `${instruction.trim()} ` : '';
+    speech.start();
+  };
+
+  const stopSpeech = () => {
+    speech.stop();
   };
 
   const handleStop = async () => {
@@ -240,6 +273,41 @@ export function MiniWindow() {
           
           {/* Compact action buttons embedded in the input bar */}
           <div className="mini-input-actions no-drag">
+            {speechToTextEnabled && (
+              <>
+                {speechInputMode === 'push_to_talk' ? (
+                  <button
+                    type="button"
+                    className={`mini-action-btn mic ${speech.isListening ? 'active' : ''}`}
+                    onPointerDown={(event) => { event.preventDefault(); startSpeech(); }}
+                    onPointerUp={stopSpeech}
+                    onPointerCancel={stopSpeech}
+                    onPointerLeave={() => { if (speech.isListening) stopSpeech(); }}
+                    disabled={isRunning || !speech.isSupported || speech.status === 'error' || speech.status === 'permission'}
+                    aria-label="Hold to dictate"
+                    title="Hold to dictate"
+                  >
+                    {speech.isListening ? <MicOff size={14} className="no-drag" /> : <Mic size={14} className="no-drag" />}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={`mini-action-btn mic ${speech.isListening ? 'active' : ''}`}
+                    onClick={() => speech.isListening ? stopSpeech() : startSpeech()}
+                    disabled={isRunning || !speech.isSupported || speech.status === 'error' || speech.status === 'permission'}
+                    aria-label={speech.isListening ? 'Stop dictation' : 'Start dictation'}
+                    title={speech.isListening ? 'Stop dictation' : 'Start dictation'}
+                  >
+                    {speech.isListening ? <MicOff size={14} className="no-drag" /> : <Mic size={14} className="no-drag" />}
+                  </button>
+                )}
+                {speechStatusMessage && (
+                  <span className="mini-speech-status no-drag" role="status">
+                    <AlertCircle size={12} /> {speechStatusMessage}
+                  </span>
+                )}
+              </>
+            )}
             {isRunning ? (
               <button className="mini-action-btn stop no-drag" onClick={handleStop} title="Stop Agent">
                 <Square size={14} className="no-drag" />
