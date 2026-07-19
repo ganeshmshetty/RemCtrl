@@ -243,7 +243,16 @@ scripts/                macOS/Linux and Windows developer setup scripts
 
 ## How Codex and GPT-5.6 were used
 
-Codex was used as a senior engineering collaborator for planning, architecture research, implementation delegation, UI/UX refinement, stability work, local Whisper integration, testing, and documentation. Luna agents were used for bounded implementation and research tasks, while the main session coordinated changes and verified the final documentation.
+Codex was used as the engineering collaborator for product framing, architecture research, implementation, verification, and documentation. GPT-5.6/Codex work in this repository included:
+
+- **Product and UX decisions:** turned the browser-control surface into a task-scoped delegation product, refined the policy model, reduced attention-heavy UI states, and documented the remote-control boundary honestly.
+- **Architecture research:** studied browser-use and Stagehand agent loops, browser observation, retry, checkpoint, visual-grounding, and workflow patterns; the resulting notes live in `research/`.
+- **Subagent-driven development:** used the `subagent-driven-development` skill to split bounded tasks across lower-capability Luna agents. Agents handled focused research, setup scripts, README groundwork, speech UI cleanup, and local Whisper implementation work; the main session coordinated scope, commits, and integration.
+- **Skill-guided execution:** used the `brainstorming` skill to turn ambiguous product requests into clear design direction, and `verification-before-completion` to require fresh command output before claiming a change was complete.
+- **Implementation work:** added and refined agent/workflow resilience, visual guidance, browser-control UX, custom desktop behavior, policy handling, and a local ONNX Whisper speech-to-text foundation.
+- **Testing and documentation:** ran focused tests, type checks, builds, and diff checks where applicable; documented actual results and known limitations instead of asserting unsupported capabilities.
+
+Codex was most useful where the work crossed layers: translating product intent into Electron main-process boundaries, renderer interactions, IPC contracts, testable persistence, and a clear hackathon story.
 
 This documentation pass was informed by Codex session:
 
