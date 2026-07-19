@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from 'playwright';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildWorkflowStepSystemPrompt } from './agent-system-prompt.js';
 import { createBrowserTools } from './agent-tools.js';
 import { AgentHistoryManager, AgentHistoryRegistry } from './agent-history.js';
+import { policyGate } from '../policy/policy-gate.js';
+import type { PolicyAuthorization } from '../../shared/types.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('agent prompt and history boundaries', () => {
   it('treats the goal as serialized task data and includes the untrusted-content rule', () => {
@@ -70,7 +76,9 @@ describe('agent prompt and history boundaries', () => {
     const enabledTools = createBrowserTools({} as Page, undefined, 'local', undefined, true);
 
     expect('inspectScreenshot' in disabledTools).toBe(false);
+    expect('clickVisualCoordinate' in disabledTools).toBe(false);
     expect('inspectScreenshot' in enabledTools).toBe(true);
+    expect('clickVisualCoordinate' in enabledTools).toBe(true);
     expect(buildAgentSystemPrompt('Inspect the page', 'local', false)).not.toContain('inspectScreenshot');
     expect(buildAgentSystemPrompt('Inspect the page', 'local', true)).toContain('inspectScreenshot');
   });
@@ -79,16 +87,103 @@ describe('agent prompt and history boundaries', () => {
     const page = {
       url: () => 'https://example.test/modal',
       screenshot: async () => Buffer.from('jpeg-bytes'),
+      evaluate: vi.fn()
+        .mockResolvedValueOnce({
+          viewport: { width: 800, height: 600 },
+          marks: [{
+            id: 1,
+            tagName: 'button',
+            label: 'Save',
+            rect: { x: 100, y: 200, width: 80, height: 40 },
+            normalized: { x: 0.125, y: 1 / 3, width: 0.1, height: 1 / 15 },
+          }],
+          axisGrid: { step: 0.1, x: [0, 0.1, 1], y: [0, 0.1, 1] },
+        })
+        .mockResolvedValueOnce(undefined),
     } as unknown as Page;
     const tools = createBrowserTools(page, undefined, 'local', undefined, true) as Record<string, { execute?: (input: { reason: string }) => Promise<unknown> }>;
     const result = await tools.inspectScreenshot.execute?.({ reason: 'The modal layout is ambiguous' });
 
     expect(result).toEqual({
       type: 'content',
+      metadata: {
+        viewport: { width: 800, height: 600 },
+        axisGrid: { step: 0.1, x: [0, 0.1, 1], y: [0, 0.1, 1] },
+        marks: [{
+          id: 1,
+          tagName: 'button',
+          label: 'Save',
+          rect: { x: 100, y: 200, width: 80, height: 40 },
+          normalized: { x: 0.125, y: 1 / 3, width: 0.1, height: 1 / 15 },
+        }],
+      },
       value: [
-        { type: 'text', text: 'Current-page screenshot captured for: The modal layout is ambiguous' },
+        { type: 'text', text: 'Marked screenshot captured for: The modal layout is ambiguous\nTarget mapping: ' + JSON.stringify({
+          viewport: { width: 800, height: 600 },
+          axisGrid: { step: 0.1, x: [0, 0.1, 1], y: [0, 0.1, 1] },
+          marks: [{
+            id: 1,
+            tagName: 'button',
+            label: 'Save',
+            rect: { x: 100, y: 200, width: 80, height: 40 },
+            normalized: { x: 0.125, y: 1 / 3, width: 0.1, height: 1 / 15 },
+          }],
+        }) },
         { type: 'image-data', data: Buffer.from('jpeg-bytes').toString('base64'), mediaType: 'image/jpeg' },
       ],
     });
+  });
+
+  it('validates normalized visual coordinates and a nonempty reason', () => {
+    const tools = createBrowserTools({} as Page, undefined, 'local', undefined, true) as Record<string, { inputSchema: { safeParse: (input: unknown) => { success: boolean } } }>;
+    const schema = tools.clickVisualCoordinate.inputSchema;
+
+    expect(schema.safeParse({ x: 0, y: 1, reason: 'Click the marked Save button' }).success).toBe(true);
+    expect(schema.safeParse({ x: -0.01, y: 0.5, reason: 'target' }).success).toBe(false);
+    expect(schema.safeParse({ x: 0.5, y: 1.01, reason: 'target' }).success).toBe(false);
+    expect(schema.safeParse({ x: Number.NaN, y: 0.5, reason: 'target' }).success).toBe(false);
+    expect(schema.safeParse({ x: 0.5, y: 0.5, reason: '   ' }).success).toBe(false);
+  });
+
+  it('blocks visual clicks before opening a CDP session', async () => {
+    vi.spyOn(policyGate, 'authorize').mockResolvedValue({ decision: 'blocked', reason: 'Browser writes are blocked.' } as unknown as PolicyAuthorization);
+    const newCDPSession = vi.fn();
+    const page = {
+      url: () => 'https://example.test/modal',
+      viewportSize: () => ({ width: 800, height: 600 }),
+      context: () => ({ newCDPSession }),
+    } as unknown as Page;
+    const tools = createBrowserTools(page, undefined, 'policy-enforced', undefined, true) as Record<string, { execute?: (input: { x: number; y: number; reason: string }) => Promise<unknown> }>;
+
+    await expect(tools.clickVisualCoordinate.execute?.({ x: 0.5, y: 0.25, reason: 'Click the marked control' })).resolves.toEqual({
+      success: false,
+      blockedByPolicy: true,
+      reason: 'Browser writes are blocked.',
+    });
+    expect(newCDPSession).not.toHaveBeenCalled();
+  });
+
+  it('dispatches a visual click as CSS-viewport CDP mouse events', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const detach = vi.fn().mockResolvedValue(undefined);
+    const page = {
+      url: () => 'https://example.test/modal',
+      viewportSize: () => ({ width: 800, height: 600 }),
+      context: () => ({ newCDPSession: vi.fn().mockResolvedValue({ send, detach }) }),
+    } as unknown as Page;
+    const tools = createBrowserTools(page, undefined, 'local', undefined, true) as Record<string, { execute?: (input: { x: number; y: number; reason: string }) => Promise<unknown> }>;
+
+    await expect(tools.clickVisualCoordinate.execute?.({ x: 0.25, y: 0.5, reason: 'Click the marked control' })).resolves.toMatchObject({
+      success: true,
+      pixelX: 200,
+      pixelY: 300,
+      viewport: { width: 800, height: 600 },
+    });
+    expect(send.mock.calls).toEqual([
+      ['Input.dispatchMouseEvent', { type: 'mouseMoved', x: 200, y: 300 }],
+      ['Input.dispatchMouseEvent', { type: 'mousePressed', x: 200, y: 300, button: 'left', clickCount: 1 }],
+      ['Input.dispatchMouseEvent', { type: 'mouseReleased', x: 200, y: 300, button: 'left', clickCount: 1 }],
+    ]);
+    expect(detach).toHaveBeenCalledOnce();
   });
 });

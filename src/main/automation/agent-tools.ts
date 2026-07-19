@@ -12,6 +12,7 @@ import type { Page } from 'playwright';
 import { ask } from './human-checkpoint.js';
 import { policyGate } from '../policy/policy-gate.js';
 import { SemanticActionEngine } from './browser/semantic-actions.js';
+import { captureVisualGuidance } from './visual-guidance.js';
 import type { BrowserActionGuardRequest, PolicyBlockedResult } from './browser/action-types.js';
 import type { AutomationSecurityMode } from './security-mode.js';
 
@@ -179,9 +180,9 @@ export function createBrowserTools(
     ...(visionEnabled ? {
       inspectScreenshot: tool({
         description:
-          'Inspect a screenshot of the current page when the DOM snapshot is incomplete, the layout or visual state matters, an element is difficult to identify, or you need to verify a visual change. Use this whenever visual evidence is more reliable than page text; do not call it on every step when observe() is sufficient. This is read-only and does not change browser state.',
+          'Inspect a marked screenshot of the current page when the DOM snapshot is incomplete, the layout or visual state matters, an element is difficult to identify, or you need to verify a visual change. The result includes a numbered mark-to-target mapping, normalized rectangles, and a normalized axis grid. Use this whenever visual evidence is more reliable than page text; do not call it on every step when observe() is sufficient. This is read-only and does not change browser state.',
         inputSchema: z.object({
-          reason: z.string().min(1).max(240).describe('Briefly state what visual uncertainty or verification requires the screenshot'),
+          reason: z.string().trim().min(1).max(240).describe('Briefly state what visual uncertainty or verification requires the screenshot'),
         }),
         execute: wrap('inspectScreenshot', async ({ reason }) => {
           const blocked = await authorize({
@@ -191,14 +192,57 @@ export function createBrowserTools(
             url: page.url(),
           });
           if (blocked) return blocked;
-          const image = await page.screenshot({ type: 'jpeg', quality: 75, scale: 'css' });
+          const guidance = await captureVisualGuidance(page);
+          const metadata = {
+            viewport: guidance.viewport,
+            axisGrid: guidance.axisGrid,
+            marks: guidance.marks,
+          };
           return {
             type: 'content' as const,
+            metadata,
             value: [
-              { type: 'text' as const, text: `Current-page screenshot captured for: ${reason}` },
-              { type: 'image-data' as const, data: image.toString('base64'), mediaType: 'image/jpeg' },
+              { type: 'text' as const, text: `Marked screenshot captured for: ${reason}\nTarget mapping: ${JSON.stringify(metadata)}` },
+              { type: 'image-data' as const, data: guidance.screenshot.toString('base64'), mediaType: 'image/jpeg' },
             ],
           };
+        }),
+      }),
+      clickVisualCoordinate: tool({
+        description:
+          'Click a target identified from inspectScreenshot using normalized viewport coordinates. Provide an explicit reason tied to the marked visual target. This is a vision-only hardware mouse action; use it only when DOM targeting is unavailable or unreliable, and verify the visible result afterward.',
+        inputSchema: z.object({
+          x: z.number().finite().min(0).max(1).describe('Normalized horizontal viewport coordinate in the inclusive range [0, 1]'),
+          y: z.number().finite().min(0).max(1).describe('Normalized vertical viewport coordinate in the inclusive range [0, 1]'),
+          reason: z.string().trim().min(1).max(240).describe('Explicit reason connecting this coordinate to a marked visual target'),
+        }),
+        execute: wrap('clickVisualCoordinate', async ({ x, y, reason }) => {
+          const blocked = await authorize({
+            capability: 'browser.click',
+            summary: `Click visual coordinate (${x}, ${y}): ${reason}`,
+            details: { coordinateSpace: 'normalized-viewport', x, y, reason },
+            url: page.url(),
+          });
+          if (blocked) return blocked;
+
+          const viewport = page.viewportSize() ?? await page.evaluate(() => {
+            const win = globalThis as typeof globalThis & { innerWidth?: number; innerHeight?: number };
+            return { width: win.innerWidth ?? 0, height: win.innerHeight ?? 0 };
+          });
+          if (!viewport || viewport.width <= 0 || viewport.height <= 0) {
+            throw new Error('A positive CSS viewport is required for visual coordinate actions.');
+          }
+          const pixelX = x * viewport.width;
+          const pixelY = y * viewport.height;
+          const cdp = await page.context().newCDPSession(page);
+          try {
+            await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pixelX, y: pixelY });
+            await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pixelX, y: pixelY, button: 'left', clickCount: 1 });
+            await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pixelX, y: pixelY, button: 'left', clickCount: 1 });
+          } finally {
+            await cdp.detach().catch(() => undefined);
+          }
+          return { success: true, x, y, pixelX, pixelY, viewport, reason };
         }),
       }),
     } : {}),
