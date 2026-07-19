@@ -38,3 +38,12 @@ Only the new module, its focused test, and this report are part of this task. Pr
 - Discovery now walks the normal DOM and open shadow roots and recognizes contenteditable elements, label/span wrapper controls, and `onclick`, `onmousedown`, and `onkeydown` patterns alongside semantic tags, roles, focusability, and pointer cursors.
 - Zero-opacity elements are omitted. Rectangles intersecting the viewport are clipped to viewport bounds before normalized metadata is generated; fully offscreen or zero-area rectangles remain omitted.
 - Focused tests now execute the injected evaluator against a fake browser DOM through the mocked Playwright `evaluate` seam. They verify stale-root removal, success cleanup, screenshot-error cleanup, self-exclusion, shadow-root discovery, wrapper controls, contenteditable and handler discovery, opacity filtering, and partial-rectangle clipping.
+
+## Re-review validation for commit 80647dc
+
+Validated from the committed fix at `80647dc9ee60e8539509e7af61a5f33ca519ac31`:
+
+- `npm test -- --run src/main/automation/visual-guidance.test.ts` — 1 file passed, 2 tests passed.
+- `npm test` — 21 files passed, 57 tests passed.
+- `npm run typecheck:all` — `tsc --noEmit` and `tsc -p tsconfig.main.json --noEmit` passed.
+- `npm run build` — renderer Vite build and main Electron build passed; main bundle and preload were generated successfully.
