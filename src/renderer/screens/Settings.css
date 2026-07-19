@@ -619,6 +619,15 @@
   line-height: 1.25;
 }
 
+.chat-speech-setup,
+.mini-speech-setup {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+
 .chat-prompt-form {
   display: flex;
   flex-direction: column;

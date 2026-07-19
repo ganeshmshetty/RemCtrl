@@ -131,6 +131,9 @@ export default function App() {
       window.RemoteCtrlAPI.on.themeChanged((newTheme) => {
         useSettingsStore.setState({ theme: newTheme as any });
       }),
+      window.RemoteCtrlAPI.on.speechStateChanged((whisperSetup) => {
+        useSettingsStore.getState().setWhisperSetup(whisperSetup);
+      }),
       window.RemoteCtrlAPI.on.agentStarted((payload) => {
         const store = useAgentStore.getState();
         if (store.activeCommandId !== payload.commandId) {

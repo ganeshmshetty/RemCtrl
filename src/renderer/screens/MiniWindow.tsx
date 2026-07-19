@@ -34,7 +34,7 @@ export function MiniWindow() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const speechCompositionRef = useRef<SpeechComposition>({ active: false, base: '' });
 
-  const { speechToTextEnabled, speechInputMode } = useSettingsStore();
+  const { microphoneAudioEnabled, speechInputMode, whisperSetup } = useSettingsStore();
 
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
     setInstruction((currentInstruction) => {
@@ -45,8 +45,9 @@ export function MiniWindow() {
   }, []);
 
   const speech = useSpeechToText({
-    enabled: speechToTextEnabled,
+    enabled: microphoneAudioEnabled,
     mode: speechInputMode,
+    setup: whisperSetup,
     onTranscript: handleTranscript,
   });
 
@@ -156,7 +157,7 @@ export function MiniWindow() {
     workflowRunState === 'running';
 
   const activityCopy = miniActivityCopy(currentAction, workflowRunState === 'running');
-  const speechStatusMessage = speech.error ?? (!speech.isSupported ? 'Microphone unavailable.' : null);
+  const speechStatusMessage = speech.error;
 
   useEffect(() => {
     if (!isRunning || activityCopy.length < 2) return;
@@ -192,7 +193,7 @@ export function MiniWindow() {
   };
 
   const startSpeech = () => {
-    if (!canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })) return;
+    if (!canStartSpeech({ enabled: microphoneAudioEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })) return;
     speechCompositionRef.current = beginSpeechComposition(instruction);
     speech.start();
   };
@@ -204,7 +205,7 @@ export function MiniWindow() {
 
   const toggleHandsFreeSpeech = () => {
     const next = toggleSpeechComposition(speechCompositionRef.current, instruction);
-    if (next.active && !canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })) return;
+    if (next.active && !canStartSpeech({ enabled: microphoneAudioEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })) return;
     speechCompositionRef.current = next;
     if (next.active) speech.start();
     else speech.stop();
@@ -297,7 +298,7 @@ export function MiniWindow() {
           
           {/* Compact action buttons embedded in the input bar */}
           <div className="mini-input-actions no-drag">
-            {speechToTextEnabled && (
+            <>
               <>
                 {speechInputMode === 'push_to_talk' ? (
                   <button
@@ -307,7 +308,7 @@ export function MiniWindow() {
                     onPointerUp={stopSpeech}
                     onPointerCancel={stopSpeech}
                     onPointerLeave={() => { if (speech.isListening) stopSpeech(); }}
-                    disabled={!canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })}
+                    disabled={!canStartSpeech({ enabled: microphoneAudioEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) })}
                     aria-label="Hold to dictate"
                     title="Hold to dictate"
                   >
@@ -318,7 +319,7 @@ export function MiniWindow() {
                     type="button"
                     className={`mini-action-btn mic ${speech.isListening ? 'active' : ''}`}
                     onClick={toggleHandsFreeSpeech}
-                    disabled={!canStartSpeech({ enabled: speechToTextEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) }) && !speech.isListening}
+                    disabled={!canStartSpeech({ enabled: microphoneAudioEnabled, isSupported: speech.isSupported, isRunning, hasError: Boolean(speech.error) }) && !speech.isListening}
                     aria-label={speech.isListening ? 'Stop dictation' : 'Start dictation'}
                     title={speech.isListening ? 'Stop dictation' : 'Start dictation'}
                   >
@@ -326,12 +327,11 @@ export function MiniWindow() {
                   </button>
                 )}
                 {speechStatusMessage && (
-                  <span className="mini-speech-status no-drag" role="status">
-                    <AlertCircle size={12} /> {speechStatusMessage}
-                  </span>
+                  <button type="button" className="mini-speech-setup no-drag" role="status" onClick={() => void window.RemoteCtrlAPI?.app.showMainWindow()} title="Open RemoteCtrl settings to set up local Whisper">
+                    <AlertCircle size={12} /> Set up speech
+                  </button>
                 )}
               </>
-            )}
             {isRunning ? (
               <button className="mini-action-btn stop no-drag" onClick={handleStop} title="Stop Agent">
                 <Square size={14} className="no-drag" />

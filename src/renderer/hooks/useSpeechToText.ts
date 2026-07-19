@@ -1,160 +1,84 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SpeechInputMode } from '../../shared/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { LocalWhisperSetupState, SpeechInputMode } from '../../shared/types';
 
-interface SpeechRecognitionEventLike extends Event {
-  resultIndex: number;
-  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+export type SpeechStatus = 'idle' | 'unavailable';
+
+export interface LocalSpeechGate {
+  ready: boolean;
+  message: string | null;
 }
 
-interface SpeechRecognitionErrorEventLike extends Event {
-  error: string;
+export function getLocalSpeechGate(
+  microphoneAudioEnabled: boolean,
+  setup: LocalWhisperSetupState,
+): LocalSpeechGate {
+  if (setup.model.status !== 'installed' || !setup.model.verified) {
+    return { ready: false, message: 'Download and verify the local Whisper model in Settings.' };
+  }
+  if (!microphoneAudioEnabled) {
+    return { ready: false, message: 'Enable microphone audio in Settings before dictating.' };
+  }
+  if (!setup.runtime.available) {
+    return { ready: false, message: setup.runtime.message };
+  }
+  return { ready: true, message: null };
 }
 
-interface SpeechRecognitionLike {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onend: (() => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-}
-
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-
-interface SpeechWindow extends Window {
-  SpeechRecognition?: SpeechRecognitionConstructor;
-  webkitSpeechRecognition?: SpeechRecognitionConstructor;
-}
-
-export type SpeechStatus = 'idle' | 'listening' | 'reconnecting' | 'unsupported' | 'permission' | 'error';
-
-function getRecognitionConstructor(): SpeechRecognitionConstructor | undefined {
-  const speechWindow = window as SpeechWindow;
-  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
-}
-
-function messageForSpeechError(code: string): string {
-  if (code === 'not-allowed' || code === 'service-not-allowed') return 'Microphone access is blocked. Allow microphone access for RemoteCtrl in system or site settings.';
-  if (code === 'audio-capture') return 'No microphone is available. Connect a microphone and try again.';
-  if (code === 'network') return 'Speech recognition could not reach its language service.';
-  if (code === 'no-speech') return 'No speech was detected.';
-  return 'Speech recognition stopped unexpectedly. Try again.';
-}
-
+/**
+ * Local-only speech control seam. Browser Web Speech and cloud recognition are
+ * intentionally absent. A future packaged native runner must replace the
+ * unavailable adapter before this hook can begin microphone capture.
+ */
 export function useSpeechToText({
   enabled,
-  mode,
-  onTranscript,
+  mode: _mode,
+  setup,
+  onTranscript: _onTranscript,
 }: {
   enabled: boolean;
   mode: SpeechInputMode;
+  setup: LocalWhisperSetupState;
   onTranscript: (text: string, isFinal: boolean) => void;
 }) {
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const onTranscriptRef = useRef(onTranscript);
-  const keepListeningRef = useRef(false);
-  const restartTimerRef = useRef<number | null>(null);
+  const gate = useMemo(() => getLocalSpeechGate(enabled, setup), [enabled, setup]);
   const [status, setStatus] = useState<SpeechStatus>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(gate.message);
 
-  useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
-
-  const clearRestart = useCallback(() => {
-    if (restartTimerRef.current !== null) window.clearTimeout(restartTimerRef.current);
-    restartTimerRef.current = null;
-  }, []);
-
-  const stop = useCallback(() => {
-    keepListeningRef.current = false;
-    clearRestart();
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
-    setStatus('idle');
-  }, [clearRestart]);
-
-  const start = useCallback(() => {
-    if (!enabled) return;
-    const Constructor = getRecognitionConstructor();
-    if (!Constructor) {
-      setStatus('unsupported');
-      setError('Speech input is not supported in this browser.');
-      return;
-    }
-    if (recognitionRef.current || restartTimerRef.current !== null) return;
-
-    const shouldKeepListening = mode === 'hands_free';
-    keepListeningRef.current = shouldKeepListening;
-    setError(null);
-
-    const beginRecognition = () => {
-      if (recognitionRef.current) return;
-      const recognition = new Constructor();
-      recognition.continuous = shouldKeepListening;
-      recognition.interimResults = true;
-      recognition.lang = navigator.language || 'en-US';
-      recognition.onresult = (event) => {
-        for (let index = event.resultIndex; index < event.results.length; index += 1) {
-          const result = event.results[index];
-          onTranscriptRef.current(result[0].transcript, result.isFinal);
-        }
-      };
-      recognition.onerror = (event) => {
-        recognitionRef.current = null;
-        if (event.error === 'no-speech' && keepListeningRef.current) {
-          setStatus('reconnecting');
-          return;
-        }
-        keepListeningRef.current = false;
-        setError(messageForSpeechError(event.error));
-        setStatus(event.error === 'not-allowed' || event.error === 'service-not-allowed' ? 'permission' : 'error');
-      };
-      recognition.onend = () => {
-        recognitionRef.current = null;
-        if (keepListeningRef.current && restartTimerRef.current === null) {
-          setStatus('reconnecting');
-          restartTimerRef.current = window.setTimeout(() => {
-            restartTimerRef.current = null;
-            beginRecognition();
-          }, 350);
-          return;
-        }
-        setStatus((current) => current === 'error' || current === 'permission' || current === 'unsupported' ? current : 'idle');
-      };
-      recognitionRef.current = recognition;
-      setStatus('listening');
-      try {
-        recognition.start();
-      } catch {
-        recognitionRef.current = null;
-        keepListeningRef.current = false;
-        setStatus('error');
-        setError('Microphone could not start. Check microphone permissions and try again.');
-      }
-    };
-
-    beginRecognition();
-  }, [enabled, mode]);
-
-  useEffect(() => () => {
-    keepListeningRef.current = false;
-    if (restartTimerRef.current !== null) window.clearTimeout(restartTimerRef.current);
-    recognitionRef.current?.abort();
-    recognitionRef.current = null;
-  }, []);
+  void _mode;
+  void _onTranscript;
 
   useEffect(() => {
-    if (!enabled && (recognitionRef.current || restartTimerRef.current !== null)) stop();
-  }, [enabled, stop]);
+    if (!gate.ready) {
+      setStatus('unavailable');
+      setError(gate.message);
+      return;
+    }
+    setStatus('idle');
+    setError(null);
+  }, [gate]);
+
+  const start = useCallback(() => {
+    if (!gate.ready) {
+      setStatus('unavailable');
+      setError(gate.message);
+      return;
+    }
+    // This branch is unreachable in Task 8: the typed main-process adapter
+    // reports native-runner-not-packaged. Do not substitute browser recognition.
+    setStatus('unavailable');
+    setError('Local Whisper transcription is unavailable because this build does not include a native whisper.cpp runner.');
+  }, [gate]);
+
+  const stop = useCallback(() => {
+    setStatus(gate.ready ? 'idle' : 'unavailable');
+  }, [gate.ready]);
 
   return {
     start,
     stop,
     status,
     error,
-    isSupported: Boolean(getRecognitionConstructor()),
-    isListening: status === 'listening' || status === 'reconnecting',
+    isSupported: gate.ready,
+    isListening: false,
   };
 }

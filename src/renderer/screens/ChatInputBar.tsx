@@ -3,12 +3,14 @@ import { Send, StopCircle, Plus, Hand, Mic, MicOff, AlertCircle } from 'lucide-r
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import { useSettingsStore } from '../stores/useWorkflowStore';
+import { useUIStore } from '../stores/useUIStore';
 import { useSpeechToText } from '../hooks/useSpeechToText';
 
 export function ChatInputBar() {
   const { agentStatus, isTakeoverActive, recordingState, recordingSessionId } = useAgentStore();
   const { role, controllerState, hostState, sendData } = useConnectionStore();
-  const { speechToTextEnabled, speechInputMode } = useSettingsStore();
+  const { microphoneAudioEnabled, speechInputMode, whisperSetup } = useSettingsStore();
+  const { openSettings } = useUIStore();
   const [prompt, setPrompt] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -22,7 +24,7 @@ export function ChatInputBar() {
       return next;
     });
   }, []);
-  const speech = useSpeechToText({ enabled: speechToTextEnabled, mode: speechInputMode, onTranscript: handleTranscript });
+  const speech = useSpeechToText({ enabled: microphoneAudioEnabled, mode: speechInputMode, setup: whisperSetup, onTranscript: handleTranscript });
 
   useEffect(() => {
     if (inputRef.current) {
@@ -166,7 +168,7 @@ export function ChatInputBar() {
                 <Hand size={16} />
               </button>
             )}
-            {speechToTextEnabled && speechInputMode === 'push_to_talk' && (
+            {speechInputMode === 'push_to_talk' && (
               <button
                 type="button"
                 className={`chat-control-icon-btn ${speech.isListening ? 'active' : ''}`}
@@ -175,23 +177,25 @@ export function ChatInputBar() {
                 onPointerCancel={stopSpeech}
                 onPointerLeave={() => { if (speech.isListening) stopSpeech(); }}
                 aria-label="Hold to dictate"
-                title="Hold to dictate"
+                title={speech.error ?? 'Hold to dictate'}
+                disabled={!speech.isSupported}
               >
                 {speech.isListening ? <MicOff size={16} /> : <Mic size={16} />}
               </button>
             )}
-            {speechToTextEnabled && speechInputMode === 'hands_free' && (
+            {speechInputMode === 'hands_free' && (
               <button
                 type="button"
                 className={`chat-control-icon-btn ${speech.isListening ? 'active' : ''}`}
                 onClick={() => speech.isListening ? stopSpeech() : startSpeech()}
                 aria-label={speech.isListening ? 'Stop dictation' : 'Start dictation'}
-                title={speech.isListening ? 'Stop dictation' : 'Start dictation'}
+                title={speech.error ?? (speech.isListening ? 'Stop dictation' : 'Start dictation')}
+                disabled={!speech.isSupported && !speech.isListening}
               >
                 {speech.isListening ? <MicOff size={16} /> : <Mic size={16} />}
               </button>
             )}
-            {speech.error && <span className="chat-speech-status" role="status"><AlertCircle size={13} /> {speech.error}</span>}
+            {speech.error && <><span className="chat-speech-status" role="status"><AlertCircle size={13} /> {speech.error}</span><button type="button" className="chat-speech-setup" onClick={openSettings}>Set up</button></>}
           </div>
           {agentStatus === 'running' ? (
             <button type="button" className="chat-prompt-send danger" onClick={handleCancelAgent} title="Stop execution">

@@ -74,8 +74,12 @@ export function Settings() {
     setUseVisionCUA,
     theme,
     setTheme,
-    speechToTextEnabled,
-    setSpeechToTextEnabled,
+    microphoneAudioEnabled,
+    setMicrophoneAudioEnabled,
+    whisperSetup,
+    downloadWhisperModel,
+    cancelWhisperDownload,
+    retryWhisperDownload,
     speechInputMode,
     setSpeechInputMode,
   } = useSettingsStore();
@@ -200,6 +204,22 @@ export function Settings() {
     }
   }
 
+  async function handleWhisperModelAction() {
+    try {
+      if (whisperSetup.model.status === 'downloading' || whisperSetup.model.status === 'verifying') {
+        await cancelWhisperDownload();
+        return;
+      }
+      if (whisperSetup.model.status === 'error') {
+        await retryWhisperDownload();
+        return;
+      }
+      await downloadWhisperModel();
+    } catch {
+      flash('Could not update the local Whisper model');
+    }
+  }
+
   const models = cachedModels[preferredProvider] ?? [];
   const hasCurrentKey = hasKeyForProvider(preferredProvider);
   const tab = TAB_DETAILS[activeTab];
@@ -277,9 +297,36 @@ export function Settings() {
                     </PreferenceRow>
                   </PreferenceGroup>
 
-                  <PreferenceGroup title="Speech input" description="Dictate into the primary agent input. RemoteCtrl only converts speech to text; it does not send audio to the agent.">
-                    <PreferenceToggle title="Enable speech input" description="Show the microphone control in the agent input." checked={speechToTextEnabled} onChange={(checked) => void setSpeechToTextEnabled(checked)} />
-                    {speechToTextEnabled && <PreferenceRow title="Dictation mode" description="Choose how the microphone control behaves.">
+                  <PreferenceGroup title="Local Whisper speech" description="The model is stored on this device. Audio is never sent to Web Speech, remote sessions, or the agent protocol.">
+                    <PreferenceRow title="Download model" description={whisperSetup.model.status === 'installed'
+                      ? `ggml-tiny.en.bin verified (${Math.round(whisperSetup.model.sizeBytes / 1024 / 1024)} MiB).`
+                      : whisperSetup.model.status === 'downloading'
+                        ? `Downloading ${Math.round((whisperSetup.model.progress ?? 0) * 100)}%…`
+                        : whisperSetup.model.status === 'verifying'
+                          ? 'Verifying the downloaded model SHA-1…'
+                          : whisperSetup.model.error ?? 'Download and verify ggml-tiny.en.bin before enabling microphone audio.'}>
+                      <Button onClick={() => void handleWhisperModelAction()}>
+                        {whisperSetup.model.status === 'downloading' || whisperSetup.model.status === 'verifying'
+                          ? 'Cancel'
+                          : whisperSetup.model.status === 'error'
+                            ? 'Retry download'
+                            : whisperSetup.model.status === 'installed'
+                              ? 'Verify model'
+                              : 'Download model'}
+                      </Button>
+                    </PreferenceRow>
+                    <PreferenceToggle
+                      title="Enable microphone audio"
+                      description={whisperSetup.model.status === 'installed' && whisperSetup.model.verified
+                        ? whisperSetup.runtime.available
+                          ? 'Allow this device to capture audio for local Whisper transcription.'
+                          : `${whisperSetup.runtime.message} Model setup is complete, but audio cannot start yet.`
+                        : 'Available after the local model has been downloaded and verified.'}
+                      checked={microphoneAudioEnabled}
+                      disabled={whisperSetup.model.status !== 'installed' || !whisperSetup.model.verified}
+                      onChange={(checked) => void setMicrophoneAudioEnabled(checked)}
+                    />
+                    <PreferenceRow title="Dictation mode" description="Choose how the microphone control behaves once a packaged local runtime is available.">
                       <PreferenceSelect
                         value={speechInputMode}
                         onChange={(value) => void setSpeechInputMode(value as typeof speechInputMode)}
@@ -289,7 +336,7 @@ export function Settings() {
                         ]}
                         className="w-[168px]"
                       />
-                    </PreferenceRow>}
+                    </PreferenceRow>
                   </PreferenceGroup>
                 </>
               )}
@@ -432,11 +479,12 @@ function PreferenceRow({ title, description, children }: { title: string; descri
   return <div className="preferences-row"><div className="preferences-row-copy"><strong>{title}</strong><span>{description}</span></div><div className="preferences-row-action">{children}</div></div>;
 }
 
-function PreferenceToggle({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function PreferenceToggle({ title, description, checked, disabled = false, onChange }: { title: string; description: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
   return (
     <PreferenceRow title={title} description={description}>
       <Switch
         checked={checked}
+        disabled={disabled}
         onCheckedChange={onChange}
       />
     </PreferenceRow>

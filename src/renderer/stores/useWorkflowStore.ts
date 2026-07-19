@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import type { LocalWorkflow, ApiProvider, AppTheme, SpeechInputMode } from '../../shared/types';
+import type { LocalWorkflow, ApiProvider, AppTheme, LocalWhisperSetupState, SpeechInputMode } from '../../shared/types';
 
 interface WorkflowState {
   workflows: LocalWorkflow[];
@@ -103,9 +103,14 @@ interface SettingsState {
   setTheme: (theme: AppTheme) => Promise<void>;
   useVisionCUA: boolean;
   setUseVisionCUA: (useCua: boolean) => Promise<void>;
-  speechToTextEnabled: boolean;
+  microphoneAudioEnabled: boolean;
+  whisperSetup: LocalWhisperSetupState;
+  setWhisperSetup: (setup: LocalWhisperSetupState) => void;
+  downloadWhisperModel: () => Promise<void>;
+  cancelWhisperDownload: () => Promise<void>;
+  retryWhisperDownload: () => Promise<void>;
   speechInputMode: SpeechInputMode;
-  setSpeechToTextEnabled: (enabled: boolean) => Promise<void>;
+  setMicrophoneAudioEnabled: (enabled: boolean) => Promise<void>;
   setSpeechInputMode: (mode: SpeechInputMode) => Promise<void>;
   isSettingsOpen: boolean;
   setSettingsOpen: (isOpen: boolean) => void;
@@ -129,7 +134,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   customProfiles: [],
   theme: 'system',
   useVisionCUA: true,
-  speechToTextEnabled: true,
+  microphoneAudioEnabled: false,
+  whisperSetup: {
+    model: { status: 'not_installed', fileName: 'ggml-tiny.en.bin', sizeBytes: 75 * 1024 * 1024, bytesDownloaded: 0, progress: null, verified: false },
+    runtime: { available: false, reason: 'native-runner-not-packaged', message: 'Local Whisper transcription is unavailable because this build does not include a native whisper.cpp runner.' },
+  },
   speechInputMode: 'push_to_talk',
   isLoading: false,
   isSettingsOpen: false,
@@ -137,7 +146,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, speechToTextEnabled, speechInputMode] =
+      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, microphoneAudioEnabled, speechInputMode, whisperSetup] =
         await Promise.all([
           window.RemoteCtrlAPI.settings.getSignalingUrl(),
           window.RemoteCtrlAPI.settings.getPreferredProvider(),
@@ -156,10 +165,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           window.RemoteCtrlAPI.settings.getCustomProfiles(),
           window.RemoteCtrlAPI.settings.getUseVisionCUA(),
           window.RemoteCtrlAPI.settings.getTheme(),
-          window.RemoteCtrlAPI.settings.getSpeechToTextEnabled(),
+          window.RemoteCtrlAPI.settings.getMicrophoneAudioEnabled(),
           window.RemoteCtrlAPI.settings.getSpeechInputMode(),
+          window.RemoteCtrlAPI.speech.getSetupState(),
         ]);
-      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, speechToTextEnabled, speechInputMode, isLoading: false });
+      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, microphoneAudioEnabled, speechInputMode, whisperSetup, isLoading: false });
     } catch {
       set({ isLoading: false });
     }
@@ -234,9 +244,26 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ useVisionCUA: useCua });
   },
 
-  setSpeechToTextEnabled: async (enabled) => {
-    await window.RemoteCtrlAPI.settings.setSpeechToTextEnabled(enabled);
-    set({ speechToTextEnabled: enabled });
+  setWhisperSetup: (whisperSetup) => set({ whisperSetup }),
+
+  downloadWhisperModel: async () => {
+    const whisperSetup = await window.RemoteCtrlAPI.speech.downloadModel();
+    set({ whisperSetup });
+  },
+
+  cancelWhisperDownload: async () => {
+    const whisperSetup = await window.RemoteCtrlAPI.speech.cancelDownload();
+    set({ whisperSetup });
+  },
+
+  retryWhisperDownload: async () => {
+    const whisperSetup = await window.RemoteCtrlAPI.speech.retryDownload();
+    set({ whisperSetup });
+  },
+
+  setMicrophoneAudioEnabled: async (enabled) => {
+    await window.RemoteCtrlAPI.settings.setMicrophoneAudioEnabled(enabled);
+    set({ microphoneAudioEnabled: enabled });
   },
 
   setSpeechInputMode: async (mode) => {
