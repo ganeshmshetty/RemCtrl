@@ -109,6 +109,11 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 - Standardized code cards, copy actions, headings, lists, inline code, and links for dark/light theme inheritance and keyboard-visible interaction.
 - Converted Agent-panel scope controls, approval cards, activity pills, and message editing controls to the same named CSS primitives.
 
+## 2026-07-19 · Renderer data boundaries
+
+- Replaced `any`-typed connection-store callbacks and agent-result formatting with shared data-channel types and unknown-safe result narrowing.
+- Centralized tab synchronization through one update path so browser URL state follows local and remote tab events without a render-triggered state effect.
+
 Verified:
 
 - Fresh local renderer smoke test in the in-app browser after starting a local session.

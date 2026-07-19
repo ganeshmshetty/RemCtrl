@@ -182,10 +182,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
     
     if (payload.state === 'completed') {
-      const result = payload.result as any;
+      const result = payload.result;
       // Store recorded steps for Save as Workflow
-      if (result?.recordedSteps?.length) {
-        get().setLastRecordedSteps(result.recordedSteps, result.originalInstruction ?? '');
+      if (isRecord(result) && Array.isArray(result.recordedSteps) && result.recordedSteps.length > 0) {
+        get().setLastRecordedSteps(result.recordedSteps as RecordedAgentStep[], typeof result.originalInstruction === 'string' ? result.originalInstruction : '');
       }
       const formattedResult = formatAgentResult(payload.result);
       get().appendMessage({
@@ -414,7 +414,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   clearHistory: () => {
-    (window as any).RemoteCtrlAPI?.agent?.clearHistory?.();
+    void window.RemoteCtrlAPI?.agent.clearHistory();
     set({ chatHistory: [], executionLogs: [], currentAction: null });
   },
 
@@ -509,39 +509,44 @@ function isSemanticActivity(message: string): boolean {
   return /^(?:Navigating|Opening|Reading|Observing|Analyzing|Finding|Looking|Getting|Click(?:ing)?|Selecting|Entering|Typing|Filling|Pressing|Scrolling|Extracting|Checking|Verifying|Waiting|Executing|Action:|Completing)/i.test(message);
 }
 
-function formatAgentResult(result: any): string {
+function formatAgentResult(result: unknown): string {
   if (!result) return 'I successfully completed the task!';
   
   if (typeof result === 'string') return result;
   
-  if (typeof result === 'object') {
-    if (result.finalMessage) {
-      return result.finalMessage;
-    }
-    if (result.message) {
-      return result.message;
-    }
-    if (result.taskId || result.actions || result.status) {
-      return result.finalMessage || result.message || 'Task completed successfully.';
-    }
-    
-    if (Array.isArray(result)) {
-      if (result.length === 0) return 'I found no results.';
-      const items = result.map(item => {
-        if (typeof item === 'object') {
-          return Object.entries(item)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(', ');
-        }
-        return String(item);
-      });
-      return 'Here is what I found:\n\n' + items.map(i => `• ${i}`).join('\n');
-    }
+  if (Array.isArray(result)) {
+    if (result.length === 0) return 'I found no results.';
+    const items = result.map((item) => {
+      if (isRecord(item)) {
+        return Object.entries(item).map(([key, value]) => `${key}: ${formatResultValue(value)}`).join(', ');
+      }
+      return String(item);
+    });
+    return `Here is what I found:\n\n${items.map((item) => `• ${item}`).join('\n')}`;
+  }
 
-    return 'Here is what I found:\n\n' + Object.entries(result)
-      .map(([k, v]) => `• ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-      .join('\n');
+  if (isRecord(result)) {
+    if (typeof result.finalMessage === 'string') return result.finalMessage;
+    if (typeof result.message === 'string') return result.message;
+    if (result.taskId || result.actions || result.status) return 'Task completed successfully.';
+    return `Here is what I found:\n\n${Object.entries(result)
+      .map(([key, value]) => `• ${key}: ${formatResultValue(value)}`)
+      .join('\n')}`;
   }
   
   return String(result);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatResultValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  try {
+    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  } catch {
+    return '[unavailable]';
+  }
 }

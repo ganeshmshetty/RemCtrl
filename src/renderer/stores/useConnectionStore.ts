@@ -7,7 +7,7 @@
  */
 
 import { create } from 'zustand';
-import type { HostSessionState, ControllerSessionState } from '../../shared/types';
+import type { ControllerSessionState, DataChannelMessage, HostSessionState } from '../../shared/types';
 
 type SessionRole = 'idle' | 'host' | 'controller' | 'local';
 
@@ -21,7 +21,7 @@ interface ConnectionState {
   isTrustedHost: boolean;
   error: string | null;
   pendingTakeover: boolean;
-  sendData: ((msg: any, reliable?: boolean) => void) | null;
+  sendData: ((msg: DataChannelMessage, reliable?: boolean) => void) | null;
 
   // Actions
   setRole: (role: SessionRole) => void;
@@ -33,7 +33,7 @@ interface ConnectionState {
   setTrustedHost: (trusted: boolean) => void;
   setError: (error: string | null) => void;
   setPendingTakeover: (pending: boolean) => void;
-  setSendData: (fn: ((msg: any, reliable?: boolean) => void) | null) => void;
+  setSendData: (fn: ((msg: DataChannelMessage, reliable?: boolean) => void) | null) => void;
   reset: () => void;
 }
 

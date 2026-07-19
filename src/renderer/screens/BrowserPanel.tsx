@@ -14,9 +14,11 @@ import { useConnectionStore } from '../stores/useConnectionStore';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useControllerWebRTC, useHostWebRTC } from '../hooks/useWebRTC';
 import { ChatInputBar } from './ChatInputBar';
-import type { TabInfo, AgentStatusPayload, AgentLogPayload, WorkflowRunStatus, WorkflowStepStatus, AgentCheckpointPayload } from '../../shared/types';
+import type { AgentCheckpointPayload, AgentLogPayload, AgentPromptPayload, AgentStatusPayload, AgentWorkflowBatchPayload, DataChannelMessage, RemoteKeyboardPayload, RemoteMousePayload, TabInfo, WorkflowRunStatus, WorkflowStepStatus } from '../../shared/types';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import './BrowserPanel.css';
+
+const timestampNow = () => Date.now();
 
 function useLocalScreencast(isLocal: boolean) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -95,12 +97,14 @@ export function BrowserPanel() {
   const [showHostStream, setShowHostStream] = useState(false);
   const hostRTC = useHostWebRTC(isConnected && isHost);
   const ctrlRTC = useControllerWebRTC(isConnected && isController);
+  const ctrlOnMessage = ctrlRTC.onMessage;
   const localCanvasRef = useLocalScreencast((isConnected && isLocal) || (isHost && showHostStream));
 
   const canvasRef = isController ? ctrlRTC.canvasRef : localCanvasRef;
-  const hostSendData = useCallback((msg: any, _reliable = true) => {
+  const hostSendData = useCallback((msg: DataChannelMessage, reliable = true) => {
+    void reliable;
     if (msg.type === 'BROWSER_ACTION') {
-      const { action, url, tabId } = msg.payload;
+      const { action, url, tabId } = msg.payload as { action: 'navigate' | 'goBack' | 'goForward' | 'reload' | 'closeTab' | 'newTab'; url?: string; tabId?: string };
       if (action === 'navigate') window.RemoteCtrlAPI?.browser.navigate(url);
       else if (action === 'goBack') window.RemoteCtrlAPI?.browser.goBack();
       else if (action === 'goForward') window.RemoteCtrlAPI?.browser.goForward();
@@ -108,23 +112,29 @@ export function BrowserPanel() {
       else if (action === 'closeTab') window.RemoteCtrlAPI?.browser.closeTab(tabId);
       else if (action === 'newTab') window.RemoteCtrlAPI?.browser.newTab();
     } else if (msg.type === 'SWITCH_TAB') {
-      window.RemoteCtrlAPI?.browser.switchTab(msg.payload.tabId);
+      window.RemoteCtrlAPI?.browser.switchTab((msg.payload as { tabId: string }).tabId);
     } else if (msg.type === 'REMOTE_INPUT_MOUSE') {
-      window.RemoteCtrlAPI?.browser.injectMouse(msg.payload);
+      window.RemoteCtrlAPI?.browser.injectMouse(msg.payload as RemoteMousePayload);
     } else if (msg.type === 'REMOTE_INPUT_KEYBOARD') {
-      window.RemoteCtrlAPI?.browser.injectKeyboard(msg.payload);
+      window.RemoteCtrlAPI?.browser.injectKeyboard(msg.payload as RemoteKeyboardPayload);
     } else if (msg.type === 'AGENT_PROMPT') {
-      if (msg.payload.commandId === '__cancel__') {
+      const payload = msg.payload as AgentPromptPayload;
+      if (payload.commandId === '__cancel__') {
         window.RemoteCtrlAPI?.browser.cancelAgent();
       } else {
-        window.RemoteCtrlAPI?.browser.startAgent(msg.payload);
+        window.RemoteCtrlAPI?.browser.startAgent(payload);
       }
-      } else if (msg.type === 'AGENT_WORKFLOW_BATCH') {
-        window.RemoteCtrlAPI?.browser.startWorkflow(msg.payload);
+    } else if (msg.type === 'AGENT_WORKFLOW_BATCH') {
+      window.RemoteCtrlAPI?.browser.startWorkflow(msg.payload as AgentWorkflowBatchPayload);
     }
   }, []);
   const sendData = (isHost || isLocal) ? hostSendData : ctrlRTC.sendData;
   const rtcStatus = isHost ? hostRTC.status : ctrlRTC.status;
+  const applyTabs = useCallback((nextTabs: TabInfo[]) => {
+    setTabs(nextTabs);
+    const activeTab = nextTabs.find((tab) => tab.active);
+    if (activeTab) setUrlInput(activeTab.url);
+  }, []);
 
   const lastMoveTimeRef = useRef<number>(0);
 
@@ -133,29 +143,22 @@ export function BrowserPanel() {
   }, [sendData]);
 
   useEffect(() => {
-    const activeTab = tabs.find(t => t.active);
-    if (activeTab && activeTab.url !== urlInput) {
-      setUrlInput(activeTab.url);
-    }
-  }, [tabs]);
-
-  useEffect(() => {
     if (isHost || isLocal) {
-      window.RemoteCtrlAPI?.browser.getTabs().then((t) => setTabs(t || []));
+      window.RemoteCtrlAPI?.browser.getTabs().then((nextTabs) => applyTabs(nextTabs || []));
       const cleanup = window.RemoteCtrlAPI?.on.tabsChange((newTabs) => {
-        setTabs(newTabs);
+        applyTabs(newTabs);
       });
       return () => cleanup?.();
     }
-  }, [isHost, isLocal]);
+  }, [applyTabs, isHost, isLocal]);
 
   useEffect(() => {
     if (isHost || isLocal) {
-      ctrlRTC.onMessage(() => {});
+      ctrlOnMessage(() => {});
       return;
     }
 
-    ctrlRTC.onMessage((msg) => {
+    ctrlOnMessage((msg) => {
       const store = useAgentStore.getState();
       if (msg.type === 'AGENT_STATUS_UPDATE') {
         store.handleAgentStatus(msg.payload as AgentStatusPayload);
@@ -168,7 +171,7 @@ export function BrowserPanel() {
       } else if (msg.type === 'AGENT_CHECKPOINT') {
         store.handleAgentCheckpoint(msg.payload as AgentCheckpointPayload);
       } else if (msg.type === 'TAB_LIST') {
-        setTabs(msg.payload as TabInfo[]);
+        applyTabs(msg.payload as TabInfo[]);
       } else if (msg.type === 'TAKEOVER_DECISION') {
         const decision = msg.payload as { approved?: boolean; active?: boolean };
         if (decision.approved) store.setTakeoverActive(Boolean(decision.active));
@@ -177,16 +180,16 @@ export function BrowserPanel() {
     });
 
     return () => {
-      ctrlRTC.onMessage(() => {});
+      ctrlOnMessage(() => {});
     };
-  }, [isHost, isLocal, ctrlRTC.onMessage]);
+  }, [applyTabs, ctrlOnMessage, isHost, isLocal]);
 
   function handleBrowserAction(action: 'goBack' | 'goForward' | 'reload' | 'navigate' | 'closeTab' | 'newTab', tabId?: string) {
     if (isRecordingLocked) return;
     sendData({
       type: 'BROWSER_ACTION',
       version: '1.0',
-      timestamp: Date.now(),
+      timestamp: timestampNow(),
       payload: { action, url: urlInput, tabId },
     }, true);
   }
@@ -205,7 +208,7 @@ export function BrowserPanel() {
     sendData({
       type: 'SWITCH_TAB',
       version: '1.0',
-      timestamp: Date.now(),
+      timestamp: timestampNow(),
       payload: { tabId },
     }, true);
   }
