@@ -1,4 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const menuMocks = vi.hoisted(() => {
+  const nativeMenu = { platform: 'darwin' };
+  return {
+    nativeMenu,
+    buildFromTemplate: vi.fn(() => nativeMenu),
+    setApplicationMenu: vi.fn(),
+  };
+});
 
 vi.mock('electron', () => ({
   app: {
@@ -12,7 +21,7 @@ vi.mock('electron', () => ({
   BrowserWindow: class {},
   globalShortcut: {},
   ipcMain: {},
-  Menu: { buildFromTemplate: vi.fn(() => ({})), setApplicationMenu: vi.fn() },
+  Menu: menuMocks,
   nativeImage: {},
   nativeTheme: {},
   session: { defaultSession: {} },
@@ -29,6 +38,11 @@ vi.mock('./webrtc-manager.js', () => ({ webRTCManager: {} }));
 
 import { createMenu, getMainWindowOptions } from './index.js';
 
+beforeEach(() => {
+  menuMocks.buildFromTemplate.mockClear();
+  menuMocks.setApplicationMenu.mockClear();
+});
+
 describe('main window platform configuration', () => {
   it('uses hidden titlebar overlay controls and no native menu on Windows/Linux', () => {
     const windows = getMainWindowOptions('win32');
@@ -40,6 +54,9 @@ describe('main window platform configuration', () => {
     expect(linux.titleBarOverlay).toEqual(expect.objectContaining({ height: 46 }));
     expect(createMenu('win32')).toBe(false);
     expect(createMenu('linux')).toBe(false);
+    expect(menuMocks.buildFromTemplate).not.toHaveBeenCalled();
+    expect(menuMocks.setApplicationMenu).toHaveBeenNthCalledWith(1, null);
+    expect(menuMocks.setApplicationMenu).toHaveBeenNthCalledWith(2, null);
   });
 
   it('keeps the native macOS titlebar and application menu', () => {
@@ -48,5 +65,14 @@ describe('main window platform configuration', () => {
     expect(mac.titleBarStyle).toBe('hiddenInset');
     expect(mac.titleBarOverlay).toBeUndefined();
     expect(createMenu('darwin')).toBe(true);
+    expect(menuMocks.buildFromTemplate).toHaveBeenCalledOnce();
+    expect(menuMocks.buildFromTemplate).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'RemoteCtrl' }),
+        expect.objectContaining({ label: 'File' }),
+      ]),
+    );
+    expect(menuMocks.setApplicationMenu).toHaveBeenCalledOnce();
+    expect(menuMocks.setApplicationMenu).toHaveBeenCalledWith(menuMocks.nativeMenu);
   });
 });
