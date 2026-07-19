@@ -43,6 +43,8 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - [x] Improve workflow builder review/run experience with step status, failure context, and recovery affordances.
 - [x] Allow switching between the Agent and Workflow tabs while a workflow run is active; inactive panels stay mounted so run state survives tab changes.
 - [x] Make saved-workflow run cards in the main Workflow tab compact and show no more than three workflows.
+- [ ] Add an agent-controlled vision inspection tool, with guidance for appropriate use and complete removal when disabled in Settings.
+- [ ] Add speech-to-text input with push-to-talk and hands-free modes, selectable in Settings.
 - [x] Verify packaged Electron behavior, renderer smoke flows, tests, typechecks, and builds.
 - [x] Commit each coherent implementation increment with a descriptive message.
 
