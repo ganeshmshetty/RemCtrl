@@ -32,17 +32,7 @@ RemoteCtrl’s distinction is the combined row: task-scoped agent execution insi
 
 The policy layer can evaluate browser-specific execution context: the current browser session, the acting agent/operator, the open site, the requested capability, the action type, the declared task scope, and whether an approval is required. That is stronger than telling a model to “only do the approved task”; it gives the runtime a place to block or request approval before an agent action executes.
 
-**Current boundary:** RemoteCtrl enforces scope for agent actions and provides human takeover. It does **not** claim that remote human mouse and keyboard input is scope-enforced. The included demo proves workflow self-healing and the integrated agent → workflow → human-intervention path; it is not a claim of comprehensive remote-input policy enforcement.
-
-## What you can demo
-
-- Ask an AI agent to navigate and operate a Chromium browser through Playwright.
-- Observe numbered interactive elements and let the agent act on stable element references.
-- Record, edit, save, and replay workflows with selector recovery and retry behavior.
-- Use local or remote browser sessions, including an approval step before a controller can interact.
-- Load the companion Chrome extension to automate the active page or record browser interactions.
-- Enable local Whisper speech-to-text after downloading and verifying the model in Settings.
-- Run the included offline client portal demo as a deterministic workflow target.
+**Current boundary:** RemoteCtrl enforces scope for agent actions and provides human takeover. It does **not** claim that remote human mouse and keyboard input is scope-enforced.
 
 ## Architecture
 
@@ -181,25 +171,6 @@ $env:PORT = '3010'; npm run server
 ```
 
 Then set the signaling URL in Settings to `http://localhost:3010` (or the reachable URL for the machine hosting the server). The signaling server uses short-lived PIN rooms, host approval, WebSocket transport, and basic failed-attempt rate limiting. It is a hackathon server and should not be exposed publicly without additional authentication, TLS, monitoring, and deployment hardening.
-
-## Demo workflow
-
-The included client portal is static and does not require credentials or external network access:
-
-```bash
-python3 -m http.server 4173 --directory demo-site
-```
-
-Open [http://localhost:4173/index.html](http://localhost:4173/index.html), then create or run a workflow that:
-
-1. Opens the portal.
-2. Opens domain setup.
-3. Fills `#domainName` with `acme.example`.
-4. Selects `cloudflare` in `#dnsProvider`.
-5. Clicks `#continueButton`.
-6. Verifies the success page.
-
-See [demo-site/README.md](demo-site/README.md) for the exact presentation flow and selector details.
 
 ## Chrome extension
 
