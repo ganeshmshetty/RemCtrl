@@ -1,40 +1,45 @@
-# Task 8 report — Local Whisper speech setup
+# Task 8 report — Local Whisper ONNX foundation
 
 ## Status
 
 DONE_WITH_CONCERNS
 
+## Commit
+
+- `c1a6210 feat: add pinned local whisper onnx foundation`
+
 ## Implemented
 
-- Added a main-process local Whisper model manager that downloads the pinned official `ggml-tiny.en.bin` endpoint to `<Electron userData>/whisper/ggml-tiny.en.bin`, streams progress, supports cancel/retry, removes partial files, and verifies SHA-1 `bd577a113a864445d4c299885e0cb97d4ba92b5f` before atomically installing the model.
-- Added narrow, setup-only IPC: `speech:getSetupState`, `speech:downloadModel`, `speech:cancelDownload`, and `speech:retryDownload`, plus main-to-renderer state updates. No renderer-supplied URL, model path, audio payload, or remote transport is accepted.
-- Added a separate persisted `microphoneAudioEnabled` setting. Settings exposes distinct Download model and Enable microphone audio controls. The microphone switch remains disabled until the model is verified installed.
-- Replaced the active browser Web Speech path with a local readiness gate. No `SpeechRecognition`, `webkitSpeechRecognition`, cloud fallback, fake transcript, browser microphone capture, IPC audio payload, or WebRTC audio path remains in the transcription flow.
-- Preserved the existing push-to-talk and hands-free control semantics in Chat and Mini Window. They are disabled until model verification, explicit microphone enablement, and a runtime availability signal are all true; setup actions direct users to the local Whisper settings.
-- Kept AI/LLM provider, model, API-key, and credential settings unchanged.
+- Replaced the active single-file GGML manager with a directory-based, pinned Transformers.js ONNX manifest for `onnx-community/whisper-tiny.en` at immutable revision `3a6d57ee9c665610614068e8592d8baee0188181`.
+- The manifest lists 12 required files with exact byte sizes and SHA-256 digests, including the quantized encoder and merged decoder LFS objects.
+- Downloads stream every asset into a temporary directory, publish aggregate progress, support cancellation/retry, verify every file’s size and SHA-256 digest, and rename only the fully verified directory into place.
+- Install replacement uses a previous-directory handoff so a completed temporary directory is promoted before the prior model is removed. Temporary handles close in `finally` before cleanup on stream errors, integrity failures, and cancellation.
+- Added `@huggingface/transformers` and `onnxruntime-web`, Vite WASM asset inclusion, dependency optimization, and ES worker output configuration.
+- Added `src/renderer/workers/local-whisper.worker.ts` with a narrow injectable pipeline seam. It enables local models, disables remote models and browser/filesystem caches, configures the ONNX WASM path, requests `local_files_only` with `q8`, accepts only finite non-empty `Float32Array` samples, and returns final trimmed text.
+- Added direct manifest, download/integrity/atomic-install/cleanup-ordering/retry tests and local-only worker configuration/audio contract tests.
+- Hardened speech setup IPC to reject renderer-supplied payloads beyond Electron’s event argument. No model URL, filesystem path, or audio payload is exposed through preload/main setup channels.
+- Did not change Chat, Mini Window, Settings, `useSpeechToText`, microphone capture, or UI behavior.
 
 ## Changed paths
 
-- `src/main/speech/whisper-model-manager.ts` and focused tests
-- `src/main/speech/whisper-runtime.ts` and focused tests
-- `src/main/ipc/speech.ipc.ts` and focused tests
-- `src/main/ipc-handlers.ts`, `src/main/ipc/settings.ipc.ts`, `src/main/storage.ts`
-- `src/shared/types.ts`, `src/shared/schemas.ts`, `src/preload/index.cjs`
-- `src/renderer/hooks/useSpeechToText.ts` and focused test
-- `src/renderer/stores/useWorkflowStore.ts`, `src/renderer/App.tsx`
-- `src/renderer/screens/Settings.tsx`, `src/renderer/screens/Settings.css`, `src/renderer/screens/ChatInputBar.tsx`, and `src/renderer/screens/MiniWindow.tsx`
+- `package.json`, `package-lock.json`, `vite.config.ts`
+- `src/main/speech/whisper-model-manager.ts`
+- `src/main/speech/whisper-model-manager.test.ts`
+- `src/renderer/workers/local-whisper.worker.ts`
+- `src/renderer/workers/local-whisper.worker.test.ts`
+- `src/main/ipc/speech.ipc.ts`
+- `src/main/ipc/speech.ipc.test.ts`
 
 ## Verification
 
-- `npm test` — passed: 29 test files, 78 tests.
-- `npm run typecheck:all` — passed.
-- `npm run build` — passed for renderer and Electron main/preload output.
-- `git diff --check` — passed.
-- Focused `npx eslint src/main/speech/whisper-runtime.ts src/renderer/hooks/useSpeechToText.ts` — passed.
-- Repository-wide `npm run lint` still fails on 141 existing findings outside Task 8; the two Task 8 findings it originally surfaced were fixed and the focused lint command above is clean.
+- Focused tests: 3 files, 10 tests passed.
+- `npm run build`: renderer and Electron main/preload builds passed.
+- `git diff --check`: passed.
+- `npm test`: 29 files / 83 tests passed; 2 tests in the pre-existing untracked `src/main/ipc/settings.ipc.test.ts` failed because that test targets an options-injection API not present in the current settings IPC implementation.
+- `npm run typecheck:all`: blocked by the same untracked settings test, which calls `registerSettingsIpc` with an argument although the current function accepts none. The focused foundation files produced no type errors.
 
-## Concern: native runner packaging
+## Concerns
 
-Actual transcription is intentionally unavailable. The runtime adapter returns `native-runner-not-packaged` with the explicit message that this build does not include a native `whisper.cpp` runner. The current Electron package only includes `dist/**/*`; it has no signed/bundled macOS, Windows, and Linux runner artifacts, architecture manifest, code-signing policy, or CI packaging matrix. Shipping a native runner without those contracts would not be production-safe.
-
-The downloader, verification flow, IPC/state updates, settings controls, and speech gating are complete. A follow-up must add and validate per-platform native runner artifacts before microphone capture and on-device transcription can be enabled.
+- This is intentionally a foundation-only commit. The local worker is not wired to microphone capture, Chat, Mini Window, Settings, or preload APIs; a follow-up task must add that seam without exposing arbitrary filesystem paths or remote model access.
+- The model assets are downloaded from the pinned upstream revision during setup; audio inference remains local-only once installed because the worker sets `env.allowRemoteModels = false` and passes `local_files_only: true`.
+- The unrelated untracked settings test remains untouched and unstaged, along with `.codex/hooks.json`, `ENGINEERING_TODO.md`, and deleted `todo.md`.
