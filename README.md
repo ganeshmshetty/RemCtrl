@@ -34,10 +34,6 @@ The policy layer can evaluate browser-specific execution context: the current br
 
 **Current boundary:** RemoteCtrl enforces scope for agent actions and provides human takeover. It does **not** claim that remote human mouse and keyboard input is scope-enforced. The included demo proves workflow self-healing and the integrated agent → workflow → human-intervention path; it is not a claim of comprehensive remote-input policy enforcement.
 
-### Demo narrative
-
-Use one concrete operations scenario: a technician updates one customer record in a user’s authenticated web app. The user declares the task; the agent or technician performs it; an unrelated agent action is blocked or requires approval; the user completes MFA or takes over if needed; then the successful sequence becomes a reusable workflow. This presents the system as one coherent product rather than a list of disconnected features.
-
 ## What you can demo
 
 - Ask an AI agent to navigate and operate a Chromium browser through Playwright.
