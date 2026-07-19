@@ -215,7 +215,7 @@ function configureMediaPermissions() {
       const url = new URL(origin);
       return isDev
         ? url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
-        : url.protocol === 'app:';
+        : url.protocol === 'file:';
     } catch {
       return false;
     }

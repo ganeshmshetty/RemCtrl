@@ -133,6 +133,7 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     downloadModel: () => ipcRenderer.invoke('speech:downloadModel'),
     cancelDownload: () => ipcRenderer.invoke('speech:cancelDownload'),
     retryDownload: () => ipcRenderer.invoke('speech:retryDownload'),
+    transcribe: (audio) => ipcRenderer.invoke('speech:transcribe', audio),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────

@@ -299,12 +299,12 @@ export function Settings() {
 
                   <PreferenceGroup title="Local Whisper speech" description="The model is stored on this device. Audio is never sent to Web Speech, remote sessions, or the agent protocol.">
                     <PreferenceRow title="Download model" description={whisperSetup.model.status === 'installed'
-                      ? `ggml-tiny.en.bin verified (${Math.round(whisperSetup.model.sizeBytes / 1024 / 1024)} MiB).`
+                      ? `${whisperSetup.model.fileName} verified (${Math.round(whisperSetup.model.sizeBytes / 1024 / 1024)} MiB).`
                       : whisperSetup.model.status === 'downloading'
                         ? `Downloading ${Math.round((whisperSetup.model.progress ?? 0) * 100)}%…`
                         : whisperSetup.model.status === 'verifying'
-                          ? 'Verifying the downloaded model SHA-1…'
-                          : whisperSetup.model.error ?? 'Download and verify ggml-tiny.en.bin before enabling microphone audio.'}>
+                          ? 'Verifying the downloaded model SHA-256…'
+                          : whisperSetup.model.error ?? `Download and verify ${whisperSetup.model.fileName} before enabling microphone audio.`}>
                       <Button onClick={() => void handleWhisperModelAction()}>
                         {whisperSetup.model.status === 'downloading' || whisperSetup.model.status === 'verifying'
                           ? 'Cancel'
@@ -326,7 +326,7 @@ export function Settings() {
                       disabled={whisperSetup.model.status !== 'installed' || !whisperSetup.model.verified}
                       onChange={(checked) => void setMicrophoneAudioEnabled(checked)}
                     />
-                    <PreferenceRow title="Dictation mode" description="Choose how the microphone control behaves once a packaged local runtime is available.">
+                    <PreferenceRow title="Dictation mode" description="Choose how the local microphone control behaves.">
                       <PreferenceSelect
                         value={speechInputMode}
                         onChange={(value) => void setSpeechInputMode(value as typeof speechInputMode)}

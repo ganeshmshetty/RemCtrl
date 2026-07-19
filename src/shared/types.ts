@@ -95,7 +95,7 @@ export type AppTheme = 'light' | 'dark' | 'system';
 export type SpeechInputMode = 'push_to_talk' | 'hands_free';
 
 export type WhisperModelStatus = 'not_installed' | 'downloading' | 'verifying' | 'installed' | 'error';
-export type WhisperRuntimeReason = 'native-runner-not-packaged';
+export type WhisperRuntimeReason = 'onnx-local';
 
 export interface LocalWhisperModelState {
   status: WhisperModelStatus;
@@ -660,6 +660,7 @@ export interface RemoteCtrlAPI {
     downloadModel: () => Promise<LocalWhisperSetupState>;
     cancelDownload: () => Promise<LocalWhisperSetupState>;
     retryDownload: () => Promise<LocalWhisperSetupState>;
+    transcribe: (audio: Float32Array) => Promise<string>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;

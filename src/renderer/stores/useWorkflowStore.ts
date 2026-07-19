@@ -136,8 +136,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   useVisionCUA: true,
   microphoneAudioEnabled: false,
   whisperSetup: {
-    model: { status: 'not_installed', fileName: 'ggml-tiny.en.bin', sizeBytes: 75 * 1024 * 1024, bytesDownloaded: 0, progress: null, verified: false },
-    runtime: { available: false, reason: 'native-runner-not-packaged', message: 'Local Whisper transcription is unavailable because this build does not include a native whisper.cpp runner.' },
+    model: { status: 'not_installed', fileName: 'whisper-tiny.en', sizeBytes: 75 * 1024 * 1024, bytesDownloaded: 0, progress: null, verified: false },
+    runtime: { available: true, reason: 'onnx-local', message: 'Local ONNX Whisper transcription is ready on this device.' },
   },
   speechInputMode: 'push_to_talk',
   isLoading: false,

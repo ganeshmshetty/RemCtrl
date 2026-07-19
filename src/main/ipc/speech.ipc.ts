@@ -28,12 +28,15 @@ let mainRuntime: LocalWhisperRuntime | null = null;
 
 function getMainServices() {
   if (mainManager && mainRuntime) return { manager: mainManager, runtime: mainRuntime };
-  mainRuntime = createLocalWhisperRuntime();
-  const runtime = mainRuntime;
-  mainManager = createWhisperModelManager({
+  const manager = createWhisperModelManager({
     userDataPath: app.getPath('userData'),
-    onStateChange: (model) => broadcastToRenderers('speech:stateChanged', toSetupState(model, runtime)),
+    onStateChange: (model) => {
+      if (mainRuntime) broadcastToRenderers('speech:stateChanged', toSetupState(model, mainRuntime));
+    },
   });
+  const runtime: LocalWhisperRuntime = createLocalWhisperRuntime({ modelDirectory: manager.getModelPath() });
+  mainManager = manager;
+  mainRuntime = runtime;
   return { manager: mainManager, runtime };
 }
 
@@ -63,5 +66,17 @@ export function registerSpeechIpc(options: RegisterSpeechIpcOptions = {}) {
   ipc.handle('speech:retryDownload', async (...args) => {
     rejectPayload(args);
     return toSetupState(await services.manager.retry(), services.runtime);
+  });
+  ipc.handle('speech:transcribe', async (...args) => {
+    if (args.length !== 2) throw new TypeError('Speech transcription IPC requires one audio payload.');
+    const audio = args[1];
+    if (!(audio instanceof Float32Array)) throw new TypeError('Speech transcription requires a Float32Array audio payload.');
+    const model = await services.manager.getState();
+    if (model.status !== 'installed' || !model.verified) {
+      throw new Error('Download and verify the local Whisper model in Settings before dictating.');
+    }
+    const availability = services.runtime.getAvailability();
+    if (!availability.available) throw new Error(availability.message);
+    return services.runtime.transcribe(audio);
   });
 }
