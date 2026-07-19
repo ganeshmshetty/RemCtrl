@@ -50,3 +50,4 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - Reference clones are ignored by `.gitignore` and must not be edited.
 - Final stability/design increment: 49 tests passed; typecheck and both production builds passed; changed-seam lint is clean except the pre-existing `ExecutionSummary` cast.
 - Continuation increment: transient WebRTC stream loss no longer cancels host-owned automation; human checkpoints are race-safe and covered by focused tests.
+- Policy/status increment: 53 tests passed; typechecks, renderer/main builds, focused lint, and a fresh host-scope renderer smoke check passed. Cmd+Q remains queued for a dedicated lifecycle fix.
