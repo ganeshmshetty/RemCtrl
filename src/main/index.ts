@@ -44,6 +44,7 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let forceQuit = false;
 let cleanupPromise: Promise<void> | null = null;
+const SHUTDOWN_TIMEOUT_MS = 5_000;
 
 // A self-contained fallback keeps the tray usable in packaged builds even when
 // a platform-specific icon has not been bundled yet.
@@ -159,6 +160,8 @@ function getOrCreateMiniWindow() {
     }
   });
 
+  installQuitShortcut(miniWindow);
+
   return miniWindow;
 }
 
@@ -171,6 +174,21 @@ function toggleMiniWindow() {
     win.focus();
     win.webContents.send('app:globalShortcut');
   }
+}
+
+/**
+ * macOS routes Cmd+Q through the native menu in most cases, but a focused
+ * renderer can consume the key event before Electron starts its quit flow.
+ * Keep the shortcut explicit on every app window so the tray-hide close policy
+ * cannot turn Cmd+Q into a silent window hide.
+ */
+function installQuitShortcut(win: BrowserWindow) {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (process.platform === 'darwin' && input.type === 'keyDown' && input.meta && input.key.toLowerCase() === 'q') {
+      event.preventDefault();
+      app.quit();
+    }
+  });
 }
 
 // ── Global Shortcut ───────────────────────────────────────────────────────────
@@ -240,6 +258,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  installQuitShortcut(mainWindow);
 
   return mainWindow;
 }
@@ -491,18 +511,33 @@ function cleanupAndQuit(): Promise<void> {
 
   isQuitting = true;
   cleanupPromise = (async () => {
+    let timedOut = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        resolve();
+      }, SHUTDOWN_TIMEOUT_MS);
+    });
     try {
-      stopExtensionBridgeServer();
-      webRTCManager.destroyClient();
-      globalShortcut.unregisterAll();
-      automationOrchestrator.cancelActiveTask();
-      await automationOrchestrator.closePool().catch(() => { });
-      if (!getKeepBrowserOpenOnQuit()) {
-        await closeBrowser().catch(() => { });
-      }
+      await Promise.race([
+        (async () => {
+          stopExtensionBridgeServer();
+          webRTCManager.destroyClient();
+          globalShortcut.unregisterAll();
+          automationOrchestrator.cancelActiveTask();
+          await automationOrchestrator.closePool().catch(() => { });
+          if (!getKeepBrowserOpenOnQuit()) {
+            await closeBrowser().catch(() => { });
+          }
+        })(),
+        timeout,
+      ]);
+      if (timedOut) console.warn(`[app] Shutdown cleanup exceeded ${SHUTDOWN_TIMEOUT_MS}ms; forcing quit.`);
     } catch (err) {
       console.error('[app] Shutdown cleanup failed:', err);
     } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       forceQuit = true;
       app.quit();
     }
