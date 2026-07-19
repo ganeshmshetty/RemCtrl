@@ -72,7 +72,7 @@ These facts explain why a robust architecture needs event bridges and registries
 Browserbase sessions are the unit of cloud isolation and billing, while Stagehand pages are top-level targets.
 The distinction is important: one browser session may contain multiple tabs, and one tab may contain many frames.
 
-Sources: [Browser session fundamentals](https://docs.browserbase.com/platform/browser/getting-started/using-browser-session.md), [local and remote browser configuration](https://docs.stagehand.dev/v3/configuration/browser.md), [Stagehand context implementation](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/understudy/context.ts).
+Sources: [Browser session fundamentals](https://docs.browserbase.com/platform/browser/getting-started/using-browser-session), [local and remote browser configuration](https://docs.stagehand.dev/v3/configuration/browser.md), [Stagehand context implementation](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/understudy/context.ts).
 
 ### Layer 1: CDP transport and target ownership
 
@@ -285,7 +285,7 @@ This is a meaningful boundary: automatic model routing is a service capability, 
 When keep-alive is false, Stagehand arranges API-backed cleanup for the cloud session.
 When a caller resumes a session, cleanup decisions must avoid ending a resource owned by someone else.
 
-Sources: [Browserbase launch implementation](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/launch/browserbase.ts), [Browserbase session creation](https://docs.browserbase.com/platform/browser/getting-started/create-browser-session.md), [Browserbase keep-alive](https://docs.browserbase.com/platform/browser/long-sessions/keep-alive.md).
+Sources: [Browserbase launch implementation](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/launch/browserbase.ts), [Browserbase session creation](https://docs.browserbase.com/platform/browser/getting-started/create-browser-session), [Browserbase keep-alive](https://docs.browserbase.com/platform/browser/long-sessions/keep-alive).
 
 ### Target attachment and pre-resume ordering
 
@@ -367,7 +367,7 @@ The transport callback must not re-enter teardown while teardown is already in f
 Cleanup errors are generally swallowed after being logged because partial teardown is safer than process blockage.
 An adaptation should expose ownership-aware shutdown and test it under both normal and transport-closed paths.
 
-Sources: [V3 close implementation](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/v3.ts), [Browserbase manage session](https://docs.browserbase.com/platform/browser/getting-started/manage-browser-session.md), [Stagehand lifecycle best practices](https://docs.stagehand.dev/v3/references/stagehand.md).
+Sources: [V3 close implementation](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/v3.ts), [Browserbase manage session](https://docs.browserbase.com/platform/browser/getting-started/manage-browser-session), [Stagehand lifecycle best practices](https://docs.stagehand.dev/v3/references/stagehand.md).
 
 ## `observe()` as a planner and locator compiler
 
@@ -688,6 +688,730 @@ Sources: [observe validation example](https://docs.stagehand.dev/v3/basics/obser
 - The official speed guide presents observe-then-act as a latency optimization.
 - Its stated “2–3x faster” value is a product-documentation example, not an independent benchmark.
 - Source: [speed optimization](https://docs.stagehand.dev/v3/best-practices/speed-optimization).
+
+## 12. Stagehand API and server session architecture
+
+### Remote execution boundary
+
+- The client can use a regional Stagehand API endpoint for Browserbase sessions.
+- The client strips non-serializable page objects before sending requests.
+- Zod schemas are converted to JSON Schema for remote extraction.
+- The server resolves the requested session and page before invoking a handler.
+- Request headers can override model configuration for an operation.
+- The API maintains a cookie jar for its request sequence.
+- Region mapping chooses an API base URL for the Browserbase region.
+- Remote execution preserves semantic method names while relocating implementation.
+- Source: [api.ts](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/api.ts).
+
+### Session-start flow
+
+- The start route authenticates the incoming request.
+- It validates client language and model-provider shape.
+- It distinguishes Browserbase from local browser mode.
+- Browserbase mode retrieves an existing session or creates one.
+- It applies a default viewport when the caller omits one.
+- It stores session parameters in the server session store.
+- Local launch mode can eagerly initialize to obtain a real CDP URL.
+- A local initialization failure triggers session cleanup before the error returns.
+- The response includes a Stagehand session ID and connection information.
+- Source: [sessions/start.ts](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/routes/v1/sessions/start.ts).
+
+### Streaming route
+
+- The server supports JSON responses and optional server-sent events.
+- An SSE request receives a starting event before session work begins.
+- A connected event marks the point at which the V3 instance is available.
+- Running events carry log messages when the request logger is active.
+- Finished events carry the result and an action identifier.
+- Error events terminate the stream with a client-facing error.
+- The response sets no-cache and no-transform headers for streaming.
+- A client should handle stream termination and reconnect policy explicitly.
+- Source: [stream.ts](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/lib/stream.ts).
+
+### In-memory session store
+
+- The default store uses a map plus a linked-list LRU.
+- It has a configurable maximum capacity.
+- It has an optional TTL with a minute-level cleanup interval.
+- It lazily creates a V3 instance on first use.
+- It updates a request-scoped logger reference for streaming output.
+- It closes a V3 instance when a session is evicted or deleted.
+- The default TTL is unlimited when configured as zero.
+- The store is process-local and not sufficient for stateless horizontal scale by itself.
+- A load balancer needs session affinity or a durable custom store.
+- Source: [InMemorySessionStore.ts](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/lib/InMemorySessionStore.ts).
+
+### Operational scaling implication
+
+- A browser connection is stateful even when an HTTP route looks stateless.
+- A request routed to a process without the V3 instance cannot reuse live CDP state.
+- Recreating a V3 instance may create a second browser or fail to attach to the old one.
+- LRU eviction can close a session while a client still holds a logical workflow.
+- TTL must be chosen with Browserbase timeout and business workflow timeout in mind.
+- A durable store must serialize configuration and recreate transport safely.
+- Affinity loss looks like random browser failure unless it is explicitly observed.
+- Source: [server session store](https://github.com/browserbase/stagehand/tree/main/packages/server-v3/src/lib).
+
+### API security boundary
+
+- The start route authenticates requests before creating or using a remote session.
+- Browserbase mode requires a Browserbase key and resolved project context.
+- Model API keys can be request-scoped and should not be persisted in raw session records.
+- Server logs record key presence as a Boolean rather than the key value.
+- Broad SSE cross-origin headers in the reviewed route require deployment-level origin controls.
+- Browser session identifiers should be treated as sensitive capabilities.
+- Source: [stream.ts](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/lib/stream.ts).
+- Source: [start.ts](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/routes/v1/sessions/start.ts).
+
+## 13. Observability and evidence
+
+### Three observability planes
+
+- Browserbase session monitoring observes the cloud browser resource.
+- Stagehand flow logging observes SDK operations and CDP ancestry.
+- Application telemetry observes business outcomes and external request correlation.
+- These planes answer different questions.
+- A session recording can show what the browser displayed.
+- A flow event can show which handler and model call preceded a click.
+- An application trace can show whether the click produced a business transaction.
+- A production adapter should correlate all three without merging their data blindly.
+- Source: [observability guide](https://docs.stagehand.dev/v3/configuration/observability).
+
+### Flow event model
+
+- Flow events carry type, event ID, parent IDs, timestamp, session ID, and a data map.
+- Event IDs are time-sortable UUID-like values with a stable family suffix.
+- Parent IDs form an execution tree.
+- AsyncLocalStorage preserves parent context across an asynchronous call chain.
+- A wrapped operation emits started, completed, or error events.
+- Error events retain the operation as their direct ancestry.
+- Nested CDP calls can be attached to the semantic operation that caused them.
+- This creates a causal trace instead of a flat log stream.
+- Source: [FlowLogger.ts](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/flowlogger/FlowLogger.ts).
+
+### Event sinks
+
+- The EventStore fans events to a query sink and optional file or stderr sinks.
+- The default query sink retains a bounded in-memory ancestry window.
+- A JSONL sink supports machine processing.
+- A pretty log sink supports human debugging.
+- A pretty stderr sink can be enabled for verbose flow logging.
+- Sink writes are awaited as a group and isolated with settled promises.
+- One failing sink should not erase the primary operation event.
+- Store destruction tears down all sinks and prevents future emission.
+- Source: [EventStore.ts](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/flowlogger/EventStore.ts).
+- Source: [EventSink.ts](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/flowlogger/EventSink.ts).
+
+### Redaction
+
+- Persisted session options are recursively sanitized before being written.
+- Key names matching common secret patterns become placeholder values.
+- Redaction covers obvious API keys, tokens, passwords, credentials, and auth fields.
+- It cannot recognize a secret stored under an innocuous custom key.
+- It cannot guarantee that an instruction or page text does not contain a secret.
+- Variable substitution can put a secret into a browser command even when the prompt hid it.
+- Custom loggers should redact both field names and known variable values.
+- Sensitive workflows should use minimal verbosity and short retention.
+- Source: [EventStore.ts](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/flowlogger/EventStore.ts).
+- Source: [logging guide](https://docs.stagehand.dev/v3/configuration/logging).
+
+### Verbosity levels
+
+- Verbosity zero is intended for errors only.
+- Verbosity one is intended for normal operational events.
+- Verbosity two includes more detailed debugging information.
+- Full model prompts and outputs should not be enabled by default in production.
+- Debug mode can expose page text, selectors, model responses, and screenshot metadata.
+- Inference-to-file logging should be treated as a sensitive-data setting.
+- Test environments disable some Pino behavior because worker threads can interfere with runners.
+- A custom logger can forward structured events to an external monitoring system.
+- Source: [logging guide](https://docs.stagehand.dev/v3/configuration/logging).
+
+### History API
+
+- History records high-level methods such as act, extract, observe, navigate, and agent.
+- Entries contain parameters, result, and an ISO timestamp.
+- History is useful for an operation-level audit trail.
+- History does not automatically include every native page or locator call.
+- A workflow that mixes native calls and semantic handlers needs an application wrapper for complete auditability.
+- Combining history with metrics supplies operation count, token count, and inference time.
+- Combining history with flow events supplies deeper causal detail.
+- Source: [history guide](https://docs.stagehand.dev/v3/best-practices/history).
+
+### Metrics model
+
+- Metrics are tracked separately for act, extract, observe, and agent.
+- Each category can expose prompt, completion, reasoning, cached-input tokens, and inference time.
+- Cumulative totals aggregate across a V3 session.
+- Remote metrics can be fetched from the Stagehand API after session work.
+- Provider-specific usage fields may be absent when the provider does not report them.
+- A Stagehand action-cache hit is distinct from provider cached-input tokens.
+- A deterministic action can have zero model tokens even when its earlier observe call had cost.
+- Metrics should be tagged with cache hit, self-heal, and fallback status.
+- Source: [metrics types](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/types/public/metrics.ts).
+- Source: [API metrics path](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/api.ts).
+
+### Dashboard measures
+
+- Track session start success rate.
+- Track session initialization time by environment and region.
+- Track primitive latency by cache status.
+- Track model attempts and structured parse failures.
+- Track self-heal rate and second-attempt success.
+- Track agent step distribution and max-step exhaustion.
+- Track selector drift by route or application release.
+- Track browser disconnects and orphan cleanup events.
+- Track token and inference cost separately from browser infrastructure cost.
+- Track final business predicate success separately from Stagehand success.
+
+### Evidence retention
+
+- Evidence should be retained long enough to explain failures.
+- Screenshots should be sampled or redacted for high-volume workflows.
+- DOM and accessibility text may contain personal or account data.
+- Model reasoning may contain sensitive data or untrusted page content.
+- Cache entries may contain selectors and action arguments even when they omit values.
+- Retention should be shorter for secrets-bearing workflows.
+- A trace should link to a remote session recording without copying the recording into application logs.
+- Evidence should include a content timestamp because the browser page is mutable.
+
+## 14. Evaluation and testing architecture
+
+### Two evaluation tiers
+
+- The eval package separates deterministic core tasks from model-driven benchmark tasks.
+- Core tasks can test browser mechanics without incurring LLM variability.
+- Bench tasks evaluate observe, act, extract, or agent behavior across models.
+- The split prevents every regression test from depending on a provider response.
+- It also makes model quality visible as a separate axis from browser correctness.
+- Source: [eval architecture](https://github.com/browserbase/stagehand/blob/main/packages/evals/ARCHITECTURE.mmd).
+- Source: [eval guide](https://docs.stagehand.dev/v3/basics/evals).
+
+### Core task design
+
+- Core tasks receive deterministic browser tools and assert page state.
+- They are appropriate for frame routing, navigation, waits, screenshot cleanup, and cache replay.
+- Fixed fixtures should include nested frames, shadow roots, dynamic nodes, and detached targets.
+- Core tests should assert that unsupported methods fail closed.
+- They should assert that stale snapshot IDs do not silently resolve.
+- They should assert that cleanup is idempotent after a browser disconnect.
+- They should measure command latency without model noise.
+
+### Bench task design
+
+- Bench tasks receive a V3 instance, model configuration, instruction, and page.
+- The same task can run across models and agent modes.
+- Trials expose variance and help detect flaky prompts.
+- Concurrency tests provider rate limits and browser resource pressure.
+- Bench outputs should retain trajectories, not only final Booleans.
+- A score without evidence cannot distinguish model failure from environment failure.
+- Source: [eval framework](https://github.com/browserbase/stagehand/tree/main/packages/evals/framework).
+
+### Scoring dimensions
+
+- Pass rate measures whether the task reached its success predicate.
+- Exact match measures structured-output equality.
+- Error match measures whether an expected failure class was reported.
+- Step count measures trajectory efficiency.
+- Token usage measures model cost.
+- Inference time measures model latency separately from browser time.
+- Browser operation time measures deterministic substrate cost.
+- A useful report shows all dimensions together because optimizing one can harm another.
+
+### Trajectory recording
+
+- The trajectory recorder preserves screenshots, accessibility trees, text, tool calls, and tool results.
+- It can record evidence before and after meaningful steps.
+- The trajectory is the unit of debugging for a multi-step agent.
+- A final result hides the mistaken observation that caused a later failure.
+- Near-identical screenshots should be deduplicated with an explicit rule.
+- Text evidence should be truncated with an explicit marker.
+- Tool results should preserve errors and retry metadata.
+- Source: [eval framework](https://github.com/browserbase/stagehand/tree/main/packages/evals/framework).
+
+## 15. Security and privacy architecture
+
+### Browser capability
+
+- A browser session can read account data and perform side effects.
+- Stagehand’s model layer should be treated as an untrusted decision-maker with powerful tools.
+- Tool methods should be narrower than arbitrary JavaScript evaluation.
+- Domain policy should constrain where navigation and network requests can go.
+- Browser session IDs should be treated as bearer capabilities.
+- CDP URLs should never be logged as public URLs without access-control review.
+- The selected Browserbase project and model credential should be least privileged.
+- Source: [domain policy](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/domainPolicy.ts).
+
+### Domain allowlists
+
+- Domain policy accepts exact hostnames and leading-subdomain wildcard patterns.
+- Patterns are normalized to lowercase hostnames.
+- Schemes, paths, ports, queries, and fragments are rejected in policy patterns.
+- Exact matching protects a single hostname.
+- A leading wildcard matches subdomains below a base hostname.
+- An allowlist blocks non-matching HTTP and HTTPS requests.
+- A blocklist blocks listed hosts while allowing other HTTP and HTTPS hosts.
+- Rules are applied through Fetch interception patterns.
+- Policy decisions inspect parsed hostnames rather than raw string prefixes.
+- Source: [domainPolicy.ts](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/domainPolicy.ts).
+
+### Domain-policy limits
+
+- Non-HTTP schemes are outside the same hostname decision path.
+- DNS rebinding and infrastructure redirects need defenses beyond hostname matching.
+- A permitted domain can serve malicious content.
+- Allowing `*.example.com` includes every subdomain under that suffix.
+- Policy should be paired with proxy controls and response validation for high-risk workflows.
+- Downloads and local file interactions need separate policy review.
+- A model can still be induced to navigate to a permitted malicious page.
+- Domain policy controls location, not instruction trust.
+
+### Prompt injection
+
+- Page text is untrusted input to the model.
+- Accessibility names and DOM text can carry the same injection risk as visible prose.
+- Screenshots can contain prompt-like text that a vision model interprets as authority.
+- System prompts should distinguish task instructions from page content.
+- Tool results should label page-derived values as observations, not commands.
+- High-risk tools should require external approval or deterministic policy gates.
+- Extraction should treat page text as data, not as a request to call another tool.
+- Agent completion should not be accepted because the page claimed success.
+- Inference: injection defense belongs at tool authorization boundaries, not only in the system prompt.
+
+### Variables and secrets
+
+- Variable names can be sent to the model while values are substituted at execution.
+- Rich variables can include descriptions without exposing values in the prompt.
+- Values should not be inserted into model prompts unless necessary.
+- Values should not be included in cache keys.
+- Values should not be written to flow events or history by default.
+- The browser may render a value, so screenshots can still capture it.
+- Sensitive screenshots should be masked or excluded.
+- A variable’s scope should be limited to the smallest workflow that needs it.
+- Source: [variables utility](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/agent/utils/variables.ts).
+
+### Persistence
+
+- Local persistent profiles can retain cookies, local storage, downloads, and history.
+- Browserbase contexts can persist browser data between sessions.
+- Persistence helps authenticated workflows.
+- Persistence also increases the blast radius of a compromised session.
+- Profiles should be isolated by tenant and environment.
+- A test should never reuse a production profile.
+- Temporary profiles are safer for untrusted exploratory tasks.
+- Cleanup policy should specify whether downloads and local files are retained.
+- Source: [user data guide](https://docs.stagehand.dev/v3/best-practices/user-data).
+
+### Logging privacy
+
+- Verbose logs can contain selectors, URL parameters, page text, and model output.
+- Inference logs can contain full page snapshots or screenshots.
+- Persisted flow options receive heuristic key-based redaction.
+- Key-based redaction does not cover secrets embedded in arbitrary strings.
+- Custom loggers must implement content-aware redaction for their domain.
+- Production defaults should use low verbosity and bounded retention.
+- Session recordings should be restricted like application logs.
+- Retention must include caches, JSONL events, screenshots, and eval trajectories.
+- Source: [logging guide](https://docs.stagehand.dev/v3/configuration/logging).
+
+## 16. Cost and latency tradeoffs
+
+### Cost components
+
+- Browser infrastructure cost depends on session duration and resource usage.
+- Network or proxy cost depends on bytes and routing.
+- Model cost depends on prompt, completion, reasoning, cached-input tokens, and images.
+- Stagehand API cost can add service usage around model calls.
+- Cache storage and telemetry add operational storage cost.
+- Evaluation cost includes trials and model matrices.
+- A complete budget needs all components rather than only model token price.
+- Source: [cost optimization](https://docs.stagehand.dev/v3/best-practices/cost-optimization).
+
+### Latency components
+
+- Browser launch and CDP attachment contribute startup latency.
+- Browserbase session creation contributes cloud control-plane latency.
+- Navigation contributes network and lifecycle wait time.
+- Snapshot capture contributes CDP traversal and formatting time.
+- Model inference contributes queue, generation, and structured parsing time.
+- Remote API operations add client-to-service network latency.
+- Deterministic locator execution contributes browser command and page reaction time.
+- Evidence capture contributes screenshot and serialization time.
+- Close contributes browser and session release latency.
+- Metrics should record these components independently.
+
+### Direct act versus observe-act
+
+- Direct act pays for one snapshot and one model selection for each instruction.
+- Observe-act pays for one planning model call and deterministic execution per action.
+- Observe-act is attractive when several actions can be grounded against one stable state.
+- Direct act is attractive when only one action is needed and the page is dynamic.
+- A long plan can become stale after the first mutation.
+- A stable form is a better observe-act candidate than a polling dashboard.
+- Choose based on action count, mutation rate, and failure cost.
+- Source: [observe basics](https://docs.stagehand.dev/v3/basics/observe).
+
+### Cache versus freshness
+
+- A cache hit can remove model latency and model cost.
+- Replay still pays browser lookup and execution latency.
+- A stale cache can create failed replay or a wrong valid target.
+- Self-heal adds inference cost but can recover selector drift.
+- Low-risk pages can favor aggressive reuse.
+- High-risk pages should favor fresh observation and verification.
+- Always report hit rate with replay success rate.
+- A self-healed hit is not a clean hit.
+
+### Model selection
+
+- Small fast models suit simple grounded controls when the snapshot is clear.
+- Larger models help with ambiguous pages or complex extraction.
+- CUA models can be necessary for visual interfaces but add coordinate risk.
+- The official cost guide recommends matching model size to task complexity.
+- Evaluate success, cost, latency, and recovery together.
+- A cheap model with frequent self-heal can cost more than a reliable model.
+- Source: [cost optimization](https://docs.stagehand.dev/v3/best-practices/cost-optimization).
+
+### Session reuse
+
+- Reuse avoids repeated browser startup.
+- It can preserve authentication and warm caches.
+- It increases cross-task state leakage risk.
+- Pooling should partition by tenant, identity, and workflow class.
+- Keep-alive should be paired with idle timeout and explicit cleanup.
+- Eviction should consider sensitivity and resource pressure, not only recency.
+- Browserbase timeout should bound maximum retention.
+
+### Cost controls
+
+- Enforce a maximum agent step budget.
+- Enforce a complete workflow deadline.
+- Set per-operation model and browser timeouts.
+- Reject extraction schemas that exceed an application-defined size budget.
+- Limit screenshot frequency and resolution when visual evidence is unnecessary.
+- Disable inference logging outside controlled debugging windows.
+- Stop or escalate when self-heal attempts exceed a threshold.
+- Keep budget authority outside the model loop.
+
+### Latency instrumentation
+
+- Measure p50, p95, and p99 rather than only average time.
+- Split cold-start and warm-session latency.
+- Split cache hit, cache miss, and cache self-heal latency.
+- Split local and Browserbase latency by region.
+- Split DOM and CUA agent latency.
+- Measure time to first stream event and time to finished event separately.
+- Record browser idle wait separately from model inference.
+- Compare success-adjusted latency rather than raw speed.
+
+## 17. Limitations and failure boundaries
+
+### Staleness and drift
+
+- The snapshot is a point-in-time projection.
+- A client-side update can invalidate a locator after inference.
+- A virtualized list can remove a control when it scrolls.
+- A modal can close between observe and act.
+- A backend response can change labels without navigation.
+- Cache and action descriptors cannot prove that the page remained unchanged.
+- Re-observation and application waits are the correct response to meaningful drift.
+- No snapshot strategy eliminates races on a mutable page.
+
+### Model error
+
+- Structured output can be syntactically valid but semantically wrong.
+- A model can choose the wrong element with a real ID.
+- A model can infer intent from malicious page text.
+- A model can report completion without satisfying the goal.
+- The executor prevents fabricated IDs but not wrong grounded choices.
+- External verification is required for important workflows.
+- Tool authorization must not depend on model confidence language.
+
+### CUA fragility
+
+- Coordinates are tied to viewport dimensions and scale.
+- Responsive breakpoints can change layout between runs.
+- A screenshot can be stale when a coordinate arrives.
+- A small offset can select a nearby destructive control.
+- CUA needs confirmation and post-action verification for high-risk actions.
+- Source: [computer-use guide](https://docs.stagehand.dev/v3/best-practices/computer-use).
+
+### Server statefulness
+
+- The default server store is process-local.
+- LRU eviction can close a browser session unexpectedly under load.
+- TTL zero means no TTL-based eviction, not automatic cleanup.
+- Horizontal scale needs affinity or a custom durable store.
+- A durable store must account for transport ownership and concurrent operations.
+- SSE disconnects can leave a browser operation running.
+- Source: [InMemorySessionStore.ts](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/lib/InMemorySessionStore.ts).
+
+## 18. Adaptation playbook
+
+### Phase 0: define the boundary
+
+- List browser environments that must be supported.
+- List model providers that may receive page data.
+- Decide whether remote Stagehand API execution is required.
+- Decide whether CUA is in scope.
+- Define irreversible side effects.
+- Define business success predicates.
+- Define data classes entering prompts, screenshots, caches, and logs.
+- Define retention before enabling verbose evidence.
+
+### Phase 1: preserve the seams
+
+- Keep browser lifecycle separate from model selection.
+- Keep context ownership separate from page operations.
+- Keep frame topology separate from selector resolution.
+- Keep snapshot construction separate from prompt formatting.
+- Keep inference validation separate from browser execution.
+- Keep cache policy separate from action execution.
+- Keep business verification separate from Stagehand success reporting.
+- Preserve these seams even if class names or providers change.
+
+### Phase 2: build deterministic substrate
+
+- Start with a CDP transport that correlates commands and sessions.
+- Reject in-flight commands on transport close.
+- Build target discovery and page ownership.
+- Build a frame registry before model grounding.
+- Add navigation response and lifecycle watchers with shared deadlines.
+- Add evaluation and selector waits with distinct errors.
+- Add close ordering and parent-death cleanup.
+- Test local attach, local launch, remote attach, target creation, and disconnect.
+- Do not expose an agent before deterministic primitives are reliable.
+
+### Phase 3: build snapshots
+
+- Implement a DOM index per CDP session.
+- Add adaptive depth handling for large documents.
+- Collect accessibility metadata and DOM mappings separately.
+- Encode frame identity into element IDs.
+- Build URL maps for link extraction.
+- Add scope and ignore selectors.
+- Add deterministic formatting and tree diffs.
+- Preserve raw provenance for debugging.
+- Test DOM, shadow DOM, same-origin iframe, cross-origin iframe, OOPIF, and detached-frame cases.
+
+### Phase 4: implement observe and act
+
+- Define a descriptor with method, element ID, description, and arguments.
+- Provide supported methods explicitly to inference.
+- Reject IDs absent from the current snapshot.
+- Route descriptor input directly to deterministic execution.
+- Resolve deep locators through the frame registry.
+- Substitute variables immediately before execution.
+- Add bounded self-heal as fresh snapshot plus selector re-grounding.
+- Preserve the original method and arguments during self-heal.
+- Never turn an uncertain side effect into an unbounded duplicate retry.
+- Add an application-level verification hook.
+
+### Phase 5: implement extract and agent
+
+- Serialize schemas to a provider-compatible contract.
+- Add URL-ID transformation and URL reinjection.
+- Add screenshot evidence with cost and privacy controls.
+- Add chunking and pagination primitives.
+- Build an explicit typed tool registry.
+- Give every tool a timeout and error mapping.
+- Bound step count and total execution time.
+- Add completion evidence rather than completion prose alone.
+- Add DOM mode before hybrid and CUA modes.
+- Add direct-act fallback to a bounded agent for UI drift.
+
+### Phase 6: implement cache and verification
+
+- Version cache formats.
+- Hash normalized instruction, URL, scope, configuration, and variable keys.
+- Add tenant or environment signatures where page shape varies.
+- Exclude secret values from every key.
+- Validate every selector before replay.
+- Stop replay at the first failure.
+- Track clean hit, stale hit, self-healed hit, and miss separately.
+- Invalidate on application releases and locator encoding changes.
+- Make business verification a required postcondition for high-risk tasks.
+
+### Phase 7: implement observability and security
+
+- Define a trace ID and operation ID independent of browser session ID.
+- Emit hierarchical events for snapshot, inference, locator, command, and verification.
+- Add token and latency metrics by primitive and model.
+- Attach cache, self-heal, fallback, and retry attributes.
+- Redact variables and known secret patterns before persistence.
+- Restrict session recordings and evidence stores.
+- Require authentication before remote session use.
+- Apply domain allowlists and rate limits.
+- Add prompt-injection tests at tool authorization boundaries.
+
+### Phase 8: build evaluations
+
+- Write deterministic tests for browser and frame mechanics.
+- Write model benchmarks for observe, act, extract, and agent.
+- Run multiple trials per task.
+- Run local and Browserbase environments where supported.
+- Run model matrices for intended providers.
+- Record trajectories for failures.
+- Score business predicates, not only tool returns.
+- Measure p50 and p95 latency, tokens, steps, and recovery rate.
+- Keep a regression set of real UI drift cases.
+- Gate changes on success-adjusted cost and latency.
+
+## 19. Recommended adaptation contracts
+
+### Browser session contract
+
+- `start` returns logical session ID, browser session ID, and page registry.
+- `getPage` requires explicit page identity when multiple pages exist.
+- `close` is idempotent and reports cleanup outcome.
+- `reconnect` creates a session generation and invalidates old snapshots.
+- `setPolicy` applies to existing and future child sessions.
+- `health` reports transport, browser, and remote session state separately.
+
+### Snapshot contract
+
+- `capture` returns formatted tree, element map, URL map, frame metadata, and timestamp.
+- The element map includes a snapshot generation.
+- Each element record includes frame identity and locator provenance.
+- Scope and ignored selectors are recorded.
+- A snapshot is immutable after capture.
+- A caller can ask whether an element still resolves without executing it.
+
+### Inference contract
+
+- `observe` returns normalized actions and model usage.
+- `act` returns one normalized action or no-action plus usage.
+- `extract` returns schema data, validation status, and usage.
+- `agent` returns trajectory metadata, tool outcomes, and completion evidence.
+- Every inference result includes provider, model, attempt, and cache metadata.
+- Provider-specific responses are hidden behind normalized capabilities.
+
+### Execution contract
+
+- `execute` accepts only a typed method and grounded locator.
+- It accepts deadline and cancellation signal.
+- It returns browser-command status separately from business verification status.
+- It classifies uncertain transport outcomes.
+- It records whether the command was dispatched and whether a response arrived.
+- It never retries a non-idempotent side effect without explicit policy.
+
+### Cache contract
+
+- `get` returns hit, miss, stale, or invalid status.
+- `put` writes only successful, versioned plans.
+- `replay` verifies selectors and reports the first failed step.
+- `refresh` stores a plan only after live execution and verification.
+- `invalidate` can target workflow, URL, tenant, release, or version.
+- The cache never logs raw variable values.
+
+### Verification contract
+
+- `verifyInteraction` says whether the browser accepted the command.
+- `verifyGoal` says whether the application reached the desired state.
+- `verifyData` says whether an extraction is complete and fresh enough.
+- Verification is independent of the model’s final prose.
+- A workflow is successful only when required predicates pass.
+- Failure evidence includes page URL, frame, timestamp, screenshot or tree excerpt, and action provenance.
+
+## 20. Design heuristics
+
+- Put nondeterminism at a narrow, typed boundary.
+- Keep browser commands deterministic after grounding.
+- Make element identity explicit across frame sessions.
+- Use accessibility semantics to reduce ambiguity.
+- Use DOM provenance to recover executable selectors.
+- Use screenshots when the page’s meaning is visual.
+- Treat observe as a planning cache for action decisions.
+- Treat action caches as plans requiring validation.
+- Treat self-heal as re-grounding, not duplicate side effects.
+- Treat agent loops as bounded orchestration, not open-ended autonomy.
+- Treat model success as an intermediate signal.
+- Treat business verification as final authority.
+- Record causal ancestry so failures can be explained.
+- Keep session state explicit when serving through HTTP.
+- Design for process death and remote disconnect.
+- Measure cost and latency by layer.
+- Test frame, shadow, provider, and viewport variability directly.
+
+## 21. Closing assessment
+
+- Stagehand is strongest where it turns model ambiguity into typed browser operations.
+- The hybrid snapshot joins semantic accessibility data with executable DOM provenance.
+- Observe is the most important optimization seam because it separates planning from repeated inference.
+- Act self-heal is valuable because it refreshes grounding without changing intended method.
+- Extract is powerful when the browser view is authoritative, but schema validity cannot guarantee completeness.
+- Agent mode is best viewed as bounded orchestration above reliable primitives.
+- CUA expands coverage for visual interfaces but introduces viewport and coordinate risk.
+- Caching can reduce cost and latency only when environment identity and invalidation are serious concerns.
+- The server API is useful, yet the default process-local store makes stateful deployment explicit.
+- Flow events, history, metrics, and recordings provide complementary evidence.
+- Domain policy and tool narrowing are necessary but do not solve prompt injection alone.
+- The adaptation target should be seams and invariants, not a wholesale copy of internal classes.
+- A production derivative should add an external business verifier and explicit idempotency policy.
+- The overall design is a deterministic control plane around a structured model boundary and bounded agent loop.
+
+## 22. Source index
+
+- [Stagehand repository](https://github.com/browserbase/stagehand).
+- [Documentation index](https://docs.stagehand.dev/llms.txt).
+- [V3 orchestrator](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/v3.ts).
+- [Public V3 types](https://github.com/browserbase/stagehand/tree/main/packages/core/lib/v3/types/public).
+- [Context](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/context.ts).
+- [Page](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/page.ts).
+- [Frame registry](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/frameRegistry.ts).
+- [CDP transport](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/cdp.ts).
+- [Lifecycle watcher](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/lifecycleWatcher.ts).
+- [Hybrid capture](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/a11y/snapshot/capture.ts).
+- [Accessibility tree](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/a11y/snapshot/a11yTree.ts).
+- [DOM tree](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/a11y/snapshot/domTree.ts).
+- [Tree formatting](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/a11y/snapshot/treeFormatUtils.ts).
+- [Observe handler](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/handlers/observeHandler.ts).
+- [Act handler](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/handlers/actHandler.ts).
+- [Act executor](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/handlers/handlerUtils/actHandlerUtils.ts).
+- [Extract handler](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/handlers/extractHandler.ts).
+- [Inference](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/inference.ts).
+- [LLM provider](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/llm/LLMProvider.ts).
+- [LLM client](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/llm/LLMClient.ts).
+- [Agent handler](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/handlers/v3AgentHandler.ts).
+- [Agent tools](https://github.com/browserbase/stagehand/tree/main/packages/core/lib/v3/agent/tools).
+- [Action cache](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/cache/ActCache.ts).
+- [Agent cache](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/cache/AgentCache.ts).
+- [Cache storage](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/cache/CacheStorage.ts).
+- [Flow logger](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/flowlogger/FlowLogger.ts).
+- [Event store](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/flowlogger/EventStore.ts).
+- [Domain policy](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/understudy/domainPolicy.ts).
+- [Timeout configuration](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/timeoutConfig.ts).
+- [Shutdown supervisor](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/shutdown/supervisor.ts).
+- [Stagehand API](https://github.com/browserbase/stagehand/blob/main/packages/core/lib/v3/api.ts).
+- [Server stream](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/lib/stream.ts).
+- [Session store](https://github.com/browserbase/stagehand/blob/main/packages/server-v3/src/lib/InMemorySessionStore.ts).
+- [Evaluation architecture](https://github.com/browserbase/stagehand/blob/main/packages/evals/ARCHITECTURE.mmd).
+- [Observe docs](https://docs.stagehand.dev/v3/basics/observe).
+- [Act docs](https://docs.stagehand.dev/v3/basics/act).
+- [Extract docs](https://docs.stagehand.dev/v3/basics/extract).
+- [Agent docs](https://docs.stagehand.dev/v3/basics/agent).
+- [Observe reference](https://docs.stagehand.dev/v3/references/observe).
+- [Browser configuration](https://docs.stagehand.dev/v3/configuration/browser).
+- [Logging configuration](https://docs.stagehand.dev/v3/configuration/logging).
+- [Observability configuration](https://docs.stagehand.dev/v3/configuration/observability).
+- [History guidance](https://docs.stagehand.dev/v3/best-practices/history).
+- [Caching guidance](https://docs.stagehand.dev/v3/best-practices/caching).
+- [Deterministic agent guidance](https://docs.stagehand.dev/v3/best-practices/deterministic-agent).
+- [Cost optimization](https://docs.stagehand.dev/v3/best-practices/cost-optimization).
+- [Speed optimization](https://docs.stagehand.dev/v3/best-practices/speed-optimization).
+- [User data guidance](https://docs.stagehand.dev/v3/best-practices/user-data).
+- [Computer-use guidance](https://docs.stagehand.dev/v3/best-practices/computer-use).
+- [Agent fallbacks](https://docs.stagehand.dev/v3/best-practices/agent-fallbacks).
+- [Evaluation guidance](https://docs.stagehand.dev/v3/basics/evals).
+
+## 23. Reproducibility note
+
+- Upstream `main` is mutable, so future reruns should record the exact source commit.
+- The temporary source checkout used for this study was outside the workspace.
+- The current-project codebase was not used as evidence.
+- This artifact avoids copying source prose or implementation blocks wholesale.
+- Product speed and cost numbers are treated as documentation guidance, not independent benchmarks.
+- The source index lets reviewers audit claims against upstream material.
 
 ## 12. Stagehand API and server session architecture
 
@@ -1560,7 +2284,7 @@ Without those fields, a replayed click cannot be diagnosed reliably.
 The adaptation playbook should pin viewport and zoom for all CUA benchmarks.
 It should treat changes in browser chrome, scrollbars, and responsive breakpoints as cache invalidators.
 
-Sources: [coordinate normalization](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/agent/utils/coordinateNormalization.ts), [computer-use dimensions](https://docs.stagehand.dev/v3/best-practices/computer-use.md), [Browserbase viewports](https://docs.browserbase.com/platform/browser/core-features/viewports.md).
+Sources: [coordinate normalization](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/agent/utils/coordinateNormalization.ts), [computer-use dimensions](https://docs.stagehand.dev/v3/best-practices/computer-use.md), [Browserbase viewports](https://docs.browserbase.com/platform/browser/core-features/viewports).
 
 ### Screenshot versus accessibility tradeoff
 
@@ -1575,8 +2299,6 @@ A failed semantic lookup should trigger a screenshot only when the task permits 
 An image should not be added to every extraction request because context cost can dominate the actual data value.
 
 Sources: [agent strategy prompt](https://github.com/browserbase/stagehand/blob/06289148e4193d67371f07bd80a58e3268520260/packages/core/lib/v3/agent/prompts/agentSystemPrompt.ts), [agent modes](https://docs.stagehand.dev/v3/basics/agent.md), [extract screenshot reference](https://docs.stagehand.dev/v3/references/extract.md).
-
-<!-- APPEND -->
 
 ## 4. Act as a typed, bounded side-effect primitive
 
