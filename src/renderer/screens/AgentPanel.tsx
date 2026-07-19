@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Zap, MousePointer, Globe, Eye, FileText, CheckCircle2, CircleAlert, ChevronDown, Edit3, Keyboard, ArrowUpDown, Search, CircleDot, Copy, RotateCcw, Save, X, Sparkles, Loader2 } from 'lucide-react';
+import { Bot, Zap, MousePointer, Globe, Eye, FileText, CheckCircle2, CircleAlert, ChevronDown, Edit3, Keyboard, ArrowUpDown, Search, CircleDot, Copy, RotateCcw, Save, X, Loader2 } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
 import type { ChatMessage } from '../stores/useAgentStore';
@@ -214,8 +214,7 @@ export function AgentPanel() {
       <div className="agent-chat-area">
         {chatHistory.length === 0 && workflowRunState === 'idle' && (
           <div className="agent-chat-empty">
-            <div className="agent-ready-mark"><Bot size={20} /></div>
-            <div className="agent-ready-kicker"><Sparkles size={12} /> Browser coworker</div>
+            <div className="agent-ready-kicker">Browser coworker</div>
             <div className="agent-ready-title">What should we work on?</div>
             <div className="agent-ready-copy">Describe the outcome you want. The agent will show each browser step and pause when it needs you.</div>
             
