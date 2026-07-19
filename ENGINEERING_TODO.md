@@ -48,6 +48,16 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - [x] Verify packaged Electron behavior, renderer smoke flows, tests, typechecks, and builds.
 - [x] Commit each coherent implementation increment with a descriptive message.
 
+### Visual-control and desktop-shell continuation
+
+- [x] Add transient Set-of-Mark and normalized-grid visual guidance, plus policy-gated CDP coordinate fallback.
+- [x] Add speech-to-text parity to the Mini Window input.
+- [x] Replace the native Windows/Linux menu with a custom app title bar and replace session Stop with confirmed back/leave.
+- [x] Calm high-emphasis error surfaces and remove fixed Playwright viewport enforcement while preserving Chrome's initial launch geometry.
+- [x] Remove redundant robot/start icons from the Agent-panel empty state.
+- [ ] Refine the app into a calmer monochrome hierarchy with restrained accent use and simpler session/workflow/browser-tab surfaces.
+- [ ] Replace online speech recognition with separate verified local Whisper tiny.en model download and microphone-audio enablement settings, followed by on-device transcription.
+
 ## Verification log
 
 - Initial baseline: `npm test`, typechecks, renderer build, and focused lint were previously green for the existing pass; full lint still contains unrelated baseline findings.
@@ -56,3 +66,4 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - Continuation increment: transient WebRTC stream loss no longer cancels host-owned automation; human checkpoints are race-safe and covered by focused tests.
 - Policy/status increment: 53 tests passed; typechecks, renderer/main builds, focused lint, and a fresh host-scope renderer smoke check passed. Cmd+Q now routes through an explicit macOS quit path with bounded cleanup.
 - Vision/speech increment: vision is a prompt-guided, settings-gated tool that follows the shared browser-read policy and returns an in-memory, CSS-scale JPEG only when selected. Speech input supports local push-to-talk and hands-free transcription, with automatic hands-free reconnect, strict IPC validation, and renderer-origin media permission handling. 55 tests, both typechecks, and both production builds passed.
+- Desktop-shell continuation: platform menu/window behavior, leave confirmation, full tests (68), typechecks, and production builds were reviewed cleanly.
