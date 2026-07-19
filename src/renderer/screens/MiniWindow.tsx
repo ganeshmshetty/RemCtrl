@@ -298,7 +298,6 @@ export function MiniWindow() {
           
           {/* Compact action buttons embedded in the input bar */}
           <div className="mini-input-actions no-drag">
-            <>
               <>
                 {speechInputMode === 'push_to_talk' ? (
                   <button

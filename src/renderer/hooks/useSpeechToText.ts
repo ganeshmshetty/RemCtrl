@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { LocalWhisperSetupState, SpeechInputMode } from '../../shared/types';
 
 export type SpeechStatus = 'idle' | 'unavailable';
@@ -41,37 +41,26 @@ export function useSpeechToText({
   onTranscript: (text: string, isFinal: boolean) => void;
 }) {
   const gate = useMemo(() => getLocalSpeechGate(enabled, setup), [enabled, setup]);
-  const [status, setStatus] = useState<SpeechStatus>('idle');
-  const [error, setError] = useState<string | null>(gate.message);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
   void _mode;
   void _onTranscript;
 
-  useEffect(() => {
-    if (!gate.ready) {
-      setStatus('unavailable');
-      setError(gate.message);
-      return;
-    }
-    setStatus('idle');
-    setError(null);
-  }, [gate]);
+  const error = gate.message ?? runtimeError;
+  const status: SpeechStatus = error ? 'unavailable' : 'idle';
 
   const start = useCallback(() => {
     if (!gate.ready) {
-      setStatus('unavailable');
-      setError(gate.message);
       return;
     }
     // This branch is unreachable in Task 8: the typed main-process adapter
     // reports native-runner-not-packaged. Do not substitute browser recognition.
-    setStatus('unavailable');
-    setError('Local Whisper transcription is unavailable because this build does not include a native whisper.cpp runner.');
+    setRuntimeError('Local Whisper transcription is unavailable because this build does not include a native whisper.cpp runner.');
   }, [gate]);
 
   const stop = useCallback(() => {
-    setStatus(gate.ready ? 'idle' : 'unavailable');
-  }, [gate.ready]);
+    setRuntimeError(null);
+  }, []);
 
   return {
     start,

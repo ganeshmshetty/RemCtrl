@@ -20,7 +20,8 @@ const unavailable: WhisperRuntimeAvailability = {
 export function createLocalWhisperRuntime(): LocalWhisperRuntime {
   return {
     getAvailability: () => unavailable,
-    transcribe: async (_audio) => {
+    transcribe: async (audio) => {
+      void audio;
       throw new Error(unavailable.message);
     },
   };
