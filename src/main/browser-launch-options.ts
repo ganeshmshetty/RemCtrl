@@ -41,13 +41,23 @@ export interface ManagedPersistentContextOptions {
 
 export function buildManagedPersistentContextOptions({
   remoteDebuggingPort,
-  userDataDir,
   headless,
   executablePath,
-}: ManagedChromeLaunchConfig & { executablePath?: string }): ManagedPersistentContextOptions {
+}: Pick<ManagedChromeLaunchConfig, 'remoteDebuggingPort' | 'headless'> & { executablePath?: string }): ManagedPersistentContextOptions {
   return {
     headless,
     ...(executablePath ? { executablePath } : {}),
-    args: buildManagedChromeLaunchArgs({ remoteDebuggingPort, userDataDir, headless }),
+    // Persistent contexts own the profile and headless lifecycle through
+    // Playwright. Keep detached-only profile/window/headless flags out of this
+    // path so its existing launch contract remains unchanged.
+    args: [
+      `--remote-debugging-port=${remoteDebuggingPort}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--test-type',
+    ],
   };
 }

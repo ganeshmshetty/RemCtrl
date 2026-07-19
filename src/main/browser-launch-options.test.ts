@@ -6,16 +6,14 @@ import {
 } from './browser-launch-options.js';
 
 describe('managed browser launch options', () => {
-  it('keeps a deterministic initial Chrome window without fixing the Playwright viewport', () => {
+  it('keeps persistent context launch behavior independent of Playwright viewport sizing', () => {
     const options = buildManagedPersistentContextOptions({
       remoteDebuggingPort: 9223,
-      userDataDir: '/tmp/remotectrl-profile',
       headless: false,
       executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     });
 
-    expect(options.args).toContain(`--window-size=${MANAGED_BROWSER_WINDOW.width},${MANAGED_BROWSER_WINDOW.height}`);
-    expect(options.args).toContain(`--window-position=${MANAGED_BROWSER_WINDOW.x},${MANAGED_BROWSER_WINDOW.y}`);
+    expect(options.args).toContain('--remote-debugging-port=9223');
     expect(options).not.toHaveProperty('viewport');
     expect(options.args).not.toContain('--headless=new');
   });
@@ -30,5 +28,19 @@ describe('managed browser launch options', () => {
     expect(args).toContain('--headless=new');
     expect(args).toContain('--no-first-run');
     expect(args).toContain('--disable-background-timer-throttling');
+  });
+
+  it('keeps detached-only flags out of persistent headless context options', () => {
+    const options = buildManagedPersistentContextOptions({
+      remoteDebuggingPort: 9223,
+      headless: true,
+    });
+
+    expect(options.headless).toBe(true);
+    expect(options.args).toContain('--remote-debugging-port=9223');
+    expect(options.args).not.toContain('--headless=new');
+    expect(options.args).not.toContain('--user-data-dir=/tmp/remotectrl-profile');
+    expect(options.args).not.toContain(`--window-size=${MANAGED_BROWSER_WINDOW.width},${MANAGED_BROWSER_WINDOW.height}`);
+    expect(options.args).not.toContain(`--window-position=${MANAGED_BROWSER_WINDOW.x},${MANAGED_BROWSER_WINDOW.y}`);
   });
 });

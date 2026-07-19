@@ -344,7 +344,6 @@ export async function launchBrowser(startUrl = 'https://www.google.com', headles
 
       context = await chromium.launchPersistentContext(profileDir, buildManagedPersistentContextOptions({
         remoteDebuggingPort: dynamicPort,
-        userDataDir: profileDir,
         headless: launchHeadless,
         executablePath,
       }));
