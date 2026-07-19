@@ -122,8 +122,17 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     setGlobalShortcut: (shortcut) => ipcRenderer.invoke('settings:setGlobalShortcut', shortcut),
     getSpeechToTextEnabled: () => ipcRenderer.invoke('settings:getSpeechToTextEnabled'),
     setSpeechToTextEnabled: (enabled) => ipcRenderer.invoke('settings:setSpeechToTextEnabled', enabled),
+    getMicrophoneAudioEnabled: () => ipcRenderer.invoke('settings:getMicrophoneAudioEnabled'),
+    setMicrophoneAudioEnabled: (enabled) => ipcRenderer.invoke('settings:setMicrophoneAudioEnabled', enabled),
     getSpeechInputMode: () => ipcRenderer.invoke('settings:getSpeechInputMode'),
     setSpeechInputMode: (mode) => ipcRenderer.invoke('settings:setSpeechInputMode', mode),
+  },
+
+  speech: {
+    getSetupState: () => ipcRenderer.invoke('speech:getSetupState'),
+    downloadModel: () => ipcRenderer.invoke('speech:downloadModel'),
+    cancelDownload: () => ipcRenderer.invoke('speech:cancelDownload'),
+    retryDownload: () => ipcRenderer.invoke('speech:retryDownload'),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────
@@ -260,6 +269,11 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
       const listener = (_event, theme) => cb(theme);
       ipcRenderer.on('settings:themeChanged', listener);
       return () => ipcRenderer.removeListener('settings:themeChanged', listener);
+    },
+    speechStateChanged: (cb) => {
+      const listener = (_event, state) => cb(state);
+      ipcRenderer.on('speech:stateChanged', listener);
+      return () => ipcRenderer.removeListener('speech:stateChanged', listener);
     },
     agentStarted: (cb) => {
       const listener = (_event, payload) => cb(payload);

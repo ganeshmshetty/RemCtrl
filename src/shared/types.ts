@@ -94,6 +94,30 @@ export type BrowserMode = 'internal' | 'local_chrome';
 export type AppTheme = 'light' | 'dark' | 'system';
 export type SpeechInputMode = 'push_to_talk' | 'hands_free';
 
+export type WhisperModelStatus = 'not_installed' | 'downloading' | 'verifying' | 'installed' | 'error';
+export type WhisperRuntimeReason = 'native-runner-not-packaged';
+
+export interface LocalWhisperModelState {
+  status: WhisperModelStatus;
+  fileName: string;
+  sizeBytes: number;
+  bytesDownloaded: number;
+  progress: number | null;
+  verified: boolean;
+  error?: string;
+}
+
+export interface WhisperRuntimeAvailability {
+  available: boolean;
+  reason: WhisperRuntimeReason;
+  message: string;
+}
+
+export interface LocalWhisperSetupState {
+  model: LocalWhisperModelState;
+  runtime: WhisperRuntimeAvailability;
+}
+
 export interface AppSettings {
   signalingUrl: string;
   preferredProvider: ApiProvider;
@@ -626,8 +650,16 @@ export interface RemoteCtrlAPI {
     setGlobalShortcut: (shortcut: string) => Promise<void>;
     getSpeechToTextEnabled: () => Promise<boolean>;
     setSpeechToTextEnabled: (enabled: boolean) => Promise<void>;
+    getMicrophoneAudioEnabled: () => Promise<boolean>;
+    setMicrophoneAudioEnabled: (enabled: boolean) => Promise<void>;
     getSpeechInputMode: () => Promise<SpeechInputMode>;
     setSpeechInputMode: (mode: SpeechInputMode) => Promise<void>;
+  };
+  speech: {
+    getSetupState: () => Promise<LocalWhisperSetupState>;
+    downloadModel: () => Promise<LocalWhisperSetupState>;
+    cancelDownload: () => Promise<LocalWhisperSetupState>;
+    retryDownload: () => Promise<LocalWhisperSetupState>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;
@@ -679,6 +711,7 @@ export interface RemoteCtrlAPI {
     agentStarted: (cb: (payload: { commandId: string; instruction: string }) => void) => () => void;
     policyApprovalRequested: (cb: (approval: PolicyApprovalRequest) => void) => () => void;
     policyAudit: (cb: (event: PolicyAuditEvent) => void) => () => void;
+    speechStateChanged: (cb: (state: LocalWhisperSetupState) => void) => () => void;
   };
 }
 

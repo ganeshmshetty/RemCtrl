@@ -23,6 +23,7 @@ import { registerBrowserIpc } from './ipc/browser.ipc.js';
 import { registerAgentIpc } from './ipc/agent.ipc.js';
 import { registerWebRtcIpc } from './ipc/webrtc.ipc.js';
 import { registerPolicyIpc } from './ipc/policy.ipc.js';
+import { registerSpeechIpc } from './ipc/speech.ipc.js';
 
 let currentWindow: BrowserWindow | null = null;
 let isRegistered = false;
@@ -48,4 +49,5 @@ function registerIpcHandlers(win: BrowserWindow) {
   registerAgentIpc();
   registerWebRtcIpc(win);
   registerPolicyIpc();
+  registerSpeechIpc();
 }

@@ -162,6 +162,15 @@ export function setSpeechToTextEnabled(enabled: boolean) {
   saveSettings({ ...s, speechToTextEnabled: enabled });
 }
 
+export function getMicrophoneAudioEnabled(): boolean {
+  return loadSettings().microphoneAudioEnabled ?? false;
+}
+
+export function setMicrophoneAudioEnabled(enabled: boolean) {
+  const s = loadSettings();
+  saveSettings({ ...s, microphoneAudioEnabled: enabled });
+}
+
 export function getSpeechInputMode(): SpeechInputMode {
   return loadSettings().speechInputMode ?? 'push_to_talk';
 }

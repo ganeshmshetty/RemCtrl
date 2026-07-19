@@ -52,6 +52,8 @@ import {
   setGlobalShortcut,
   getSpeechToTextEnabled,
   setSpeechToTextEnabled,
+  getMicrophoneAudioEnabled,
+  setMicrophoneAudioEnabled,
   getSpeechInputMode,
   setSpeechInputMode,
 } from '../storage.js';
@@ -245,6 +247,12 @@ export function registerSettingsIpc() {
 
   ipcMain.handle('settings:setSpeechToTextEnabled', async (_e, enabled: unknown) => {
     setSpeechToTextEnabled(z.boolean().parse(enabled));
+  });
+
+  ipcMain.handle('settings:getMicrophoneAudioEnabled', async () => getMicrophoneAudioEnabled());
+
+  ipcMain.handle('settings:setMicrophoneAudioEnabled', async (_e, enabled: unknown) => {
+    setMicrophoneAudioEnabled(z.boolean().parse(enabled));
   });
 
   ipcMain.handle('settings:getSpeechInputMode', async () => getSpeechInputMode());

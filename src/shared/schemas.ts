@@ -321,6 +321,7 @@ export const PersistedSettingsSchema = z.object({
   profileInitialized: z.boolean().default(false),
   globalShortcut: z.string().default('CommandOrControl+Shift+Space'),
   speechToTextEnabled: z.boolean().default(true),
+  microphoneAudioEnabled: z.boolean().default(false),
   speechInputMode: SpeechInputModeSchema.default('push_to_talk'),
   // API keys are stored in a separate secure store — not in this file
 });
