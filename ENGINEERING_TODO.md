@@ -41,6 +41,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 ### Capability polish
 
 - [x] Improve workflow builder review/run experience with step status, failure context, and recovery affordances.
+- [ ] Allow switching between the Agent and Workflow tabs while a workflow run is active.
 - [x] Verify packaged Electron behavior, renderer smoke flows, tests, typechecks, and builds.
 - [x] Commit each coherent implementation increment with a descriptive message.
 
