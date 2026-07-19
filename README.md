@@ -14,17 +14,19 @@ The user keeps the authenticated browser session. An agent performs the delegate
 
 ### Market landscape
 
-This comparison is based on the source-linked market study in [research/remotectrl-market](research/remotectrl-market/) and the architecture reference repositories in `research/`. It is deliberately a product-positioning comparison, not a claim that RemoteCtrl has feature parity with every mature platform.
+This capability matrix is based on the source-linked market study in [research/remotectrl-market](research/remotectrl-market/) and the architecture reference repositories in `research/`. A ✓ marks a documented, first-class focus; — means it is not the product’s core position in this comparison.
 
-| Product/category | What it provides | Where RemoteCtrl differs |
-| --- | --- | --- |
-| [RustDesk](https://github.com/rustdesk/rustdesk) and remote desktop tools | Remote access to a desktop or machine. | RemoteCtrl focuses on browser work and task context rather than unrestricted desktop control. |
-| [browser-use](https://github.com/browser-use/browser-use) | Natural-language browser-agent framework. | RemoteCtrl puts an agent in a desktop product with the user’s browser profile, human checkpoints, a workflow surface, and optional remote collaboration. |
-| [Stagehand](https://github.com/browserbase/stagehand) | Developer SDK for AI browser automation with natural-language actions and extraction. | RemoteCtrl packages browser automation as an end-user workspace for delegation, review, intervention, and replay. |
-| [Nanobrowser](https://github.com/nanobrowser/nanobrowser) | Browser-extension AI automation. | RemoteCtrl combines an extension bridge with a desktop controller, persistent profiles, workflow editing, and agent execution traces. |
-| [n8n](https://github.com/n8n-io/n8n) and workflow automation tools | Visual, reusable automation flows across services. | RemoteCtrl turns an observed browser task into a browser-native workflow that can use agent recovery when a page is ambiguous or changes. |
-| [browserless](https://github.com/browserless/browserless), Playwright, and Puppeteer | Browser automation infrastructure and programmable browser control. | RemoteCtrl is a product layer above the browser runtime: it adds delegation UX, task state, checkpoints, saved workflows, and a local browser workspace. |
-| **RemoteCtrl** | Task-scoped agent execution, human takeover, workflow replay, local browser profiles, and optional remote browser collaboration. | The integrated experience is the innovation: delegate browser work in the user’s real session, retain control during execution, then reuse the completed task. |
+| Product | AI browser agent | User’s browser session/profile | Human takeover or approval | Reusable browser workflows | Remote operator | Task-scoped policy for agent actions |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| [RustDesk](https://github.com/rustdesk/rustdesk) | — | ✓ | — | — | ✓ | — |
+| [browser-use](https://github.com/browser-use/browser-use) | ✓ | — | — | — | — | — |
+| [Stagehand](https://github.com/browserbase/stagehand) | ✓ | — | — | — | — | — |
+| [Nanobrowser](https://github.com/nanobrowser/nanobrowser) | ✓ | ✓ | — | — | — | — |
+| [n8n](https://github.com/n8n-io/n8n) | — | — | — | ✓ | — | — |
+| [browserless](https://github.com/browserless/browserless), Playwright, Puppeteer | — | — | — | — | — | — |
+| **RemoteCtrl** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+RemoteCtrl’s distinction is the combined row: task-scoped agent execution inside a user-controlled browser, with human intervention and workflow replay in the same product.
 
 ### The task boundary
 
