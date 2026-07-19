@@ -28,7 +28,7 @@ interface InjectedGuidance {
   axisGrid: VisualGuidanceAxisGrid;
 }
 
-const OVERLAY_SELECTOR = '#remctrl-overlay-root[data-remctrl-exclude="true"]';
+const OVERLAY_SELECTOR = '#remctrl-overlay-root';
 
 /** Captures one transient, self-excluding visual guide for the current page. */
 export async function captureVisualGuidance(page: Page): Promise<VisualGuidanceCapture> {
@@ -38,7 +38,7 @@ export async function captureVisualGuidance(page: Page): Promise<VisualGuidanceC
     guidance = await page.evaluate<InjectedGuidance>(() => {
       const doc = (globalThis as any).document;
       const win = (globalThis as any).window;
-      const existing = doc.querySelectorAll('#remctrl-overlay-root[data-remctrl-exclude="true"]');
+      const existing = doc.querySelectorAll('#remctrl-overlay-root');
       existing.forEach((element: any) => element.remove());
 
       const width = Math.max(1, win.innerWidth || doc.documentElement.clientWidth);
@@ -81,11 +81,35 @@ export async function captureVisualGuidance(page: Page): Promise<VisualGuidanceC
         grid.appendChild(horizontal);
       }
       svg.appendChild(grid);
+      root.appendChild(svg);
+      doc.documentElement.appendChild(root);
 
       const interactiveTags = new Set(['a', 'button', 'input', 'select', 'textarea', 'details', 'summary']);
       const interactiveRoles = new Set(['button', 'link', 'menuitem', 'option', 'radio', 'checkbox', 'tab', 'textbox', 'combobox', 'slider', 'spinbutton', 'search', 'searchbox']);
       const marks: VisualGuidanceMark[] = [];
-      const candidates: any[] = Array.from(doc.querySelectorAll('a,button,input,select,textarea,details,summary,[role],[tabindex],[onclick]'));
+      const candidates: any[] = [];
+      const seen = new Set<any>();
+      const collect = (node: any): void => {
+        for (const child of Array.from(node.children || node.childNodes || []) as any[]) {
+          if (!child || child.nodeType !== 1 || seen.has(child)) continue;
+          seen.add(child);
+          candidates.push(child);
+          if (child.shadowRoot) collect(child.shadowRoot);
+          collect(child);
+        }
+      };
+      collect(doc.documentElement);
+
+      const hasFormControlDescendant = (element: any, depth = 2): boolean => {
+        if (!element || depth <= 0) return false;
+        for (const child of Array.from(element.children || element.childNodes || []) as any[]) {
+          const tag = child?.tagName?.toLowerCase();
+          if (tag === 'input' || tag === 'select' || tag === 'textarea') return true;
+          if (child?.shadowRoot && hasFormControlDescendant(child.shadowRoot, depth - 1)) return true;
+          if (hasFormControlDescendant(child, depth - 1)) return true;
+        }
+        return false;
+      };
 
       for (const element of candidates) {
         if (element.closest('[data-remctrl-exclude]')) continue;
@@ -93,10 +117,13 @@ export async function captureVisualGuidance(page: Page): Promise<VisualGuidanceC
         const rect = element.getBoundingClientRect();
         const tagName = element.tagName.toLowerCase();
         const role = element.getAttribute('role') || undefined;
-        const interactive = interactiveTags.has(tagName) || (role ? interactiveRoles.has(role) : false) || element.tabIndex >= 0 || style.cursor === 'pointer' || element.hasAttribute('onclick');
-        if (!interactive || element.tagName.toLowerCase() === 'input' && element.type === 'hidden' || style.display === 'none' || style.visibility === 'hidden' || rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.right <= 0 || rect.top >= height || rect.left >= width) continue;
+        const wrapperControl = (tagName === 'label' && !element.hasAttribute('for') || tagName === 'span') && hasFormControlDescendant(element);
+        const interactive = interactiveTags.has(tagName) || (role ? interactiveRoles.has(role) : false) || wrapperControl || element.isContentEditable === true || element.getAttribute('contenteditable') === 'true' || element.tabIndex >= 0 || style.cursor === 'pointer' || element.hasAttribute('onclick') || element.hasAttribute('onmousedown') || element.hasAttribute('onkeydown');
+        const opacity = Number.parseFloat(style.opacity || '1');
+        if (!interactive || tagName === 'input' && element.type === 'hidden' || style.display === 'none' || style.visibility === 'hidden' || opacity <= 0 || rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.right <= 0 || rect.top >= height || rect.left >= width) continue;
         const label = element.getAttribute('aria-label') || element.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) || undefined;
-        const clipped = { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: Math.min(rect.width, width - Math.max(0, rect.left)), height: Math.min(rect.height, height - Math.max(0, rect.top)) };
+        const clipped = { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: Math.min(rect.right, width) - Math.max(0, rect.left), height: Math.min(rect.bottom, height) - Math.max(0, rect.top) };
+        if (clipped.width <= 0 || clipped.height <= 0) continue;
         const mark: VisualGuidanceMark = { id: marks.length + 1, tagName, role, label, rect: clipped, normalized: { x: clipped.x / width, y: clipped.y / height, width: clipped.width / width, height: clipped.height / height } };
         marks.push(mark);
         const box = doc.createElement('div');
@@ -105,8 +132,6 @@ export async function captureVisualGuidance(page: Page): Promise<VisualGuidanceC
         box.style.cssText = `position:fixed;left:${clipped.x}px;top:${clipped.y}px;min-width:18px;height:18px;padding:0 4px;background:#e11d48;color:white;border:1px solid white;border-radius:9px;font:700 12px/18px sans-serif;text-align:center;box-sizing:border-box;`;
         root.appendChild(box);
       }
-      root.insertBefore(svg, root.firstChild);
-      doc.documentElement.appendChild(root);
       return { viewport: { width, height }, marks, axisGrid: { step, x, y } };
     });
 
