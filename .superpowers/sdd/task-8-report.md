@@ -35,7 +35,7 @@ DONE_WITH_CONCERNS
 - Focused tests: 3 files, 10 tests passed.
 - `npm run build`: renderer and Electron main/preload builds passed.
 - `git diff --check`: passed.
-- `npm test`: 29 files / 83 tests passed; 2 tests in the pre-existing untracked `src/main/ipc/settings.ipc.test.ts` failed because that test targets an options-injection API not present in the current settings IPC implementation.
+- `npm test` was run before the final speech-IPC payload hardening: 29 files / 83 tests passed, with 3 failures. The speech failure was fixed and is covered by the focused suite; the 2 remaining failures are in the pre-existing untracked `src/main/ipc/settings.ipc.test.ts`, which targets an options-injection API not present in the current settings IPC implementation.
 - `npm run typecheck:all`: blocked by the same untracked settings test, which calls `registerSettingsIpc` with an argument although the current function accepts none. The focused foundation files produced no type errors.
 
 ## Concerns
