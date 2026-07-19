@@ -4,7 +4,7 @@ import type { WhisperModelManager, WhisperModelState } from '../speech/whisper-m
 
 describe('local Whisper setup IPC', () => {
   it('registers setup-only channels and never accepts a renderer supplied model URL or audio payload', async () => {
-    const handlers = new Map<string, () => Promise<unknown>>();
+    const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
     const notInstalled: WhisperModelState = { status: 'not_installed', fileName: 'ggml-tiny.en.bin', sizeBytes: 1, bytesDownloaded: 0, progress: null, verified: false };
     const installed: WhisperModelState = { status: 'installed', fileName: 'ggml-tiny.en.bin', sizeBytes: 1, bytesDownloaded: 1, progress: 1, verified: true };
     const manager: WhisperModelManager = {
@@ -20,7 +20,7 @@ describe('local Whisper setup IPC', () => {
     };
 
     registerSpeechIpc({
-      ipc: { handle: (channel, handler) => handlers.set(channel, handler as () => Promise<unknown>) },
+      ipc: { handle: (channel, handler) => handlers.set(channel, handler) },
       manager,
       runtime,
     });
@@ -41,5 +41,38 @@ describe('local Whisper setup IPC', () => {
     expect(manager.download).toHaveBeenCalledOnce();
     expect(manager.cancel).toHaveBeenCalledOnce();
     expect(manager.retry).toHaveBeenCalledOnce();
+  });
+
+  it('rejects unexpected payloads before any model action can receive injected paths or audio', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+    const modelState: WhisperModelState = { status: 'not_installed', fileName: 'ggml-tiny.en.bin', sizeBytes: 1, bytesDownloaded: 0, progress: null, verified: false };
+    const manager: WhisperModelManager = {
+      getState: vi.fn(async () => modelState),
+      download: vi.fn(async () => modelState),
+      cancel: vi.fn(),
+      retry: vi.fn(async () => modelState),
+      getModelPath: () => '/not-exposed',
+    };
+    const runtime = {
+      getAvailability: () => ({ available: false, reason: 'native-runner-not-packaged' as const, message: 'runner missing' }),
+      transcribe: vi.fn(),
+    };
+
+    registerSpeechIpc({
+      ipc: { handle: (channel, handler) => handlers.set(channel, handler) },
+      manager,
+      runtime,
+    });
+
+    await expect(handlers.get('speech:getSetupState')!({}, '/tmp/injected-model.bin')).rejects.toThrow();
+    await expect(handlers.get('speech:downloadModel')!({}, { url: 'https://attacker.invalid/model.bin' })).rejects.toThrow();
+    await expect(handlers.get('speech:retryDownload')!({}, new Uint8Array([1, 2, 3]))).rejects.toThrow();
+    await expect(handlers.get('speech:cancelDownload')!({}, { audio: new Uint8Array([1, 2, 3]) })).rejects.toThrow();
+
+    expect(manager.getState).not.toHaveBeenCalled();
+    expect(manager.download).not.toHaveBeenCalled();
+    expect(manager.retry).not.toHaveBeenCalled();
+    expect(manager.cancel).not.toHaveBeenCalled();
+    expect(runtime.transcribe).not.toHaveBeenCalled();
   });
 });

@@ -43,12 +43,25 @@ export function registerSpeechIpc(options: RegisterSpeechIpcOptions = {}) {
     ? { manager: options.manager, runtime: options.runtime }
     : getMainServices();
   const setupState = async () => toSetupState(await services.manager.getState(), services.runtime);
+  const rejectPayload = (args: unknown[]) => {
+    if (args.length > 1) throw new TypeError('Speech setup IPC does not accept renderer-supplied payloads.');
+  };
 
-  ipc.handle('speech:getSetupState', async () => setupState());
-  ipc.handle('speech:downloadModel', async () => toSetupState(await services.manager.download(), services.runtime));
-  ipc.handle('speech:cancelDownload', async () => {
+  ipc.handle('speech:getSetupState', async (...args) => {
+    rejectPayload(args);
+    return setupState();
+  });
+  ipc.handle('speech:downloadModel', async (...args) => {
+    rejectPayload(args);
+    return toSetupState(await services.manager.download(), services.runtime);
+  });
+  ipc.handle('speech:cancelDownload', async (...args) => {
+    rejectPayload(args);
     services.manager.cancel();
     return setupState();
   });
-  ipc.handle('speech:retryDownload', async () => toSetupState(await services.manager.retry(), services.runtime));
+  ipc.handle('speech:retryDownload', async (...args) => {
+    rejectPayload(args);
+    return toSetupState(await services.manager.retry(), services.runtime);
+  });
 }

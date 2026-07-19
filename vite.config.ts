@@ -20,7 +20,13 @@ export default defineConfig({
   optimizeDeps: {
     force: true,
     entries: ['index.html'], // Only scan the main index.html for dependencies
+    include: ['@huggingface/transformers', 'onnxruntime-web'],
     exclude: ['research', 'release'],
+  },
+  // Keep the WASM runtime as a deployable asset for the isolated speech worker.
+  assetsInclude: ['**/*.wasm'],
+  worker: {
+    format: 'es',
   },
   build: {
     outDir: 'dist/renderer',
