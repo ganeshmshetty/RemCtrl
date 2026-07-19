@@ -18,7 +18,7 @@
 import path from 'path';
 import fs from 'fs';
 import { app, safeStorage } from 'electron';
-import { ApiProvider, BrowserMode, AppTheme, TaskScope } from '../shared/types.js';
+import { ApiProvider, BrowserMode, AppTheme, SpeechInputMode, TaskScope } from '../shared/types.js';
 import { PersistedSettingsSchema, PersistedSettings, TaskScopeSchema } from '../shared/schemas.js';
 
 import { fileURLToPath } from 'url';
@@ -151,6 +151,24 @@ export function getUseVisionCUA(): boolean {
 export function setUseVisionCUA(useCua: boolean) {
   const s = loadSettings();
   saveSettings({ ...s, useVisionCUA: useCua });
+}
+
+export function getSpeechToTextEnabled(): boolean {
+  return loadSettings().speechToTextEnabled ?? true;
+}
+
+export function setSpeechToTextEnabled(enabled: boolean) {
+  const s = loadSettings();
+  saveSettings({ ...s, speechToTextEnabled: enabled });
+}
+
+export function getSpeechInputMode(): SpeechInputMode {
+  return loadSettings().speechInputMode ?? 'push_to_talk';
+}
+
+export function setSpeechInputMode(mode: SpeechInputMode) {
+  const s = loadSettings();
+  saveSettings({ ...s, speechInputMode: mode });
 }
 
 export function setHeadlessMode(headless: boolean) {

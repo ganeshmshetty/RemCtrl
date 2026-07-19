@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import type { LocalWorkflow, ApiProvider, AppTheme } from '../../shared/types';
+import type { LocalWorkflow, ApiProvider, AppTheme, SpeechInputMode } from '../../shared/types';
 
 interface WorkflowState {
   workflows: LocalWorkflow[];
@@ -103,6 +103,10 @@ interface SettingsState {
   setTheme: (theme: AppTheme) => Promise<void>;
   useVisionCUA: boolean;
   setUseVisionCUA: (useCua: boolean) => Promise<void>;
+  speechToTextEnabled: boolean;
+  speechInputMode: SpeechInputMode;
+  setSpeechToTextEnabled: (enabled: boolean) => Promise<void>;
+  setSpeechInputMode: (mode: SpeechInputMode) => Promise<void>;
   isSettingsOpen: boolean;
   setSettingsOpen: (isOpen: boolean) => void;
 }
@@ -125,13 +129,15 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   customProfiles: [],
   theme: 'system',
   useVisionCUA: true,
+  speechToTextEnabled: true,
+  speechInputMode: 'push_to_talk',
   isLoading: false,
   isSettingsOpen: false,
 
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme] =
+      const [signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, speechToTextEnabled, speechInputMode] =
         await Promise.all([
           window.RemoteCtrlAPI.settings.getSignalingUrl(),
           window.RemoteCtrlAPI.settings.getPreferredProvider(),
@@ -150,8 +156,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           window.RemoteCtrlAPI.settings.getCustomProfiles(),
           window.RemoteCtrlAPI.settings.getUseVisionCUA(),
           window.RemoteCtrlAPI.settings.getTheme(),
+          window.RemoteCtrlAPI.settings.getSpeechToTextEnabled(),
+          window.RemoteCtrlAPI.settings.getSpeechInputMode(),
         ]);
-      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, isLoading: false });
+      set({ signalingUrl, preferredProvider, preferredModel, hasOpenAIKey, hasAnthropicKey, hasGeminiKey, hasGroqKey, hasDeepseekKey, hasNebiusKey, hasOpenRouterKey, hasVertexKey, headlessMode, keepBrowserOpenOnQuit, browserProfile, customProfiles, useVisionCUA, theme, speechToTextEnabled, speechInputMode, isLoading: false });
     } catch {
       set({ isLoading: false });
     }
@@ -224,6 +232,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setUseVisionCUA: async (useCua) => {
     await window.RemoteCtrlAPI.settings.setUseVisionCUA(useCua);
     set({ useVisionCUA: useCua });
+  },
+
+  setSpeechToTextEnabled: async (enabled) => {
+    await window.RemoteCtrlAPI.settings.setSpeechToTextEnabled(enabled);
+    set({ speechToTextEnabled: enabled });
+  },
+
+  setSpeechInputMode: async (mode) => {
+    await window.RemoteCtrlAPI.settings.setSpeechInputMode(mode);
+    set({ speechInputMode: mode });
   },
 
   setSettingsOpen: (isOpen) => {

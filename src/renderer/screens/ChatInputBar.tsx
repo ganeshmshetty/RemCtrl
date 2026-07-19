@@ -1,14 +1,28 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, StopCircle, Plus, Hand } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, StopCircle, Plus, Hand, Mic, MicOff, AlertCircle } from 'lucide-react';
 import { useAgentStore } from '../stores/useAgentStore';
 import { useConnectionStore } from '../stores/useConnectionStore';
+import { useSettingsStore } from '../stores/useWorkflowStore';
+import { useSpeechToText } from '../hooks/useSpeechToText';
 
 export function ChatInputBar() {
   const { agentStatus, isTakeoverActive, recordingState, recordingSessionId } = useAgentStore();
   const { role, controllerState, hostState, sendData } = useConnectionStore();
+  const { speechToTextEnabled, speechInputMode } = useSettingsStore();
   const [prompt, setPrompt] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const speechBaseRef = useRef('');
+
+  const handleTranscript = useCallback((text: string, isFinal: boolean) => {
+    setPrompt(() => {
+      const base = speechBaseRef.current;
+      const next = `${base}${base && !base.endsWith(' ') ? ' ' : ''}${text}`.replace(/\s+/g, ' ');
+      if (isFinal) speechBaseRef.current = next;
+      return next;
+    });
+  }, []);
+  const speech = useSpeechToText({ enabled: speechToTextEnabled, mode: speechInputMode, onTranscript: handleTranscript });
 
   useEffect(() => {
     if (inputRef.current) {
@@ -103,6 +117,15 @@ export function ChatInputBar() {
     }
   }
 
+  function startSpeech() {
+    speechBaseRef.current = prompt.trim() ? `${prompt.trim()} ` : '';
+    speech.start();
+  }
+
+  function stopSpeech() {
+    speech.stop();
+  }
+
   async function toggleTakeControl() {
     if (recordingState === 'recording' || recordingState === 'saving') return;
     const next = !isTakeoverActive;
@@ -143,6 +166,32 @@ export function ChatInputBar() {
                 <Hand size={16} />
               </button>
             )}
+            {speechToTextEnabled && speechInputMode === 'push_to_talk' && (
+              <button
+                type="button"
+                className={`chat-control-icon-btn ${speech.isListening ? 'active' : ''}`}
+                onPointerDown={(event) => { event.preventDefault(); startSpeech(); }}
+                onPointerUp={stopSpeech}
+                onPointerCancel={stopSpeech}
+                onPointerLeave={() => { if (speech.isListening) stopSpeech(); }}
+                aria-label="Hold to dictate"
+                title="Hold to dictate"
+              >
+                {speech.isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
+            )}
+            {speechToTextEnabled && speechInputMode === 'hands_free' && (
+              <button
+                type="button"
+                className={`chat-control-icon-btn ${speech.isListening ? 'active' : ''}`}
+                onClick={() => speech.isListening ? stopSpeech() : startSpeech()}
+                aria-label={speech.isListening ? 'Stop dictation' : 'Start dictation'}
+                title={speech.isListening ? 'Stop dictation' : 'Start dictation'}
+              >
+                {speech.isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
+            )}
+            {speech.error && <span className="chat-speech-status" role="status"><AlertCircle size={13} /> {speech.error}</span>}
           </div>
           {agentStatus === 'running' ? (
             <button type="button" className="chat-prompt-send danger" onClick={handleCancelAgent} title="Stop execution">

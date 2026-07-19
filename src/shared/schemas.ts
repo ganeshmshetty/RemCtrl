@@ -319,6 +319,8 @@ export const PersistedSettingsSchema = z.object({
   theme: AppThemeSchema.default('system'),
   profileInitialized: z.boolean().default(false),
   globalShortcut: z.string().default('CommandOrControl+Shift+Space'),
+  speechToTextEnabled: z.boolean().default(true),
+  speechInputMode: z.enum(['push_to_talk', 'hands_free']).default('push_to_talk'),
   // API keys are stored in a separate secure store — not in this file
 });
 

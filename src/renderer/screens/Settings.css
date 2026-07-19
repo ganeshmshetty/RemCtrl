@@ -609,6 +609,16 @@
   color: var(--accent);
 }
 
+.chat-speech-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 300px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
 .chat-prompt-form {
   display: flex;
   flex-direction: column;

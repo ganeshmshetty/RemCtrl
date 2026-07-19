@@ -92,6 +92,7 @@ export interface SharedWorkflowRecord {
 export type ApiProvider = 'openai' | 'anthropic' | 'gemini' | 'groq' | 'deepseek' | 'nebius' | 'openrouter' | 'vertex';
 export type BrowserMode = 'internal' | 'local_chrome';
 export type AppTheme = 'light' | 'dark' | 'system';
+export type SpeechInputMode = 'push_to_talk' | 'hands_free';
 
 export interface AppSettings {
   signalingUrl: string;
@@ -100,6 +101,8 @@ export interface AppSettings {
   customBaseUrls?: Record<string, string>;
   browserMode: BrowserMode;
   theme: AppTheme;
+  speechToTextEnabled?: boolean;
+  speechInputMode?: SpeechInputMode;
   // API keys are NOT stored in renderer — Main process holds them
 }
 
@@ -621,6 +624,10 @@ export interface RemoteCtrlAPI {
     setTheme: (theme: AppTheme) => Promise<void>;
     getGlobalShortcut: () => Promise<string>;
     setGlobalShortcut: (shortcut: string) => Promise<void>;
+    getSpeechToTextEnabled: () => Promise<boolean>;
+    setSpeechToTextEnabled: (enabled: boolean) => Promise<void>;
+    getSpeechInputMode: () => Promise<SpeechInputMode>;
+    setSpeechInputMode: (mode: SpeechInputMode) => Promise<void>;
   };
   workflows: {
     list: () => Promise<LocalWorkflow[]>;

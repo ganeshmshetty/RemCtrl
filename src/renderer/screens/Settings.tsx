@@ -74,6 +74,10 @@ export function Settings() {
     setUseVisionCUA,
     theme,
     setTheme,
+    speechToTextEnabled,
+    setSpeechToTextEnabled,
+    speechInputMode,
+    setSpeechInputMode,
   } = useSettingsStore();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -271,6 +275,21 @@ export function Settings() {
                         <Button onClick={() => void handleSaveShortcut()} disabled={!shortcutInput.trim()}>Save</Button>
                       </div>
                     </PreferenceRow>
+                  </PreferenceGroup>
+
+                  <PreferenceGroup title="Speech input" description="Dictate into the primary agent input. RemoteCtrl only converts speech to text; it does not send audio to the agent.">
+                    <PreferenceToggle title="Enable speech input" description="Show the microphone control in the agent input." checked={speechToTextEnabled} onChange={(checked) => void setSpeechToTextEnabled(checked)} />
+                    {speechToTextEnabled && <PreferenceRow title="Dictation mode" description="Choose how the microphone control behaves.">
+                      <PreferenceSelect
+                        value={speechInputMode}
+                        onChange={(value) => void setSpeechInputMode(value as typeof speechInputMode)}
+                        options={[
+                          { value: 'push_to_talk', label: 'Push to talk' },
+                          { value: 'hands_free', label: 'Hands-free' },
+                        ]}
+                        className="w-[168px]"
+                      />
+                    </PreferenceRow>}
                   </PreferenceGroup>
                 </>
               )}

@@ -120,6 +120,10 @@ contextBridge.exposeInMainWorld('RemoteCtrlAPI', {
     setTheme: (theme) => ipcRenderer.invoke('settings:setTheme', theme),
     getGlobalShortcut: () => ipcRenderer.invoke('settings:getGlobalShortcut'),
     setGlobalShortcut: (shortcut) => ipcRenderer.invoke('settings:setGlobalShortcut', shortcut),
+    getSpeechToTextEnabled: () => ipcRenderer.invoke('settings:getSpeechToTextEnabled'),
+    setSpeechToTextEnabled: (enabled) => ipcRenderer.invoke('settings:setSpeechToTextEnabled', enabled),
+    getSpeechInputMode: () => ipcRenderer.invoke('settings:getSpeechInputMode'),
+    setSpeechInputMode: (mode) => ipcRenderer.invoke('settings:setSpeechInputMode', mode),
   },
 
   // ── Workflows ─────────────────────────────────────────────────────────────
