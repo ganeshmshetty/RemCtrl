@@ -38,6 +38,7 @@ export function WorkflowsPanel() {
   const { openWorkflowEditor, pendingWorkflowRun, clearWorkflowRun } = useUIStore();
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
+  const visibleWorkflows = workflows.slice(0, 3);
 
   useEffect(() => {
     void loadWorkflows();
@@ -91,7 +92,7 @@ export function WorkflowsPanel() {
           </div>
         )}
 
-        {workflows.map((workflow) => (
+        {visibleWorkflows.map((workflow) => (
           <WorkflowCard
             key={workflow.id}
             workflow={workflow}
@@ -103,6 +104,9 @@ export function WorkflowsPanel() {
             onCancelDelete={() => setConfirmingDelete(null)}
           />
         ))}
+        {workflows.length > visibleWorkflows.length && (
+          <div className="workflows-more">Showing 3 of {workflows.length} saved workflows</div>
+        )}
       </div>
     </div>
   );

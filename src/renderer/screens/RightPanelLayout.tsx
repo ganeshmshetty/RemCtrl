@@ -115,10 +115,10 @@ export function RightPanelLayout() {
       </div>
       <div className="right-panel-content">
         <div id="agent-panel" role="tabpanel" aria-labelledby="agent-tab" hidden={rightPanelTab !== 'agent'}>
-          {rightPanelTab === 'agent' && <AgentPanel />}
+          <AgentPanel />
         </div>
         <div id="workflows-panel" role="tabpanel" aria-labelledby="workflows-tab" hidden={rightPanelTab !== 'workflows'}>
-          {rightPanelTab === 'workflows' && <WorkflowsPanel />}
+          <WorkflowsPanel />
         </div>
       </div>
     </div>

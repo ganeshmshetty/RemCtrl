@@ -195,9 +195,10 @@ export function ConnectionPlaceholder() {
                 <div className="cp-panel-heading"><div><h3>Saved workflows</h3><p>Preview and approve a workflow before every run.</p></div><span>{workflows.length} saved</span></div>
                 {workflows.length > 0 ? (
                   <div className="cp-workflow-list">
-                    {workflows.slice(0, 6).map((wf) => (
+                    {workflows.slice(0, 3).map((wf) => (
                       <Card key={wf.id} className="cp-workflow-card"><CardContent className="cp-workflow-card-content"><div><div className="truncate cp-workflow-name">{wf.name}</div><div className="cp-workflow-meta">{wf.steps.length} step{wf.steps.length === 1 ? '' : 's'}</div></div><Button size="sm" variant="ghost" className="cp-run-workflow" onClick={() => handleQuickRunWorkflow(wf)}><Play size={13} /> Run</Button></CardContent></Card>
                     ))}
+                    {workflows.length > 3 && <span className="cp-workflow-more">Showing 3 of {workflows.length} saved workflows</span>}
                   </div>
                 ) : (
                   <div className="cp-empty-workflows"><FolderPlus size={22} /><strong>No saved workflows</strong><span>Describe a task to record your first one.</span></div>

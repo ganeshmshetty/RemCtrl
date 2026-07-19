@@ -201,6 +201,7 @@
 .cp-workflow-meta { color: var(--text-secondary); font-size: 11px; }
 .cp-run-workflow { align-self: center; color: var(--accent); background: var(--accent-glow); }
 .cp-run-workflow:hover { color: #fff; background: var(--accent); }
+.cp-workflow-more { grid-column: 1 / -1; color: var(--text-muted); font-size: 11px; text-align: center; }
 .cp-workflow-list { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .cp-record-workflow { background: var(--accent) !important; color: #fff !important; }
 .cp-record-workflow:hover { background: var(--accent-hover) !important; }
