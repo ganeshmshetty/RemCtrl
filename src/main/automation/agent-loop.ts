@@ -18,7 +18,6 @@ import { randomUUID } from 'crypto';
 import type { AutomationSecurityMode } from './security-mode.js';
 import { buildAgentTaskPrompt } from './agent-system-prompt.js';
 import { createDevelopmentLogger } from '../dev-logger.js';
-import { getUseVisionCUA } from '../storage.js';
 
 export type AgentTerminationReason = 'done_true' | 'done_false' | 'max_steps' | 'model_text' | 'stopped_without_done';
 
@@ -53,6 +52,8 @@ export interface AgentLoopOptions {
   onStatus?: AgentStatusCb;
   onLog: AgentLogCb;
   onRecordStep?: (step: WorkflowStep) => void;
+  /** Captured at run start so prompt and tool availability cannot drift. */
+  visionEnabled?: boolean;
 }
 
 export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -69,6 +70,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
     onStatus,
     onLog,
     onRecordStep,
+    visionEnabled = false,
   } = opts;
 
   const securityMode: AutomationSecurityMode = requestedSecurityMode
@@ -109,7 +111,7 @@ export async function runToolLoop(opts: AgentLoopOptions): Promise<AgentLoopResu
       action: formatToolAction(toolName, input),
     });
     onLog({ level: 'info', message: formatToolAction(toolName, input), phase: 'started' });
-  }, getUseVisionCUA());
+  }, visionEnabled);
   let goalAchieved = false;
   let taskTerminated = false;
   let finalMessage: string | undefined;

@@ -362,6 +362,7 @@ async function executeDeterministicActionWithSelfHeal(
     const provider = getPreferredProvider();
     const apiKey = getApiKey(provider);
     const model = resolveModel(provider, apiKey);
+    const visionEnabled = getUseVisionCUA();
 
     // Provide the original semantic description to the agent so it knows what it's looking for
     const instruction = [
@@ -380,7 +381,7 @@ async function executeDeterministicActionWithSelfHeal(
     const loopResult = await runToolLoop({
       commandId: `self-heal-${step.id}`,
       instruction,
-      systemPrompt: buildWorkflowStepSystemPrompt('do', instruction, 'local', getUseVisionCUA()), // reuse generic prompt
+      systemPrompt: buildWorkflowStepSystemPrompt('do', instruction, 'local', visionEnabled), // reuse generic prompt
       page,
       session: (() => {
         return session;
@@ -389,6 +390,7 @@ async function executeDeterministicActionWithSelfHeal(
       model,
       maxSteps: 5,
       onLog: (l) => emitLog(onLog, l.level, l.message, '[SelfHeal]'),
+      visionEnabled,
     });
 
     if (!loopResult.goalAchieved) {
@@ -462,11 +464,12 @@ async function executeExtractStep(
   const provider = getPreferredProvider();
   const apiKey = getApiKey(provider);
   const model = resolveModel(provider, apiKey);
+  const visionEnabled = getUseVisionCUA();
 
   const loopResult = await runToolLoop({
     commandId: `extract-${step.id}`,
     instruction: step.instruction,
-    systemPrompt: buildWorkflowStepSystemPrompt('collect', step.instruction, 'local', getUseVisionCUA()), // Reuse collect prompt logic
+    systemPrompt: buildWorkflowStepSystemPrompt('collect', step.instruction, 'local', visionEnabled), // Reuse collect prompt logic
     page,
     session: (() => {
       return session;
@@ -475,6 +478,7 @@ async function executeExtractStep(
     model,
     maxSteps: 15,
     onLog: (l) => emitLog(onLog, l.level, l.message, '[Extract]'),
+    visionEnabled,
   });
 
   const msg = `Extracting from page`;

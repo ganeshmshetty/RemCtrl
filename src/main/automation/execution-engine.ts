@@ -140,10 +140,11 @@ export async function runAgent(
 
     const runLoop = async () => {
       const fullInstruction = sessionHistory.buildPromptContext(sessionId, instruction);
+      const visionEnabled = getUseVisionCUA();
       return await runToolLoop({
         commandId,
         instruction: fullInstruction,
-        systemPrompt: buildAgentSystemPrompt(instruction, securityMode, getUseVisionCUA()),
+        systemPrompt: buildAgentSystemPrompt(instruction, securityMode, visionEnabled),
         page: localPage!,
         session,
         model: resolveModel(provider, apiKey),
@@ -155,6 +156,7 @@ export async function runAgent(
           onLog(payload);
         },
         onRecordStep,
+        visionEnabled,
       });
     };
 

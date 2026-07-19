@@ -371,7 +371,7 @@ export function Settings() {
                     </PreferenceRow>
                     {browserMode === 'internal' && <PreferenceToggle title="Headless mode" description="Run the managed browser in the background." checked={headlessMode} onChange={(checked) => void setHeadlessMode(checked)} />}
                     {browserMode === 'internal' && <PreferenceToggle title="Keep browser open on quit" description="Leave the managed browser running when RemoteCtrl closes." checked={keepBrowserOpenOnQuit} onChange={(checked) => void setKeepBrowserOpenOnQuit(checked)} />}
-                    {browserMode === 'internal' && <PreferenceToggle title="Vision fallback" description="Allow visual computer-use fallback for complex interfaces. Uses a 1288 × 711 viewport." checked={useVisionCUA} onChange={(checked) => void setUseVisionCUA(checked)} />}
+                    {browserMode === 'internal' && <PreferenceToggle title="Vision inspection" description="Allow the agent to inspect the current browser viewport when visual evidence is useful." checked={useVisionCUA} onChange={(checked) => void setUseVisionCUA(checked)} />}
                   </PreferenceGroup>
 
                   {browserMode === 'internal' && <PreferenceGroup title="Profiles" description="Profiles isolate browser cookies, sessions, and logins.">

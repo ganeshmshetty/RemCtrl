@@ -281,6 +281,7 @@ export const TabIdPayloadSchema = z.string().min(1);
 export const NavigatePayloadSchema = z.string().min(1);
 
 export const BrowserModeSchema = z.enum(['internal', 'local_chrome']);
+export const SpeechInputModeSchema = z.enum(['push_to_talk', 'hands_free']);
 
 // Compact task declaration used by the renderer; the main policy adapter turns
 // it into the richer normalized PolicyScope before evaluating actions.
@@ -320,7 +321,7 @@ export const PersistedSettingsSchema = z.object({
   profileInitialized: z.boolean().default(false),
   globalShortcut: z.string().default('CommandOrControl+Shift+Space'),
   speechToTextEnabled: z.boolean().default(true),
-  speechInputMode: z.enum(['push_to_talk', 'hands_free']).default('push_to_talk'),
+  speechInputMode: SpeechInputModeSchema.default('push_to_talk'),
   // API keys are stored in a separate secure store — not in this file
 });
 

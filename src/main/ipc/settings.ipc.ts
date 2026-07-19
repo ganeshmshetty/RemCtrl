@@ -8,11 +8,13 @@
  */
 
 import { ipcMain, app } from 'electron';
+import { z } from 'zod';
 import {
   SetApiKeySchema,
   SetSignalingUrlSchema,
   SetPreferredProviderSchema,
   BrowserModeSchema,
+  SpeechInputModeSchema,
   SetCustomBaseUrlSchema,
   SetThemeSchema,
   SetGlobalShortcutSchema,
@@ -242,13 +244,13 @@ export function registerSettingsIpc() {
   ipcMain.handle('settings:getSpeechToTextEnabled', async () => getSpeechToTextEnabled());
 
   ipcMain.handle('settings:setSpeechToTextEnabled', async (_e, enabled: unknown) => {
-    setSpeechToTextEnabled(Boolean(enabled));
+    setSpeechToTextEnabled(z.boolean().parse(enabled));
   });
 
   ipcMain.handle('settings:getSpeechInputMode', async () => getSpeechInputMode());
 
   ipcMain.handle('settings:setSpeechInputMode', async (_e, mode: unknown) => {
-    if (mode === 'push_to_talk' || mode === 'hands_free') setSpeechInputMode(mode);
+    setSpeechInputMode(SpeechInputModeSchema.parse(mode));
   });
 
   ipcMain.handle('app:getDiagnostics', async () => {

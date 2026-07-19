@@ -16,6 +16,7 @@ import {
   shell,
   nativeTheme,
   Menu,
+  session,
   Tray,
   nativeImage,
   globalShortcut,
@@ -208,6 +209,26 @@ function registerGlobalShortcut() {
   }
 }
 
+function configureMediaPermissions() {
+  const isRemoteCtrlOrigin = (origin: string) => {
+    try {
+      const url = new URL(origin);
+      return isDev
+        ? url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+        : url.protocol === 'app:';
+    } catch {
+      return false;
+    }
+  };
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) =>
+    permission === 'media' && isRemoteCtrlOrigin(requestingOrigin),
+  );
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    callback(permission === 'media' && isRemoteCtrlOrigin(details.requestingUrl));
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -371,6 +392,7 @@ if (isDev) {
 
 
 app.whenReady().then(async () => {
+  configureMediaPermissions();
   createMenu();
   const win = createWindow();
   setMainWindow(win);

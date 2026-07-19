@@ -18,7 +18,7 @@ import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { RemoteMousePayload, RemoteKeyboardPayload, CaptureMetadata, TabInfo } from '../shared/types.js';
 import { startScreencast, stopScreencast } from './screencast.js';
-import { getBrowserMode, getHeadlessMode, getUseVisionCUA, getBrowserProfileDir, isProfileInitialized, markProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
+import { getBrowserMode, getHeadlessMode, getBrowserProfileDir, isProfileInitialized, markProfileInitialized, getKeepBrowserOpenOnQuit } from './storage.js';
 import { discoverChromeCdpUrl, findSystemChrome, getAvailablePort, isEmptyProfile, resolveCdpWsUrl } from './browser-discovery.js';
 import { closeBrowser as closeAutomationPool } from './automation/browser-pool.js';
 import { moveCursorTo, triggerRipple } from './automation/cursor-overlay.js';
@@ -261,9 +261,8 @@ export async function launchBrowser(startUrl = 'https://www.google.com', headles
   } else {
     // ── Internal mode: persistent profile ───────────────────────────────────
     const headless = headlessOverride ?? getHeadlessMode();
-    const useCua = getUseVisionCUA();
-    const width = useCua ? 1288 : 1280;
-    const height = useCua ? 711 : 800;
+    const width = 1280;
+    const height = 800;
     const profileDir = getBrowserProfileDir();
 
     // Detect first-launch for onboarding (before creating profile dir)

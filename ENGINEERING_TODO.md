@@ -43,8 +43,8 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - [x] Improve workflow builder review/run experience with step status, failure context, and recovery affordances.
 - [x] Allow switching between the Agent and Workflow tabs while a workflow run is active; inactive panels stay mounted so run state survives tab changes.
 - [x] Make saved-workflow run cards in the main Workflow tab compact and show no more than three workflows.
-- [ ] Add an agent-controlled vision inspection tool, with guidance for appropriate use and complete removal when disabled in Settings.
-- [ ] Add speech-to-text input with push-to-talk and hands-free modes, selectable in Settings.
+- [x] Add an agent-controlled vision inspection tool, with guidance for appropriate use and complete removal when disabled in Settings.
+- [x] Add speech-to-text input with push-to-talk and hands-free modes, selectable in Settings.
 - [x] Verify packaged Electron behavior, renderer smoke flows, tests, typechecks, and builds.
 - [x] Commit each coherent implementation increment with a descriptive message.
 
@@ -55,3 +55,4 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - Final stability/design increment: 49 tests passed; typecheck and both production builds passed; changed-seam lint is clean except the pre-existing `ExecutionSummary` cast.
 - Continuation increment: transient WebRTC stream loss no longer cancels host-owned automation; human checkpoints are race-safe and covered by focused tests.
 - Policy/status increment: 53 tests passed; typechecks, renderer/main builds, focused lint, and a fresh host-scope renderer smoke check passed. Cmd+Q now routes through an explicit macOS quit path with bounded cleanup.
+- Vision/speech increment: vision is a prompt-guided, settings-gated tool that follows the shared browser-read policy and returns an in-memory, CSS-scale JPEG only when selected. Speech input supports local push-to-talk and hands-free transcription, with automatic hands-free reconnect, strict IPC validation, and renderer-origin media permission handling. 55 tests, both typechecks, and both production builds passed.

@@ -184,12 +184,19 @@ export function createBrowserTools(
           reason: z.string().min(1).max(240).describe('Briefly state what visual uncertainty or verification requires the screenshot'),
         }),
         execute: wrap('inspectScreenshot', async ({ reason }) => {
-          const image = await page.screenshot({ type: 'png' });
+          const blocked = await authorize({
+            capability: 'browser.read',
+            summary: 'Inspect the current browser viewport',
+            details: { reason },
+            url: page.url(),
+          });
+          if (blocked) return blocked;
+          const image = await page.screenshot({ type: 'jpeg', quality: 75, scale: 'css' });
           return {
             type: 'content' as const,
             value: [
               { type: 'text' as const, text: `Current-page screenshot captured for: ${reason}` },
-              { type: 'image-data' as const, data: image.toString('base64'), mediaType: 'image/png' },
+              { type: 'image-data' as const, data: image.toString('base64'), mediaType: 'image/jpeg' },
             ],
           };
         }),

@@ -76,7 +76,10 @@ describe('agent prompt and history boundaries', () => {
   });
 
   it('returns a multimodal current-page screenshot result', async () => {
-    const page = { screenshot: async () => Buffer.from('png-bytes') } as unknown as Page;
+    const page = {
+      url: () => 'https://example.test/modal',
+      screenshot: async () => Buffer.from('jpeg-bytes'),
+    } as unknown as Page;
     const tools = createBrowserTools(page, undefined, 'local', undefined, true) as Record<string, { execute?: (input: { reason: string }) => Promise<unknown> }>;
     const result = await tools.inspectScreenshot.execute?.({ reason: 'The modal layout is ambiguous' });
 
@@ -84,7 +87,7 @@ describe('agent prompt and history boundaries', () => {
       type: 'content',
       value: [
         { type: 'text', text: 'Current-page screenshot captured for: The modal layout is ambiguous' },
-        { type: 'image-data', data: Buffer.from('png-bytes').toString('base64'), mediaType: 'image/png' },
+        { type: 'image-data', data: Buffer.from('jpeg-bytes').toString('base64'), mediaType: 'image/jpeg' },
       ],
     });
   });
