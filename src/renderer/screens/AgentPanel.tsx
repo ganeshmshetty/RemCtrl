@@ -225,21 +225,21 @@ export function AgentPanel() {
                 aria-label="Try: find the top AI story on Hacker News"
                 onClick={() => handleSendPrompt('Go to hackernews and find the top story about AI')}
               >
-                <Globe size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Find top AI story on HackerNews
+                <Globe size={14} className="agent-suggestion-icon" /> Find top AI story on HackerNews
               </button>
               <button 
                 className="btn btn-ghost" 
                 aria-label="Try: search flights to Miami"
                 onClick={() => handleSendPrompt('Go to google flights and find a weekend trip from NYC to MIA')}
               >
-                <MousePointer size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Search flights to Miami
+                <MousePointer size={14} className="agent-suggestion-icon" /> Search flights to Miami
               </button>
               <button 
                 className="btn btn-ghost" 
                 aria-label="Try: extract article text"
                 onClick={() => handleSendPrompt('Extract the main article text from this page')}
               >
-                <FileText size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} /> Extract article text
+                <FileText size={14} className="agent-suggestion-icon" /> Extract article text
               </button>
             </div>
           </div>
@@ -349,58 +349,58 @@ function ScopeGuard({ role }: { role: 'idle' | 'host' | 'controller' | 'local' }
   }
 
   if (isLocal) {
-    return <section style={{ margin: '10px 12px 0', border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)' }}>
-      <strong style={{ color: 'var(--accent)' }}>Local session</strong> · direct control is enabled; remote task scope is inactive.
+    return <section className="agent-scope-banner">
+      <strong>Local session</strong> · direct control is enabled; remote task scope is inactive.
     </section>;
   }
   if (role === 'controller') {
-    return <section style={{ margin: '10px 12px 0', border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--bg-elevated)', fontSize: 12, color: 'var(--text-secondary)' }}>
-      <strong style={{ color: 'var(--accent)' }}>Controller session</strong> · commands are evaluated by the host’s task scope. The host receives and resolves protected-action approvals.
+    return <section className="agent-scope-banner">
+      <strong>Controller session</strong> · commands are evaluated by the host’s task scope. The host receives and resolves protected-action approvals.
     </section>;
   }
 
   return (
-    <section style={{ margin: '10px 12px 0', border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'var(--bg-elevated)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-        <strong style={{ fontSize: 13 }}>Task Scope · hard action gate</strong>
-        <span style={{ fontSize: 11, color: 'var(--accent)' }}>ENFORCED IN MAIN PROCESS</span>
+    <section className="agent-scope-panel">
+      <div className="agent-scope-header">
+        <strong>Task Scope · hard action gate</strong>
+        <span>ENFORCED IN MAIN PROCESS</span>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <div className="agent-scope-row">
         <input
           aria-label="Task goal"
           value={goal}
           onChange={(event) => setGoal(event.target.value)}
           disabled={!isHost}
           placeholder="What should the operator accomplish?"
-          style={{ minWidth: 0, flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+          className="agent-scope-input"
         />
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+      <div className="agent-scope-row compact">
         <input
           aria-label="Allowed domains"
           value={domains}
           onChange={(event) => setDomains(event.target.value)}
           disabled={!isHost}
           placeholder="example.com, *.example.org"
-          style={{ minWidth: 0, flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+          className="agent-scope-input"
         />
         {isHost && <button className="btn btn-sm" onClick={() => void saveScope()}>Save scope</button>}
       </div>
-      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
+      <div className="agent-scope-help">
         {isHost
           ? 'Host-owned remote scope. In-scope navigation can continue automatically; typing, arbitrary clicks, keys, and tab changes pause for approval.'
           : 'Scope becomes editable when this session is hosted.'}
       </div>
-      {message && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 5 }}>{message}</div>}
+      {message && <div className="agent-scope-message">{message}</div>}
       {pending.map((approval) => (
-        <div key={approval.approval.id} style={{ marginTop: 10, padding: 9, borderRadius: 7, background: 'rgba(245, 158, 11, .13)', border: '1px solid rgba(245, 158, 11, .35)' }}>
-          <div style={{ fontWeight: 600, fontSize: 12 }}>Approval required · {approval.capability}</div>
-          <div style={{ fontSize: 12, marginTop: 3 }}>{approval.action}</div>
-          {approval.url && <div style={{ fontSize: 11, color: 'var(--text-secondary)', overflowWrap: 'anywhere', marginTop: 3 }}>{approval.url}</div>}
-          {isHost ? <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <div key={approval.approval.id} className="agent-approval-card">
+          <div className="agent-approval-title">Approval required · {approval.capability}</div>
+          <div className="agent-approval-action">{approval.action}</div>
+          {approval.url && <div className="agent-approval-url">{approval.url}</div>}
+          {isHost ? <div className="agent-approval-actions">
             <button className="btn btn-sm" onClick={() => void resolve(approval.approval.id, true)}>Approve once</button>
             <button className="btn btn-sm btn-ghost" onClick={() => void resolve(approval.approval.id, false)}>Block</button>
-          </div> : <div style={{ fontSize: 11, marginTop: 7 }}>Waiting for the host to decide.</div>}
+          </div> : <div className="agent-approval-waiting">Waiting for the host to decide.</div>}
         </div>
       ))}
     </section>
@@ -454,7 +454,7 @@ function ChatBubble({
     return (
       <div className="agent-msg">
         <div className="agent-msg-workflow">
-          <Zap size={12} style={{ flexShrink: 0, opacity: 0.7 }} />
+          <Zap size={12} className="agent-msg-workflow-icon" />
           <span>{msg.text}</span>
         </div>
       </div>
@@ -473,43 +473,32 @@ function ChatBubble({
     const isAct = msg.text.startsWith('Action:');
 
     const icon = isNav ? (
-      <Globe size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+      <Globe size={13} className="agent-log-icon accent" />
     ) : isFill ? (
-      <Edit3 size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+      <Edit3 size={13} className="agent-log-icon success" />
     ) : isPress ? (
-      <Keyboard size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+      <Keyboard size={13} className="agent-log-icon success" />
     ) : isScroll ? (
-      <ArrowUpDown size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+      <ArrowUpDown size={13} className="agent-log-icon success" />
     ) : isAct ? (
-      <MousePointer size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+      <MousePointer size={13} className="agent-log-icon success" />
     ) : isObs ? (
-      <Eye size={13} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+      <Eye size={13} className="agent-log-icon warning" />
     ) : isExt ? (
-      <FileText size={13} style={{ color: '#a855f7', flexShrink: 0 }} />
+      <FileText size={13} className="agent-log-icon purple" />
     ) : isDone ? (
-      <CheckCircle2 size={13} style={{ color: 'var(--success)', flexShrink: 0 }} />
+      <CheckCircle2 size={13} className="agent-log-icon success" />
     ) : (
-      <Bot size={13} style={{ opacity: 0.6, flexShrink: 0 }} />
+      <Bot size={13} className="agent-log-icon muted" />
     );
 
     return (
       <div className="agent-msg">
         <div
           className="agent-msg-step-pill"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '6px 12px',
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 12,
-            color: 'var(--text-secondary)',
-          }}
         >
-          <div style={{ opacity: 0.7, display: 'flex', alignItems: 'center' }}>{icon}</div>
-          <span style={{ fontFamily: 'var(--font-sans)', overflow: 'hidden', textOverflow: 'ellipsis', opacity: 0.85 }}>
+          <div className="agent-log-icon-wrap">{icon}</div>
+          <span className="agent-log-text">
             {msg.text}
           </span>
         </div>
@@ -532,7 +521,7 @@ function ChatBubble({
   // Standard user/agent bubble
   return (
     <div className={`agent-msg ${isUser ? 'user' : ''}`}>
-      <div className={`agent-msg-bubble ${isUser ? 'user' : 'agent'}`} style={{ position: 'relative' }}>
+      <div className={`agent-msg-bubble ${isUser ? 'user' : 'agent'}`}>
         {isEditing ? (
           <form 
             onSubmit={(e) => {
@@ -542,13 +531,13 @@ function ChatBubble({
                 onEditMessage?.(editText);
               }
             }}
-            style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}
+            className="agent-msg-edit-form"
           >
             <textarea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
               className="agent-prompt-input"
-              style={{ padding: '8px', background: 'var(--bg-card)', minHeight: '60px' }}
+              className="agent-prompt-input agent-msg-edit-input"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -557,7 +546,7 @@ function ChatBubble({
                 }
               }}
             />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <div className="agent-msg-edit-actions">
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setIsEditing(false); setEditText(msg.text); }}>Cancel</button>
               <button type="submit" className="btn btn-primary btn-sm">Resubmit</button>
             </div>
@@ -579,21 +568,6 @@ function ChatBubble({
                   setIsEditing(true);
                 }}
                 title="Edit message & rewind"
-                style={{
-                  position: 'absolute',
-                  top: '-10px',
-                  right: '-10px',
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '50%',
-                  padding: '4px',
-                  cursor: 'pointer',
-                  color: 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                }}
               >
                 <Edit3 size={12} />
               </button>

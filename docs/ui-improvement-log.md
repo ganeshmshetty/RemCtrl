@@ -107,6 +107,7 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 
 - Moved Markdown response styling out of inline declarations into a reusable tokenized stylesheet.
 - Standardized code cards, copy actions, headings, lists, inline code, and links for dark/light theme inheritance and keyboard-visible interaction.
+- Converted Agent-panel scope controls, approval cards, activity pills, and message editing controls to the same named CSS primitives.
 
 Verified:
 
