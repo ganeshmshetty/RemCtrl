@@ -1,8 +1,40 @@
 # RemoteCtrl
 
-RemoteCtrl is an Electron desktop workspace for browser control, AI-assisted automation, reusable workflows, and optional peer-to-peer remote sessions. It combines a visible browser workspace with an agent console, workflow editor, local browser profiles, visual guidance, and local Whisper speech-to-text.
+> **Delegate the task, not the browser.**
+
+RemoteCtrl is a task-scoped browser coworker: it lets a user delegate one approved task inside their own authenticated browser to an AI agent or remote operator, intervene when needed, and turn a successful session into a reusable workflow. It combines a visible browser workspace with an agent console, workflow editor, local browser profiles, visual guidance, and local Whisper speech-to-text.
 
 This repository is a hackathon-ready development build. It is designed to make the main demo path easy to run locally while keeping credentials, browser profiles, and workflow data on the host machine.
+
+## Why RemoteCtrl
+
+Existing products solve pieces of the problem, but they generally optimize for a different unit of access: a whole machine, an agent-owned browser, a developer automation API, or a predefined workflow. RemoteCtrl is built around **one approved browser task**.
+
+The user keeps the authenticated browser session. An agent performs the delegated work; the user can pause, approve an exception, complete MFA manually, or take over. Once the work succeeds, the interaction can be saved and replayed as a workflow.
+
+### Market landscape
+
+This comparison is based on the source-linked market study in [research/remotectrl-market](research/remotectrl-market/) and the architecture reference repositories in `research/`. It is deliberately a product-positioning comparison, not a claim that RemoteCtrl has feature parity with every mature platform.
+
+| Product/category | What it provides | Where RemoteCtrl differs |
+| --- | --- | --- |
+| [RustDesk](https://github.com/rustdesk/rustdesk) and remote desktop tools | Remote access to a desktop or machine. | RemoteCtrl focuses on browser work and task context rather than unrestricted desktop control. |
+| [browser-use](https://github.com/browser-use/browser-use) | Natural-language browser-agent framework. | RemoteCtrl puts an agent in a desktop product with the user’s browser profile, human checkpoints, a workflow surface, and optional remote collaboration. |
+| [Stagehand](https://github.com/browserbase/stagehand) | Developer SDK for AI browser automation with natural-language actions and extraction. | RemoteCtrl packages browser automation as an end-user workspace for delegation, review, intervention, and replay. |
+| [Nanobrowser](https://github.com/nanobrowser/nanobrowser) | Browser-extension AI automation. | RemoteCtrl combines an extension bridge with a desktop controller, persistent profiles, workflow editing, and agent execution traces. |
+| [n8n](https://github.com/n8n-io/n8n) and workflow automation tools | Visual, reusable automation flows across services. | RemoteCtrl turns an observed browser task into a browser-native workflow that can use agent recovery when a page is ambiguous or changes. |
+| [browserless](https://github.com/browserless/browserless), Playwright, and Puppeteer | Browser automation infrastructure and programmable browser control. | RemoteCtrl is a product layer above the browser runtime: it adds delegation UX, task state, checkpoints, saved workflows, and a local browser workspace. |
+| **RemoteCtrl** | Task-scoped agent execution, human takeover, workflow replay, local browser profiles, and optional remote browser collaboration. | The integrated experience is the innovation: delegate browser work in the user’s real session, retain control during execution, then reuse the completed task. |
+
+### The task boundary
+
+The policy layer can evaluate browser-specific execution context: the current browser session, the acting agent/operator, the open site, the requested capability, the action type, the declared task scope, and whether an approval is required. That is stronger than telling a model to “only do the approved task”; it gives the runtime a place to block or request approval before an agent action executes.
+
+**Current boundary:** RemoteCtrl enforces scope for agent actions and provides human takeover. It does **not** claim that remote human mouse and keyboard input is scope-enforced. The included demo proves workflow self-healing and the integrated agent → workflow → human-intervention path; it is not a claim of comprehensive remote-input policy enforcement.
+
+### Demo narrative
+
+Use one concrete operations scenario: a technician updates one customer record in a user’s authenticated web app. The user declares the task; the agent or technician performs it; an unrelated agent action is blocked or requires approval; the user completes MFA or takes over if needed; then the successful sequence becomes a reusable workflow. This presents the system as one coherent product rather than a list of disconnected features.
 
 ## What you can demo
 
