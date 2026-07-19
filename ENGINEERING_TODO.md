@@ -16,7 +16,7 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - [x] Cancellation and pause handling are not uniformly interruptible: waits, retry backoff, and some browser operations do not observe the abort signal.
 - [x] Workflow retry exists but is journaled as a resumable checkpoint and surfaces a durable recovery action to the user.
 - [ ] The renderer has a working command palette and state cards, but activity, errors, and run history are still visually fragmented and partly inline-styled.
-- [ ] Remote connection lifecycle has no single user-facing recovery model for reconnecting, stale signaling, or browser-stream interruption.
+- [x] Remote connection lifecycle has no single user-facing recovery model for reconnecting, stale signaling, or browser-stream interruption.
 - [ ] Full-repository lint has a large existing baseline; changed seams should become clean without pretending unrelated debt is fixed.
 
 ## Implementation queue
@@ -48,3 +48,4 @@ This is the active memory for the ongoing product pass. Items are checked off on
 - Initial baseline: `npm test`, typechecks, renderer build, and focused lint were previously green for the existing pass; full lint still contains unrelated baseline findings.
 - Reference clones are ignored by `.gitignore` and must not be edited.
 - Final stability/design increment: 49 tests passed; typecheck and both production builds passed; changed-seam lint is clean except the pre-existing `ExecutionSummary` cast.
+- Continuation increment: transient WebRTC stream loss no longer cancels host-owned automation; human checkpoints are race-safe and covered by focused tests.

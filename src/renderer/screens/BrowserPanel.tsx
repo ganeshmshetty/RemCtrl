@@ -434,8 +434,11 @@ export function BrowserPanel() {
             {!isLocal && rtcStatus !== 'streaming' && (
               <div className="browser-loading" role="status" aria-live="polite">
                 <div className="browser-state-card browser-state-card-compact">
-                  <Loader2 size={20} className="animate-spin" />
-                  <div><h3>Waiting for browser stream</h3><p>The session is connected. The first frame will appear shortly.</p></div>
+                  {rtcStatus === 'error' ? <AlertCircle size={20} className="danger" /> : <Loader2 size={20} className="animate-spin" />}
+                  <div>
+                    <h3>{rtcStatus === 'error' ? 'Browser stream interrupted' : 'Waiting for browser stream'}</h3>
+                    <p>{rtcStatus === 'error' ? 'The host will keep its browser task running while the stream recovers.' : 'The session is connected. The first frame will appear shortly.'}</p>
+                  </div>
                 </div>
               </div>
             )}

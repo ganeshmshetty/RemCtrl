@@ -63,6 +63,11 @@ export async function ask(
   broadcastToRenderers('browser:agentCheckpoint', payload);
 
   return new Promise((resolve, reject) => {
+    let onAbort = () => {};
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Checkpoint ${checkpointId} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
     const cleanup = () => {
       clearTimeout(timeout);
       globalCheckpointCallbacks.delete(checkpointId);
@@ -71,19 +76,10 @@ export async function ask(
       }
     };
 
-    const onAbort = () => {
+    onAbort = () => {
       cleanup();
       reject(abortSignal?.reason || new Error(`Checkpoint ${checkpointId} cancelled`));
     };
-
-    if (abortSignal) {
-      abortSignal.addEventListener('abort', onAbort);
-    }
-
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Checkpoint ${checkpointId} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
 
     globalCheckpointCallbacks.set(checkpointId, (response: CheckpointResponse) => {
       if (response.selectedOptionId === '__CANCELLED__') {
@@ -106,6 +102,13 @@ export async function ask(
       cleanup();
       resolve(response.selectedOptionId);
     });
+
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', onAbort, { once: true });
+      // Close the small race between the initial check above and listener
+      // registration without touching an uninitialised timeout handle.
+      if (abortSignal.aborted) onAbort();
+    }
   });
 }
 

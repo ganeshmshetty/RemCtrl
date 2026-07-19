@@ -91,6 +91,12 @@ Reference patterns reviewed from the existing `research/` folder and disposable 
 - After a renderer or main-process interruption, the Agent panel can resume the saved workflow on its owning host and recheck the current step before continuing.
 - If the saved workflow was deleted or the browser belongs to another host, the recovery banner explains why it cannot proceed instead of silently discarding the checkpoint.
 
+## 2026-07-19 · Remote stream resilience
+
+- A transient WebRTC disconnect now enters a visible reconnecting state and gives ICE restart a grace period instead of immediately cancelling active host automation.
+- If the stream cannot return, the UI explains that the host task is still running, separating browser-work continuity from the viewer connection.
+- Human-in-the-loop checkpoints now close an abort/registration race without leaking pending callbacks.
+
 ## 2026-07-19 · Activity language and typography
 
 - Activated the bundled Geist variable font and made it the shared application typeface instead of relying on a platform-dependent fallback.

@@ -93,6 +93,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
     let cleanupScreencastFrame: (() => void) | undefined;
     let cleanupTabsChange: (() => void) | undefined;
     let cleanupAgentCheckpoint: (() => void) | undefined;
+    let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function startWebRTC() {
       try {
@@ -323,14 +324,33 @@ export function useHostWebRTC(isSessionActive: boolean) {
         };
 
         pc.onconnectionstatechange = () => {
-          console.log('[host-webrtc] Connection state:', pc?.connectionState);
-          if (pc?.connectionState === 'disconnected' || pc?.connectionState === 'failed' || pc?.connectionState === 'closed') {
-            console.log('[host-webrtc] Controller disconnected. Cancelling active agents and workflows...');
-            window.RemoteCtrlAPI.browser.cancelAgent().catch(() => {});
-            window.RemoteCtrlAPI.browser.cancelWorkflow().catch(() => {});
+          const state = pc?.connectionState;
+          console.log('[host-webrtc] Connection state:', state);
+          if (state === 'connected') {
+            if (disconnectTimer) clearTimeout(disconnectTimer);
+            disconnectTimer = undefined;
+            setError(null);
+            setStatus('streaming');
+            return;
+          }
+          if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+            setStatus(state === 'closed' ? 'error' : 'connecting');
+            setError('Browser stream interrupted. Attempting to reconnect…');
             useConnectionStore.getState().setPendingTakeover(false);
             useAgentStore.getState().setTakeoverActive(false);
             window.RemoteCtrlAPI.browser.setTakeoverActive(false).catch(() => {});
+            // A transport blip should not terminate host-owned automation.
+            // ICE restart has a chance to recover the stream; only surface a
+            // terminal stream error after a grace period.
+            if (!disconnectTimer && state !== 'closed') {
+              disconnectTimer = setTimeout(() => {
+                disconnectTimer = undefined;
+                if (pc?.connectionState === 'disconnected' || pc?.connectionState === 'failed') {
+                  setStatus('error');
+                  setError('Browser stream could not be restored. The host task is still running.');
+                }
+              }, 10_000);
+            }
           }
         };
 
@@ -388,6 +408,7 @@ export function useHostWebRTC(isSessionActive: boolean) {
       cleanupScreencastFrame?.();
       cleanupTabsChange?.();
       cleanupAgentCheckpoint?.();
+      if (disconnectTimer) clearTimeout(disconnectTimer);
       pc?.close();
       pc = null;
       reliableChannelRef.current = null;
@@ -463,6 +484,13 @@ export function useControllerWebRTC(_isSessionActive: boolean) {
 
     pc.onconnectionstatechange = () => {
       console.log(`[ctrl-webrtc] Connection state: ${pc.connectionState}`);
+      if (pc.connectionState === 'connected') {
+        setError(null);
+        setStatus('streaming');
+      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        setError('Browser stream interrupted. Waiting for the host to restore it…');
+        setStatus('error');
+      }
     };
 
     pc.onicecandidate = (e) => {
