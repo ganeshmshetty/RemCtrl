@@ -20,6 +20,11 @@ jobs:
         node-version: 20.x
     - run: npm install
     - run: npm run build
-    - run: npx electron-builder --win
+    - run: npx electron-builder --win --publish always
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload Windows Installer Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: RemoteCtrl-Setup-Windows
+        path: release/*.exe
