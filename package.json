@@ -27,7 +27,7 @@
     "publish": {
       "provider": "github",
       "owner": "ganeshmshetty",
-      "repo": "RemoteCtrl"
+      "repo": "RemCtrl"
     },
     "directories": {
       "output": "release"
