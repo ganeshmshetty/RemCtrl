@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
@@ -20,11 +23,21 @@ jobs:
         node-version: 20.x
     - run: npm install
     - run: npm run build
-    - run: npx electron-builder --win --publish always
+    - name: Build and Publish (Windows)
+      if: matrix.os == 'windows-latest'
+      run: npx electron-builder --win --publish always
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: Upload Windows Installer Artifact
+    - name: Build and Publish (macOS)
+      if: matrix.os == 'macos-latest'
+      run: npx electron-builder --mac --publish always
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: RemoteCtrl-Setup-Windows
-        path: release/*.exe
+        name: RemoteCtrl-${{ matrix.os }}
+        path: |
+          release/*.exe
+          release/*.dmg
+          release/*.zip
