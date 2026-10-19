@@ -1,4 +1,4 @@
-# RemoteCtrl
+# RemoteCtrl(Beta)
 
 > **Delegate the task, not the browser.**
 
